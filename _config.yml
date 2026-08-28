@@ -5,7 +5,7 @@ markdown: GFM
 commonmark:
   # UNSAFE：放行 raw HTML（页面末尾的 Mermaid script）；SMART/FOOTNOTES 对齐 github.com 渲染行为
   options: ["UNSAFE", "SMART", "FOOTNOTES"]
-  # 不启用 tagfilter，否则 Mermaid 的 <script> 会被转义
-  extensions: ["strikethrough", "autolink", "table"]
+  # 不启用 tagfilter，否则 Mermaid 的 <script> 会被转义；tasklist 让 - [ ] 渲染成复选框
+  extensions: ["strikethrough", "autolink", "table", "tasklist"]
 exclude:
   - README.md
