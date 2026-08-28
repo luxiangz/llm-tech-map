@@ -1,11 +1,9 @@
 title: 大模型技术地图
 description: 面向大模型方向的完整技术知识目录 · LLM 全栈学习清单
 theme: jekyll-theme-cayman
-markdown: GFM
-commonmark:
-  # UNSAFE：放行 raw HTML（页面末尾的 Mermaid script）；SMART/FOOTNOTES 对齐 github.com 渲染行为
-  options: ["UNSAFE", "SMART", "FOOTNOTES"]
-  # 不启用 tagfilter，否则 Mermaid 的 <script> 会被转义；tasklist 让 - [ ] 渲染成复选框
-  extensions: ["strikethrough", "autolink", "table", "tasklist"]
+markdown: kramdown
+kramdown:
+  # kramdown-parser-gfm：GFM 输入，支持任务列表（- [ ] 渲染为复选框）
+  input: GFM
 exclude:
   - README.md
