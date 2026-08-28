@@ -1,0 +1,29 @@
+---
+---
+
+@import "{{ site.theme }}";
+
+/* 霞鹜文楷：开源可商用的中文楷体风格字体；加载失败时自动回退到微软雅黑 */
+@import url("https://cdn.jsdelivr.net/npm/lxgw-wenkai-webfont@1.7.0/style.css");
+
+body {
+  font-family: "LXGW WenKai", "Microsoft YaHei", "PingFang SC", "Segoe UI", sans-serif;
+  font-size: 17.5px;
+  line-height: 1.85;
+  letter-spacing: 0.01em;
+}
+
+h1, h2, h3, h4, h5, h6,
+.project-name {
+  font-family: "Microsoft YaHei", "PingFang SC", sans-serif;
+}
+
+code, pre {
+  font-family: "Cascadia Code", Consolas, "Microsoft YaHei", monospace;
+}
+
+/* 任务列表复选框与文字的对齐 */
+li input[type="checkbox"] {
+  margin: 0 0.45em 0 0;
+  vertical-align: middle;
+}
