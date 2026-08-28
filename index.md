@@ -105,10 +105,10 @@ description: 面向大模型方向的完整技术知识目录，覆盖从数学�
 ### 3.3 并行训练
 - [ ] 并行度全景：DP/TP/PP/EP/CP/SP 对比与选择
 - [ ] 数据并行：DDP、ZeRO 三阶段、offload
-- [ ] 张量并行：Megatron 算子切分
+- [ ] 张量并行：Megatron 算子切分 — 📄 [注意力家族 TP 拆解笔记](notes/attention-tp-shape-forward.html)
 - [ ] 流水线并行：PP 气泡、调度算法、DualPipe/PgPipe
-- [ ] 专家并行 EP、上下文并行 CP、序列并行 SP
-- [ ] PCP：Prefill Context Parallel 设计与实现
+- [ ] 专家并行 EP、上下文并行 CP、序列并行 SP — 📄 [SP vs CP 详解笔记](notes/sp-vs-cp.html)
+- [ ] PCP：Prefill Context Parallel 设计与实现 — 📄 [PCP 完整过程梳理笔记](notes/pcp-code-walkthrough.html)
 - [ ] 集合通信：原语、AllReduce 算法、通信计算重叠
 
 ### 3.4 训练加速

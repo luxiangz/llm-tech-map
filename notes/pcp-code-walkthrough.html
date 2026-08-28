@@ -1,0 +1,421 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PCP 完整过程梳理 — 从拉起服务到长序列请求流转（vLLM Prefill Context Parallel）</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/lxgw-wenkai-webfont@1.7.0/style.css">
+<style>
+  :root {
+    --ink: #1f2430; --muted: #5c6470; --accent: #b3354a; --accent2: #2c5fa8;
+    --bg: #ffffff; --bg-soft: #f6f7f9; --line: #e2e5ea; --code-bg: #f2f4f7;
+    --green: #1e7d4f; --purple: #6b3fa0; --orange: #d98e04;
+  }
+  * { box-sizing: border-box; }
+  body {
+    font-family: "LXGW WenKai", "Microsoft YaHei", "PingFang SC", "Segoe UI", sans-serif;
+    font-size: 17px; line-height: 1.85; letter-spacing: 0.01em;
+    color: var(--ink); background: var(--bg); margin: 0; padding: 0;
+  }
+  .wrap { max-width: 1160px; margin: 0 auto; padding: 40px 28px 120px; }
+  h1, h2, h3, h4, .kicker, .toc a, .card-title, .tag, .step-no { font-family: "Microsoft YaHei", "PingFang SC", sans-serif; }
+  h1 { font-size: 28px; line-height: 1.45; margin: 8px 0 6px; }
+  h2 { font-size: 23px; margin: 56px 0 16px; padding-bottom: 8px; border-bottom: 2px solid var(--accent); letter-spacing: 0.03em; }
+  h2 .sec-no { color: var(--accent); margin-right: 8px; }
+  h3 { font-size: 19px; margin: 34px 0 10px; color: #16324f; }
+  p { margin: 10px 0; }
+  ul, ol { margin: 10px 0; padding-left: 26px; }
+  li { margin: 4px 0; }
+  .kicker { font-size: 13px; letter-spacing: 0.28em; color: var(--accent); text-transform: uppercase; font-weight: 600; }
+  .meta { color: var(--muted); font-size: 14.5px; margin: 4px 0 0; }
+  code, pre { font-family: "Cascadia Code", Consolas, "Microsoft YaHei", monospace; }
+  code { background: var(--code-bg); padding: 1.5px 6px; border-radius: 4px; font-size: 0.86em; color: #8a1f3d; }
+  pre {
+    background: #1b2230; color: #dce3f0; border-radius: 10px;
+    padding: 14px 18px; font-size: 13px; line-height: 1.6; overflow-x: auto;
+  }
+  pre code { background: none; color: inherit; padding: 0; font-size: inherit; }
+  pre .cm { color: #7d8aa0; }
+  table { width: 100%; border-collapse: collapse; margin: 14px 0 22px; font-size: 14px; line-height: 1.6; }
+  th { background: #16324f; color: #fff; font-weight: 600; text-align: left; padding: 7px 11px; font-family: "Microsoft YaHei", sans-serif; }
+  td { padding: 6px 11px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  tr:nth-child(even) td { background: var(--bg-soft); }
+  .tag { display: inline-block; font-size: 12px; font-weight: 600; padding: 1px 10px; border-radius: 20px; margin-right: 6px; }
+  .tag.red { background: #fdecef; color: #b3354a; }
+  .tag.blue { background: #e8f0fb; color: #2c5fa8; }
+  .tag.green { background: #e6f4ec; color: #1e7d4f; }
+  .tag.purple { background: #f0e9fa; color: #6b3fa0; }
+  .callout { background: #fdf6ec; border-left: 4px solid #d98e04; border-radius: 6px; padding: 12px 18px; margin: 16px 0; }
+  .callout.info { background: #eef4fc; border-left-color: #2c5fa8; }
+  .callout.green { background: #eaf6f0; border-left-color: #1e7d4f; }
+  .callout.red { background: #fdf0f2; border-left-color: #b3354a; }
+  .callout.purple { background: #f3edfb; border-left-color: #6b3fa0; }
+  .callout code { background: rgba(0,0,0,0.06); }
+  .toc { background: var(--bg-soft); border: 1px solid var(--line); border-radius: 12px; padding: 18px 26px; margin: 26px 0 10px; font-size: 15px; }
+  .toc a { color: #16324f; text-decoration: none; }
+  .toc a:hover { color: var(--accent); }
+  .toc ol { margin: 8px 0; padding-left: 22px; }
+  .toc li { margin: 3px 0; }
+  .fig { margin: 22px 0; text-align: center; }
+  .fig svg { max-width: 100%; height: auto; }
+  .fig svg text { font-family: "Microsoft YaHei", "PingFang SC", sans-serif; }
+  .fig .caption { font-size: 13.5px; color: var(--muted); margin-top: 6px; font-family: "Microsoft YaHei", sans-serif; }
+  .file-ref { color: #8a1f3d; font-family: "Cascadia Code", Consolas, monospace; font-size: 0.88em; }
+  .footer { margin-top: 70px; padding-top: 18px; border-top: 1px solid var(--line); color: var(--muted); font-size: 13.5px; }
+  a { color: var(--accent2); }
+  .note { font-size: 13.5px; color: var(--muted); }
+  /* 步骤块：按时间顺序的进程 */
+  .step {
+    margin: 14px 0; padding: 12px 18px; border: 1px solid var(--line);
+    border-left: 4px solid var(--accent2); border-radius: 8px; background: var(--bg-soft);
+  }
+  .step .step-no { display: inline-block; font-weight: 700; color: var(--accent); margin-right: 6px; font-size: 15px; }
+  .step .step-title { font-weight: 600; color: #16324f; font-size: 15.5px; }
+  .step .src { font-size: 12.5px; color: var(--muted); }
+</style>
+</head>
+<body>
+<a href="../index.html" style="position:fixed;top:12px;right:14px;z-index:99;background:#f6f7f9;border:1px solid #e2e5ea;border-radius:999px;padding:4px 12px;font-size:14px;color:#2c5fa8;text-decoration:none;box-shadow:0 1px 4px rgba(0,0,0,.08)">← 技术地图首页</a>
+<div class="wrap">
+
+  <div class="kicker">推理系统研究 · 02 并行研究 · PCP 完整过程</div>
+  <h1>PCP 完整过程梳理<br>从拉起服务到长序列请求流转（vLLM Prefill Context Parallel）</h1>
+  <p class="meta">
+    生成日期 2026-08-24 · 基于本地 vLLM checkout（MRV2 PCP，锚定 main @ 6e448d0ea）·
+    按<strong>运行时间顺序</strong>梳理：先「服务启动时 PCP 初始化」，再「一个长序列请求的完整流转」，每步结合代码行。
+  </p>
+
+  <div class="toc">
+    <strong>目录</strong>
+    <ol>
+      <li><a href="#s0">四个不变量（先记结论）</a></li>
+      <li><a href="#s1">第一部分 · 拉起服务：PCP 初始化</a></li>
+      <li><a href="#s2">第二部分 · 长序列请求的完整流转</a></li>
+      <li><a href="#s3">全程通信账</a></li>
+      <li><a href="#s4">行号索引</a></li>
+    </ol>
+  </div>
+
+  <!-- ==================== §0 不变量 ==================== -->
+  <h2 id="s0"><span class="sec-no">0</span>四个不变量（先记结论）</h2>
+  <table>
+    <tr><th>#</th><th>不变量</th><th>证据</th></tr>
+    <tr><td>1</td><td><strong>world_size = PP × TP × PCP</strong>，但 <strong>KV cache 不随 PCP 切分</strong>——每个 PCP rank 持有全量 KV 副本</td><td><span class="file-ref">parallel.py:126-128</span>、<span class="file-ref">parallel.py:832-837</span>、<span class="file-ref">single_type_kv_cache_manager.py:701-704</span>（只有 DCP 才 <code>block_size *= dcp_world_size</code>）</td></tr>
+    <tr><td>2</td><td><strong>调度器对 PCP 完全透明</strong>——同一份全局 SchedulerOutput 广播给所有 PCP rank</td><td><span class="file-ref">scheduler.py:174-175, 284-285</span>（三处提及 PCP 但无调度逻辑；关键：建 KV 管理器时 <code>pcp_world_size=1</code> 硬编码，见流转①）</td></tr>
+    <tr><td>3</td><td><strong>prefill 用 DualChunkSwap 布局</strong>：rank r 算第 r 块和第 2W−1−r 块；<strong>decode 在所有 rank 复制执行</strong></td><td><span class="file-ref">pcp_manager.py:205-227</span></td></tr>
+    <tr><td>4</td><td><strong>每层一次 all-gather</strong>（prefill latent，attention 之前）；<strong>每步一次 all-gather</strong>（hidden，采样之前）</td><td><span class="file-ref">mla_attention.py:636-664</span>、<span class="file-ref">pcp_manager.py:607-611</span></td></tr>
+  </table>
+  <div class="callout info"><strong>不变量 1 是支点</strong>：每个 rank 都有完整 KV → decode 零通信；prefill 每层 gather 一次新 token 的 latent 即让所有 rank 缓存收敛。</div>
+
+  <!-- ==================== Part 1 启动 ==================== -->
+  <h2 id="s1"><span class="sec-no">1</span>第一部分 · 拉起服务：PCP 初始化</h2>
+  <p>命令形如 <code>vllm serve deepseek-ai/DeepSeek-V3 --prefill-context-parallel-size 2 --tensor-parallel-size 1 ...</code>。启动按下面 5 步初始化 PCP。</p>
+
+  <div class="step">
+    <span class="step-no">启动 ①</span><span class="step-title">命令行参数 → 配置对象</span>
+    <p class="src">文件：<span class="file-ref">vllm/config/parallel.py</span></p>
+    <p><code>--prefill-context-parallel-size 2</code> 落到 <code>ParallelConfig.prefill_context_parallel_size = 2</code>（<span class="file-ref">parallel.py:126-128</span>）。注释原文：<em>"PCP expands the process world size but does not increase the KV-cache shard count"</em>——PCP 扩的是进程数，不是 KV 分片数。</p>
+  </div>
+
+  <div class="step">
+    <span class="step-no">启动 ②</span><span class="step-title">进程组初始化：构建 PCP 通信组</span>
+    <p class="src">文件：<span class="file-ref">vllm/distributed/parallel_state.py</span></p>
+    <p><code>initialize_model_parallel</code>（:1746）把 world_size 排成五维点阵（:1821-1827），再对 PCP 维做「transpose → reshape → unbind」投影（:1864-1881）：</p>
+    <pre><code>all_ranks = torch.arange(world_size).reshape(-1, DP, PP, PCP, TP)   <span class="cm"># TP 最内维</span>
+group_ranks = (
+    all_ranks.transpose(3, 4)          <span class="cm"># PCP 换到最内维</span>
+    .reshape(-1, prefill_context_model_parallel_size)
+    .unbind(0)                         <span class="cm"># 每行一个 PCP 组</span>
+)
+_PCP = init_model_parallel_group(group_ranks, ..., group_name="pcp")</code></pre>
+    <p>结果：<strong>PCP 组 = 每个 TP 组各抽一个同位 rank 组成的横向集合</strong>（跨 TP 组、组内共享 (pp,tp) 坐标）。此后全代码库经 <code>get_pcp_group()</code>（:1449-1451）取用。</p>
+  </div>
+
+  <div class="step">
+    <span class="step-no">启动 ③</span><span class="step-title">PCP &gt; 1 强制切到 V2 runner</span>
+    <p class="src">文件：<span class="file-ref">vllm/config/vllm.py:583-585</span></p>
+    <p>PCP 是 MRV2（V2 model runner）专属特性。配置校验强制 <code>prefill_context_parallel_size &gt; 1</code> 时启用 V2 runner；V1 runner 里 PCP 只存在于一个兼容性检查（<span class="file-ref">gpu_model_runner.py:7122</span>）。</p>
+  </div>
+
+  <div class="step">
+    <span class="step-no">启动 ④</span><span class="step-title">V2 model runner 构造 PCPManager</span>
+    <p class="src">文件：<span class="file-ref">vllm/v1/worker/gpu/model_runner.py:489</span> → <span class="file-ref">pcp_manager.py:651-680</span></p>
+    <pre><code>self.pcp_manager = pcp.maybe_build_pcp_manager(
+    self.vllm_config, self.device, self.supports_mm_inputs,
+    self.req_states, self.block_tables,
+)   <span class="cm"># model_runner.py:489-495</span>
+
+<span class="cm"># maybe_build_pcp_manager（pcp_manager.py:651-680）</span>
+pcp_size = parallel_config.prefill_context_parallel_size
+if pcp_size &lt;= 1:
+    return None                       <span class="cm"># 关 PCP 时返回 None，全链路短路</span>
+PCPManager.validate_config(vllm_config, supports_mm_inputs)   <span class="cm"># 限制清单</span>
+pcp_rank = get_pcp_group().rank_in_group
+...
+return PCPManager(pcp_world_size=pcp_size, pcp_rank=pcp_rank, ...)</code></pre>
+    <p><code>validate_config</code>（<span class="file-ref">pcp_manager.py:124-161</span>）在启动期就拦住不支持的组合：<strong>仅 MLA 模型</strong>（:135-136）、禁 PP/encoder-decoder/多模态/LoRA/投机（:137-150）、sparse MLA 禁 cudagraph、仅 PIECEWISE cudagraph（:151-161）。</p>
+    <p><code>PCPManager.__init__</code>（:46-122）预分配启动期就准备好的缓冲区：本地请求 buffer 按 <strong>2×max_num_reqs</strong> 分配（一个全局请求最多裂成两个本地段）、slot mapping 按 <strong>W × 全局 token 数</strong>分配（gathered 布局宽度）、<code>_pad_slot_id</code> 常驻 GPU。</p>
+  </div>
+
+  <div class="step">
+    <span class="step-no">启动 ⑤</span><span class="step-title">服务就绪，等待请求</span>
+    <p>到此启动阶段完成：PCP 组建好、PCPManager 就位、限制校验通过。之后所有 PCP 逻辑只在「请求进来 → 模型前向」这条链路上生效，调度器与 KV 分配对 PCP 零感知。</p>
+  </div>
+
+  <!-- ==================== Part 2 请求流转 ==================== -->
+  <h2 id="s2"><span class="sec-no">2</span>第二部分 · 长序列请求的完整流转</h2>
+  <p>假设一个 128K 上下文的 DeepSeek-V3 请求进来（PCP=2、TP=1，2 张卡）。下面按时间顺序走完整个流转。</p>
+
+  <div class="step">
+    <span class="step-no">流转 ①</span><span class="step-title">请求到达 → 调度器（对 PCP 透明）</span>
+    <p class="src">文件：<span class="file-ref">vllm/v1/core/sched/scheduler.py</span>（三处提及 PCP，无任何 PCP 调度逻辑）+ <span class="file-ref">vllm/v1/core/sched/output.py:192-283</span></p>
+    <p><strong>①-a "透明"的准确含义</strong>：调度器做「这一步跑谁、各算多少 token、KV 写进哪些块」的决策时，全程使用<strong>全局口径</strong>。scheduler.py 里其实有 3 处 PCP 字样，但没有一处是 PCP 逻辑：</p>
+    <pre><code><span class="cm"># ① 读配置（只是取值，不决策）—— scheduler.py:174-175</span>
+self.dcp_world_size = vllm_config.parallel_config.decode_context_parallel_size
+self.pcp_world_size = vllm_config.parallel_config.prefill_context_parallel_size
+
+<span class="cm"># ② 建 KV 管理器：PCP 被"故意当成 1"——透明性的核心实现 —— scheduler.py:284-285</span>
+self.kv_cache_manager = KVCacheManager(
+    ...
+    dcp_world_size=self.dcp_world_size,   <span class="cm"># DCP：真实值透传（KV 会被交错切分）</span>
+    pcp_world_size=1,                      <span class="cm"># PCP：硬编码 1（KV 不切分，保持全量副本）</span>
+)
+
+<span class="cm"># ③ 一个兼容性断言（拒绝组合，不是逻辑）—— scheduler.py:341-345</span></code></pre>
+    <p>对照 DCP 就更好懂：DCP 要交错切分 KV cache，所以分配器必须知道 <code>dcp_world_size</code>；PCP 是「部分 query + 全量 KV」（gather 变体），分配器必须被瞒住（<code>=1</code>）。<strong>透明不是"无感知"，而是"被强制按 1 处理"——PCP 的存在被刻意从分配路径里抹掉了。</strong></p>
+    <p><strong>①-b 调度产出：全局 SchedulerOutput</strong>（<span class="file-ref">output.py:192-283</span>）——调度器（CPU 单进程）与所有 worker 之间的唯一数据契约，四组字段：</p>
+    <table>
+      <tr><th>组</th><th>关键字段</th><th>含义</th></tr>
+      <tr><td>A. 本步调度内容</td><td><code>scheduled_new_reqs</code>（:197）、<code>scheduled_cached_reqs</code>（:201）、<code>num_scheduled_tokens</code>（:205）、<code>total_num_scheduled_tokens</code>（:208）、<code>scheduled_spec_decode_tokens</code>（:212）、<code>scheduled_encoder_inputs</code>（:216）、<code>num_common_prefix_blocks</code>（:219）</td><td>首次调度请求的完整数据（prompt、block_ids…）/ 已调度请求的增量 diff / 每请求本步 token 数（<strong>全局口径</strong>）/ 总和 / 投机 draft token / 多模态编码器输入 / 公共前缀块数</td></tr>
+      <tr><td>B. KV 块分配</td><td><code>new_block_ids_to_zero</code>（:253-256）、<code>kv_cache_block_copies</code>（:258-259）</td><td>本步新分配的物理块（worker 要先清零防脏数据）/ CoW 块拷贝；块分配本体在 A 的 <code>block_ids</code> / <code>new_block_ids</code> 里，同样是全局口径</td></tr>
+      <tr><td>C. 生命周期</td><td><code>finished_req_ids</code>（:224）、<code>free_encoder_mm_hashes</code>（:227）、<code>preempted_req_ids</code>（:233）</td><td>上一步与本步之间结束的请求（通知 worker 释放缓存状态）/ 释放编码器缓存 / 被抢占的请求（v2 runner）</td></tr>
+      <tr><td>D. 附加能力</td><td><code>has_structured_output_requests</code>（:237）、<code>kv_connector_metadata</code>（:247）、<code>num_spec_tokens_to_schedule</code>（:269）等</td><td>结构化输出 / KV 传输连接器 / 动态投机解码等元数据</td></tr>
+    </table>
+    <p><strong>①-c 广播：每个 rank 拿到逐字节相同的全局 batch</strong></p>
+    <pre><code><span class="cm"># vllm/v1/engine/core.py:595-596 —— 调度器只跑一次，产出唯一全局 SchedulerOutput</span>
+scheduler_output = self.scheduler.schedule(self._should_throttle_prefills())
+future = self.model_executor.execute_model(scheduler_output, non_block=True)
+
+<span class="cm"># vllm/v1/executor/abstract.py:224-227 —— collective_rpc 把同一对象广播给所有 worker</span>
+def execute_model(self, scheduler_output, non_block=False):
+    output = self.collective_rpc("execute_model", args=(scheduler_output,), non_block=non_block)
+    return output[0]</code></pre>
+    <p>PCP rank 0 和 rank 1 拿到的 <code>num_scheduled_tokens</code>、<code>block_ids</code> <strong>完全一致</strong>——描述的都是一条完整的 128K 序列、它全部的 KV 块（<code>num_scheduled_tokens</code> 是 128K 而不是 64K）。<strong>差异从这之后才开始</strong>：每个 rank 用这份相同蓝图各自构建 InputBatch，再在 <code>partition_batch</code>（流转③）里切出自己那 1/P 份。</p>
+  </div>
+
+  <div class="step">
+    <span class="step-no">流转 ②</span><span class="step-title">prepare_inputs 构造全局 InputBatch，然后 partition</span>
+    <p class="src">文件：<span class="file-ref">vllm/v1/worker/gpu/model_runner.py:932-1165</span></p>
+    <p><code>prepare_inputs</code> 把调度结果翻译成<strong>全局 InputBatch</strong>，源码注释自带 ①~⑭ 编号，全程写进预分配好的 <code>input_buffers</code>（避免每步重新 malloc）：</p>
+    <table>
+      <tr><th>步</th><th>做什么</th><th>行</th></tr>
+      <tr><td>①</td><td>基本量：<code>num_tokens</code> 真实 token 数 vs <code>num_tokens_after_padding</code>（对齐到 cudagraph 尺寸）</td><td><span class="file-ref">:943-944</span></td></tr>
+      <tr><td>②</td><td>MoE 跳过填充行的标记（可选）</td><td><span class="file-ref">:949-955</span></td></tr>
+      <tr><td>③</td><td>请求排序：decode 先行、prefill 殿后；<code>idx_mapping</code> 桥接 batch 位置 ↔ req_state 索引</td><td><span class="file-ref">:957-973</span></td></tr>
+      <tr><td>④</td><td>投机解码 logits 行规划（无投机时每请求恰好 1 行）</td><td><span class="file-ref">:975-1016</span></td></tr>
+      <tr><td>⑤</td><td><code>query_start_loc</code> 前缀和（每请求 token 区间起点；填充位塞成 <code>num_tokens</code> 保证非递减）</td><td><span class="file-ref">:1018-1029</span></td></tr>
+      <tr><td>⑥</td><td>prefill/decode 判定：已算 token 数 &lt; prompt 长度</td><td><span class="file-ref">:1031-1037</span></td></tr>
+      <tr><td>⑦</td><td>prefill 行 input_ids：从 all_token_ids 拷入 <code>[num_computed, num_computed+query_len)</code></td><td><span class="file-ref">:1039-1053</span></td></tr>
+      <tr><td>⑧</td><td>positions 与 seq_lens（Triton kernel，逐请求一个 thread block）</td><td><span class="file-ref">:1055-1066</span></td></tr>
+      <tr><td>⑨</td><td>DCP 专用：本地序列长 <code>dcp_local_seq_lens</code></td><td><span class="file-ref">:1068-1082</span></td></tr>
+      <tr><td>⑩</td><td>decode 行 input_ids + <code>logits_indices</code>（哪些 token 的隐藏态要取出来算 logits/采样）</td><td><span class="file-ref">:1084-1102</span></td></tr>
+      <tr><td>⑪</td><td>seq_lens 的 CPU 侧上界（= num_computed + num_scheduled，免 GPU 同步）</td><td><span class="file-ref">:1104-1115</span></td></tr>
+      <tr><td>⑫</td><td>PP 专用：max_seq_len（非末级 rank 决定哪些隐藏态继续传下一级）</td><td><span class="file-ref">:1117-1122</span></td></tr>
+      <tr><td>⑬</td><td>R-SWA 专用：prompt 长度</td><td><span class="file-ref">:1124-1128</span></td></tr>
+      <tr><td>⑭</td><td>组装 InputBatch（视图：只取前 <code>num_*_after_padding</code> 个）</td><td><span class="file-ref">:1130-1162</span></td></tr>
+    </table>
+    <p>关键点：这是<strong>全局口径</strong>的 InputBatch——128K prefill 时 <code>num_tokens = 128K</code>、input_ids 是完整 prompt 顺序，PCP 还没出现。最后一行是 PCP 入口（:1165）：</p>
+    <pre><code>return pcp.maybe_partition_pcp_batch(self.pcp_manager, input_batch)</code></pre>
+  </div>
+
+  <div class="step">
+    <span class="step-no">流转 ③</span><span class="step-title">partition_batch：长序列切成 DualChunk 块分到各 rank</span>
+    <p class="src">文件：<span class="file-ref">vllm/v1/worker/gpu/pcp_manager.py:319-542</span>（门面 <span class="file-ref">maybe_partition_pcp_batch :621-627</span>）</p>
+    <p>门面只有三行：<code>manager is None</code> 就原样返回（非 PCP 模式零开销），否则进 <code>partition_batch</code>。<strong>切分发生在每个 worker 自己本地</strong>——每个 rank 拿着同一份全局 batch，各自切出自己那份。分七小步：</p>
+    <p><strong>③-a 存档全局视图 + 守卫</strong>（:327-328, :324-325）：<code>self._global_batch = global_batch</code>——采样前恢复用的「存档」；投机解码直接 NotImplementedError（PCP 不支持 spec decode）。</p>
+    <p><strong>③-b 布局几何：DualChunkSwap 切法</strong>（<code>_get_rank_segments</code> :195-250）：一条长 prefill 切成 <code>num_chunks = 2×W</code> 块，rank r 认领<strong>块 r 与块 2W−1−r</strong>（镜像双块，覆盖整个 query 恰好一次，每 rank 负载 ≈ query_len/W）：</p>
+    <pre><code>num_chunks = 2 * self.pcp_world_size
+...
+if is_prefilling:                                  <span class="cm"># prefill</span>
+    chunk_indices = (rank, num_chunks - 1 - rank)       <span class="cm"># 双块镜像</span>
+else:                                              <span class="cm"># decode 复制</span>
+    chunk_indices = (0,)</code></pre>
+    <p>decode 每步只有 1 个 token/请求，切成 W 份没有收益且增加延迟，所以<strong>全复制</strong>——每个 rank 都算这个 token（冗余计算），KV 只由 rank 0 写（见 ③-d 写掩码）。每个片段是一个 <code>RankSegment</code>（:26-34）；<strong>同一请求的两块是两个独立本地段</strong>——这就是 PCPManager 的本地缓冲区按 <strong>2×max_num_reqs</strong> 分配的原因（:74）。</p>
+    <p><strong>③-c 纯 prefill 殿后</strong>（<code>_reorder_segments</code> :163-193）：decode/continued prefill 段排前、纯 prefill 段排后——MLA/sparse MLA 的 attention 后端要求 decode 在前、prefill 在后。</p>
+    <p><strong>③-d 三个索引张量——整套设计的「几何」</strong>（<code>_build_batch_layout</code> :252-317，每步重建并拷上 GPU）：</p>
+    <pre><code><span class="cm"># PCP=2 代码自带例子（:273-280）</span>
+global batch:       [A B C D E F G]            <span class="cm"># 7 个 token，一个 prefill 请求</span>
+rank 0 / rank 1:    [A B G] / [C D E F]
+padded gathered:    [A B G _ | C D E F]        <span class="cm"># 每 rank 补齐到 max(3,4)=4</span>
+hidden_restore_idx: [0, 1, 4, 5, 6, 7, 2]      <span class="cm"># 全局 token → gathered 槽位（attention 后还原用）</span>
+padded_gather_idx:  [0, 1, 6, 0, 2, 3, 4, 5]   <span class="cm"># gathered 槽位 → 全局 token（index_select 用）</span></code></pre>
+    <p>外加 <code>gathered_kv_write_mask</code>（:285, :298-306）：<strong>prefill 槽全 rank 写真值（写 KV）、decode 槽只有 rank 0 写真值</strong>——保证每个 KV 槽恰好被写一次。padding 槽的 gather 索引随意（例子槽 3 的 0 不参与计算）。</p>
+    <p><strong>③-e 组装局部标量</strong>（:341-411）：<code>local_to_global_batch_req_idx</code>（局部段→全局请求）、<code>local_start_pos = num_computed[req] + chunk 在 query 内的偏移</code>（:363-372）——<strong>绝对位置</strong>，保证 chunk 即使来自序列中间，RoPE 也不坏；<code>num_local_tokens</code> 与 <code>num_local_tokens_padded = max(各 rank token 数)</code>（:386-387）——<strong>对齐到所有 rank 的最大值</strong>，这是后面 all-gather 能拼成规整矩形的必要条件。</p>
+    <p><strong>③-f 切 token：index_select 一行</strong>（:412-422）——「每个 rank 拿到自己那 1/P 份 token」的实现：</p>
+    <pre><code>rank_token_start = self.pcp_rank * num_local_tokens_padded
+local_gather_idx = self._padded_gather_idx[rank_token_start : rank_token_start + num_local_tokens_padded]
+torch.index_select(
+    global_batch.input_ids,     <span class="cm"># 全局 token 数组（完整 prompt 顺序）</span>
+    0,
+    local_gather_idx,           <span class="cm"># 本 rank 槽位 → 全局 token</span>
+    out=input_buffers.input_ids[:num_local_tokens_padded],
+)</code></pre>
+    <p>随后重建局部 <code>query_start_loc</code>（cumsum，:424-432）、<code>positions</code>/<code>seq_lens</code>（prepare_pos_seq_lens，:440-446）、<code>is_padding</code>（:448-450）并抹零 padding 槽的 input_ids/positions（:451-457）。</p>
+    <p><strong>③-g 组装局部 InputBatch</strong>（:459-542）：<code>cu_num_logits = arange(num_local_reqs+1)</code>——PCP 不支持投机，<strong>每个局部请求恰好 1 行 logits</strong>（对应「这个 chunk 算完能采样的那个 token」）；<code>local_is_prefilling</code> 按局部段重判（<code>min(local_start_pos, prefill_len) &lt; prefill_len</code>，:486-491）；最后 <code>dataclasses.replace</code>（:507-542）浅拷贝 + 覆盖所有 token 相关字段——<strong>「切分」的本质：同一份 InputBatch 结构，token 字段换成 rank 局部版本</strong>，完全不涉及 KV 数据（KV 在流转④）。</p>
+    <div class="callout green"><strong>此刻状态</strong>：每个 rank 手里是一个「只含自己两块 chunk」的本地 InputBatch（req 数 = 本地段数），全局 batch 被存档在 <code>self._global_batch</code>。<strong>恢复路径预览</strong>：attention 后 <code>restore_hidden_states</code>（:607-611）做 <code>all_gather(hidden, dim=0)</code> 再按 <code>hidden_restore_idx</code> 排回全局顺序——采样拿到的 hidden 和全局 batch 对齐（流转⑥展开）。</div>
+  </div>
+
+  <div class="step">
+    <span class="step-no">流转 ④</span><span class="step-title">prepare_attn：slot mapping 编址重排</span>
+    <p class="src">文件：<span class="file-ref">pcp_manager.py:544-605</span>（消费方 <span class="file-ref">model_executor/layers/attention/pcp.py:11-45</span>）</p>
+    <p><strong>④-a 先回顾：slot 怎么算（公式里没有 PCP）</strong>——slot = 该 token 的 KV 在物理缓存里的地址。计算 kernel（<span class="file-ref">gpu/block_table.py:299-307</span>，DCP=1 时）：</p>
+    <pre><code>block_indices = positions // block_size     <span class="cm"># 第几个逻辑块</span>
+block_offsets = positions % block_size      <span class="cm"># 块内偏移</span>
+block_numbers = tl.load(block_table[req, block_indices])   <span class="cm"># 查页表 → 物理块号</span>
+slot_ids = block_numbers * block_size + block_offsets      <span class="cm"># 物理块号×块大小+偏移</span></code></pre>
+    <p>它只依赖全局 position、请求页表、block_size——<strong>跟 PCP 无关</strong>（只有 DCP 才改公式）。PCP 只做两件事：把「全局 token 序」的槽数组按 <code>padded_gather_idx</code> <strong>重排</strong>成 gathered 布局，再按 <code>gathered_kv_write_mask</code> 把不该写的槽位<strong>打上 -1</strong>。</p>
+    <p><strong>④-b prepare_attn 的三件事</strong>（<span class="file-ref">pcp_manager.py:544-605</span>）：</p>
+    <pre><code>block_tables = gather_block_tables(local idx_mapping, out=...)   <span class="cm"># ① 页表：按局部行抓取（:550-555）</span>
+global_batch_slot_mappings = compute_slot_mappings(global_batch...)  <span class="cm"># ② 槽在【全局 batch】上算（:564-570）</span>
+torch.index_select(global_batch_slot_mappings, 1, padded_gather_idx, out=...)  <span class="cm"># ③a 重排成 gathered 布局</span>
+torch.where(gathered_kv_write_mask, gathered_slot, PAD_SLOT_ID, out=...)       <span class="cm"># ③b 不该写的槽填 -1</span></code></pre>
+    <p><strong>④-c 为什么不能直接在局部 batch 上算</strong>：① 页表是全局的（局部 batch 里同一请求出现两次，行序已乱）；② 写掩码是<strong>跨 rank 决策</strong>（「decode 只有 rank 0 写」）；③ 写路径本来就在 gathered 空间执行（latent 先 all-gather，见 ④-f）；④ 全局一次 kernel + 一次 <code>index_select</code>，比局部重算便宜。</p>
+    <p><strong>④-d 数字例子（PCP=2，block_size=4）——纯 prefill：一条 7 token 请求</strong></p>
+    <p>页表：逻辑块 0 → 物理块 <strong>10</strong>，逻辑块 1 → 物理块 <strong>11</strong>。</p>
+    <table>
+      <tr><th>token</th><th>pos</th><th>逻辑块</th><th>物理块</th><th>slot = 物理块×4+偏移</th></tr>
+      <tr><td>P0</td><td>0</td><td>0</td><td>10</td><td>40</td></tr>
+      <tr><td>P1</td><td>1</td><td>0</td><td>10</td><td>41</td></tr>
+      <tr><td>P2</td><td>2</td><td>0</td><td>10</td><td>42</td></tr>
+      <tr><td>P3</td><td>3</td><td>0</td><td>10</td><td>43</td></tr>
+      <tr><td>P4</td><td>4</td><td>1</td><td>11</td><td>44</td></tr>
+      <tr><td>P5</td><td>5</td><td>1</td><td>11</td><td>45</td></tr>
+      <tr><td>P6</td><td>6</td><td>1</td><td>11</td><td>46</td></tr>
+    </table>
+    <p>→ <code>global_slot_mappings = [40, 41, 42, 43, 44, 45, 46]</code>（一次 kernel 算完）</p>
+    <p>partition 几何（chunk_size = ceil(7/4) = 2，padded = max(3,4) = 4）：</p>
+    <pre><code>padded_gather_idx   = [0, 1, 6, 0,   2, 3, 4, 5]
+                        rank0: P0 P1 P6 pad ┃ rank1: P2 P3 P4 P5
+gathered_kv_write_mask = [T, T, T, F,   T, T, T, T]   <span class="cm"># prefill 全写；pad 不写</span></code></pre>
+    <p>index_select + where：</p>
+    <pre><code>index_select(global, 1, gather_idx) → [40, 41, 46, 40,   42, 43, 44, 45]
+torch.where(write_mask, ...)        → [40, 41, 46, -1,   42, 43, 44, 45]</code></pre>
+    <p>各 rank 写 KV（latent 先 all-gather，写路径按位置对齐）：rank 0 写 P0→<strong>40</strong>、P1→<strong>41</strong>、P6→<strong>46</strong>；rank 1 写 P2→<strong>42</strong>、P3→<strong>43</strong>、P4→<strong>44</strong>、P5→<strong>45</strong>。<strong>40~46 七个槽跨两个 rank 恰好各写一次</strong>，之后两个 rank 的本地 KV 副本都是完整的 7 个 token。</p>
+    <p><strong>④-e 加一个 decode 请求</strong>（1 token，position 100，物理块 25 → slot 100）。全局顺序 decode 在前：</p>
+    <pre><code>global_slot_mappings = [100, 40, 41, 42, 43, 44, 45, 46]
+padded_gather_idx   = [0, 1, 2, 7, 0,   0, 3, 4, 5, 6]
+                        rank0: D P0 P1 P6 pad ┃ rank1: D P2 P3 P4 P5
+gathered_kv_write_mask = [T, T, T, T, F,  F, T, T, T, T]   <span class="cm"># D 是 decode：只有 rank0 写！</span>
+index_select → [100, 40, 41, 46, 100,   100, 42, 43, 44, 45]
+where(mask)  → [100, 40, 41, 46,  -1,    -1, 42, 43, 44, 45]</code></pre>
+    <p>结果：rank 0 写 D→<strong>100</strong>（每个 rank 都算了这个 decode token，但只有 rank 0 落盘）；rank 1 的 D 槽 <code>-1</code> 跳过。<strong>decode 的 KV 恰好写一次，prefill 的槽也各写一次</strong>——这就是写掩码存在的全部意义。</p>
+    <p><strong>④-f 消费方：写路径为什么吃 gathered 布局</strong>（<span class="file-ref">model_executor/layers/attention/pcp.py:11-45</span>）——MLA forward 每层先 gather latent 再写 KV：</p>
+    <pre><code>gathered_prefills = tuple(
+    pcp_group.all_gather(tensor[num_decode_tokens:].contiguous(), dim=0)
+    for tensor in tensors)          <span class="cm"># 各 rank 的 prefill latent 拼成 [W×local]</span>
+gathered_slot_mapping = slot_mapping[: pcp_size * local_num_tokens]   <span class="cm"># 槽映射同样截到 W×local</span>
+cache_slot_mapping = torch.cat(
+    (rank_slot_mappings[0, :num_decode_tokens],      <span class="cm"># decode：只取 rank0（其余已被掩码置 -1）</span>
+     rank_slot_mappings[:, num_decode_tokens:].flatten()),  <span class="cm"># prefill：全 rank 槽按 gathered 顺序摊平</span>
+)</code></pre>
+    <p><code>slot_mapping[: W×local]</code> 对齐的正是 ③ 产出的 <code>[W×padded]</code> 张量（<code>padded ≥ local</code>，截到实际用到的部分）。<strong>槽数组第 i 位 = gathered 张量第 i 行，一一对应</strong>；写 KV 的 kernel 按槽号 scatter 进物理缓存，<code>-1</code> 的位置自然跳过。</p>
+  </div>
+
+  <div class="step">
+    <span class="step-no">流转 ⑤</span><span class="step-title">模型前向：先写 KV，后做 attention</span>
+    <p class="src">文件：<span class="file-ref">mla_attention.py:601-665</span> + <span class="file-ref">model_executor/layers/attention/pcp.py:11-45</span> + <span class="file-ref">mla_attention.py:2430-2579</span></p>
+    <p><strong>⑤-a 每层先把 latent gather 齐、写进 KV cache</strong>：</p>
+    <pre><code>kv_for_cache, kpe_for_cache, layer_slot_mapping = (
+    maybe_gather_mla_latent_cache_inputs(kv_c_normed, k_pe, slot_mapping,
+                                         num_decode_tokens, use_pcp))  <span class="cm"># :636-646</span>
+self.impl.do_kv_cache_update(...)                                      <span class="cm"># :647-654 写 KV</span></code></pre>
+    <p><code>_gather_prefill_cache_inputs</code>（model_executor/layers/attention/pcp.py:11-45）的核心：</p>
+    <pre><code>gathered_prefills = tuple(
+    pcp_group.all_gather(tensor[num_decode_tokens:].contiguous(), dim=0)
+    for tensor in tensors)   <span class="cm"># 把各 rank 的 prefill 块 latent 跨 PCP 组收集</span></code></pre>
+    <p>gather 后<strong>每个 rank 都拿到全部 2W 块的 latent</strong>，各自写进本地副本——所有 rank 的 KV 缓存瞬间收敛成全量（不变量 1）。decode 段用各 rank 自己算的（内容相同的）latent 写，槽位统一取 rank 0 行。</p>
+    <div class="callout info"><strong>两种 all-gather 别混淆</strong>：<strong>每层一次的是 latent</strong>（kv_c+k_pe，576 维，attention 前，<span class="file-ref">pcp.py:24</span>）；<strong>每步一次的是 hidden</strong>（7168 维，采样前，<span class="file-ref">pcp_manager.py:610</span>）。hidden 不在层间 gather——层间唯一的跨 token 依赖是 attention，而它的数据（KV）已通过每层 latent gather 全量本地化；MLP/残差/LayerNorm 逐 token 独立。为什么 gather 小 latent 而不是大 hidden：576 vs 7168 维差 12 倍，每层 gather hidden 会到 ~56GB/步，latent 只要 ~4.5GB/步。</div>
+    <div class="callout green"><strong>前缀命中（APC）× PCP</strong>：前缀缓存命中 = <strong>本地块复用</strong>，不是"往多个 rank 拉取"。块 hash 去重 + CoW 在调度器（单进程）做，广播全局块号后每个 rank 在自己本地块池执行同样的复用；而 PCP 不变量 1 保证前缀 KV 每个 rank 本地早已有全量副本——命中零跨 rank 移动。本步只算未命中部分：partition 只切 <code>num_scheduled_tokens</code>（未命中段），<code>local_start_pos = num_computed + chunk 偏移</code>（绝对位置，RoPE/槽位正确），all-gather 只 gather 未命中的新 latent，写缓存只碰新槽。注意：带前缀的 prefill 是 continued prefill（extend），不是"纯 prefill"——它的 chunk 排在纯 prefill 之前（流转③-c）。</div>
+    <p><strong>⑤-b 再做 attention（prefill = chunked context）</strong>：</p>
+    <pre><code>for i in range(iters):                              <span class="cm"># 对每个 context chunk</span>
+    <span class="cm"># ① gather 该 chunk 的 KV（本地 cache，全量在手）              :2456-2488</span>
+    <span class="cm"># ②（PCP×DCP 时）跨 DCP 组 all-gather 重建完整 chunk           :2500-2503</span>
+    <span class="cm"># ③ reorg_kvcache 按 local_context_lens_allranks 重排          :2512-2524</span>
+    <span class="cm"># ④ kv_b_proj 上采样 latent → K_nope/V，拼 k_pe                :2536-2543</span>
+    <span class="cm"># ⑤ run_prefill_context_chunk(i, q, k, v) → out + LSE          :2545-2552</span>
+    <span class="cm"># ⑥ merge_attn_states 按 LSE 在线合并                           :2568-2577</span>
+return output, output_lse</code></pre>
+    <p>context 分块由 <code>build_mla_chunked_context_metadata</code>（:1595-1773）按 workspace 容量切；<code>run_prefill_context_chunk</code>（<span class="file-ref">prefill/flash_attn.py:451-470</span>）用 <code>causal=False</code>（context 都是合法前缀）、返回 <strong>LSE</strong>；<code>merge_attn_states</code> 是 <strong>rank 内</strong>的 online-softmax 合并（KV 已全量本地，不是跨 rank 协议）。</p>
+    <div class="callout"><strong>"拷贝了两次"？准确说是"gather 暂存 + scatter 落盘"</strong>：gathered 缓冲（all-gather 输出，连续布局）与 KV 缓存（slot 散列布局）不兼容，NCCL 没有"按任意索引的 gather-scatter 融合原语"（它的原语都是每 rank 一个连续段），所以必须两步——先 gather 成连续暂存（通信，占互连带宽），再按 slot scatter 写缓存（本地显存写，不占互连）。暂存缓冲每层复用、用完即弃；真正的"重复存储"是 KV 缓存本身按 rank 复制 W 份（不变量 1，故意的取舍）。decode 段完全不 gather（<span class="file-ref">pcp.py:21-22</span>）。<strong>为什么 vLLM 不写定制融合算子</strong>：任意索引通信场景不少（MoE 专家路由、稀疏 MLA 的 top-k KV 检索、分布式 KV），但生产实现统一走"本地置换 + 连续集合通信"（MoE 的 <code>moe_align_block_size</code> + all-to-all，PCP 的 all-gather + <code>index_select</code>）；因为 NCCL 对全广播已近带宽下界（ring ~2(W−1)/W），定制省的是"暂存往返"这个常数因子，而正确性/跨平台维护成本很高——定制通信只出现在 NCCL 表达不了的"分片/按需"场景（ring CP 的 p2p、indexer 的按索引抓取）。</div>
+  </div>
+
+  <div class="step">
+    <span class="step-no">流转 ⑥</span><span class="step-title">restore + 采样：首 token（TTFT）</span>
+    <p class="src">文件：<span class="file-ref">pcp_manager.py:607-618</span> + <span class="file-ref">model_runner.py:1545-1551</span></p>
+    <pre><code>def restore_hidden_states(self, hidden_states):
+    gathered = get_pcp_group().all_gather(hidden_states, dim=0)   <span class="cm"># 各 rank 块输出拼回</span>
+    return gathered[self._hidden_restore_idx]                     <span class="cm"># 还原全局 token 顺序</span>
+
+# model_runner.py:1545-1551
+hidden_states, input_batch = pcp.maybe_restore_pcp_for_sampling(...)
+sampler_output, ... = self.sample(hidden_states, input_batch, ...)  <span class="cm"># 用全局 batch 采样</span></code></pre>
+    <p>各 rank 的 hidden 宽度已在 partition 时 padding 拉齐，<code>all_gather(dim=0)</code> 直接可行；<code>gathered[hidden_restore_idx]</code> 还原成全局顺序。每个 rank 恢复出的 hidden 完全一致 → 算出相同 logits → 采出相同首 token（同种子）。<strong>这就是 TTFT 的终点。</strong></p>
+    <div class="callout purple"><strong>采样前全量 restore 能不能省？</strong>采样只需要每请求"最后一行"的 logits（<code>hidden[logits_indices]</code>，<span class="file-ref">model_runner.py:1203</span>），全量 restore 不是正确性必需。prefill 时 last token 在 chunk 2W−1、恒在 rank 0（长 query 时）；decode 时每张卡都有（复制执行）——理论上"单卡算 logits + 广播结果"可行。vLLM 仍全量 restore 的三个理由：① <strong>采样路径保持 PCP 透明</strong>——restore 把 hidden 恢复成全局顺序，<code>sample()</code> 与非 PCP 完全一致，不需要"行→rank 映射"特判；② <strong>所有 rank 同种子独立采样</strong> → 免去"谁采样再广播 token"的新同步协议；③ <strong>成本可控</strong>——restore 每步一次（decode 步只有 1 token，量可忽略），而每层 latent gather 是 61×74MB ≈ 4.5GB，restore 的 ~917MB 是小头。这是"用通信换实现简单"的取舍，不是必要开销。</div>
+  </div>
+
+  <div class="step">
+    <span class="step-no">流转 ⑦</span><span class="step-title">decode 阶段：逐 token 复制执行、零通信</span>
+    <p class="src">文件：<span class="file-ref">pcp_manager.py:225-227</span>（decode 复制）+ <span class="file-ref">mla_attention.py:880-990</span></p>
+    <p>prefill 结束进入 decode：调度器每步只调度 1 个新 token，PCP 的 <code>chunk_indices = (0,)</code> 让这个 decode token <strong>复制到每个 rank</strong>。每个 rank 用自己完整的 KV 副本独立算注意力（q_nope 吸收进 latent：<code>bmm(mqa_q_nope, W_UK_T)</code> :888），<strong>decode 全程零 PCP 通信</strong>。代价是注意力算力按请求复制 W 份——「PCP 不加速 decode」的根源；KV 容量交给 DCP。</p>
+  </div>
+
+  <div class="step">
+    <span class="step-no">流转 ⑧</span><span class="step-title">回写调度器、流式返回（PCP 透明）</span>
+    <p>采样出的 token 回写调度器、流式返回客户端——这两步对 PCP 完全无感（任何 rank 的结果都等价）。请求结束。</p>
+  </div>
+
+  <!-- ==================== Part 3 通信账 ==================== -->
+  <h2 id="s3"><span class="sec-no">3</span>全程通信账</h2>
+  <table>
+    <tr><th>阶段</th><th>PCP 通信</th><th>说明</th></tr>
+    <tr><td>prefill 每层</td><td>1 次 latent all-gather</td><td>attention 之前（model_executor/layers/attention/pcp.py:24），每层都发生</td></tr>
+    <tr><td>prefill 每步</td><td>1 次 hidden all-gather</td><td>采样之前（pcp_manager.py:610）</td></tr>
+    <tr><td>decode 每步</td><td><strong>0</strong></td><td>复制执行 + 本地全量 KV（PCP×DCP 组合除外）</td></tr>
+  </table>
+  <p class="note">量级（W=2、128K 序列、fp16）：每层 latent 每 rank 收发 ~74MB（61 层 ≈ 4.5GB/步）——latent 是通信大头，但单次小、可与同层计算重叠；hidden 每步一次 ~917MB。真要优化通信，先砍 latent（如压 FP8 直接减半），其次才轮到省 restore（见流转⑥ callout）。前缀命中时本步只 gather 未命中部分，通信量同比例变小。</p>
+
+  <!-- ==================== Part 4 行号索引 ==================== -->
+  <h2 id="s4"><span class="sec-no">4</span>行号索引</h2>
+  <table>
+    <tr><th>过程</th><th>位置</th></tr>
+    <tr><td>配置项 prefill_context_parallel_size</td><td><span class="file-ref">parallel.py:126-128</span></td></tr>
+    <tr><td>PCP 组构建</td><td><span class="file-ref">parallel_state.py:1864-1881</span></td></tr>
+    <tr><td>get_pcp_group()</td><td><span class="file-ref">parallel_state.py:1449-1451</span></td></tr>
+    <tr><td>PCP&gt;1 强制 V2 runner</td><td><span class="file-ref">vllm.py:583-585</span></td></tr>
+    <tr><td>PCPManager 构造</td><td><span class="file-ref">model_runner.py:489-495</span>、<span class="file-ref">pcp_manager.py:651-680</span></td></tr>
+    <tr><td>限制清单 validate_config</td><td><span class="file-ref">pcp_manager.py:124-161</span></td></tr>
+    <tr><td>partition 入口</td><td><span class="file-ref">model_runner.py:1165</span></td></tr>
+    <tr><td>prepare_inputs 全局 InputBatch</td><td><span class="file-ref">model_runner.py:932-1165</span></td></tr>
+    <tr><td>SchedulerOutput 定义（四组字段）</td><td><span class="file-ref">output.py:192-283</span></td></tr>
+    <tr><td>调度器透明（pcp_world_size=1 硬编码）</td><td><span class="file-ref">scheduler.py:174-175, 284-285</span></td></tr>
+    <tr><td>SchedulerOutput 广播给所有 rank</td><td><span class="file-ref">core.py:595-596</span>、<span class="file-ref">abstract.py:224-227</span></td></tr>
+    <tr><td>DualChunkSwap 段划分</td><td><span class="file-ref">pcp_manager.py:195-250</span></td></tr>
+    <tr><td>三个索引张量</td><td><span class="file-ref">pcp_manager.py:252-317</span></td></tr>
+    <tr><td>本地 InputBatch 组装</td><td><span class="file-ref">pcp_manager.py:319-542</span></td></tr>
+    <tr><td>slot mapping 重排</td><td><span class="file-ref">pcp_manager.py:559-605</span></td></tr>
+    <tr><td>slot 公式（页表→物理槽）</td><td><span class="file-ref">gpu/block_table.py:299-307</span></td></tr>
+    <tr><td>latent 先 gather 再写 KV</td><td><span class="file-ref">mla_attention.py:636-654</span>、<span class="file-ref">model_executor/layers/attention/pcp.py:11-45</span></td></tr>
+    <tr><td>chunked context 分块 + 执行</td><td><span class="file-ref">mla_attention.py:1595-1773</span>、<span class="file-ref">mla_attention.py:2430-2579</span></td></tr>
+    <tr><td>run_prefill_context_chunk</td><td><span class="file-ref">prefill/flash_attn.py:451-470</span></td></tr>
+    <tr><td>decode 复制 + MQA</td><td><span class="file-ref">pcp_manager.py:225-227</span>、<span class="file-ref">mla_attention.py:880-990</span></td></tr>
+    <tr><td>hidden 恢复 + 采样</td><td><span class="file-ref">pcp_manager.py:607-618</span>、<span class="file-ref">model_runner.py:1545-1551</span></td></tr>
+    <tr><td>KV 只被 DCP 切分</td><td><span class="file-ref">single_type_kv_cache_manager.py:701-704</span></td></tr>
+  </table>
+
+  <div class="footer">
+    02_并行研究 · PCP 完整过程梳理 —— 生成于 2026-08-24。所有行号基于本地 vLLM checkout（MRV2，锚定 main @ 6e448d0ea），随版本可能变化；本报告为研究性导读。
+  </div>
+
+</div>
+</body>
+</html>

@@ -1,0 +1,929 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>注意力家族的张量并行（TP）拆解 — MHA · GQA · MLA · DSA 切分策略 × 完整前向 shape 走查</title>
+<!-- 霞鹜文楷：开源可商用的中文楷体风格字体；加载失败时自动回退到微软雅黑 -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/lxgw-wenkai-webfont@1.7.0/style.css">
+<style>
+  :root {
+    --ink: #1f2430;
+    --muted: #5c6470;
+    --accent: #b3354a;      /* 推理红 */
+    --accent2: #2c5fa8;     /* 深蓝 */
+    --bg: #ffffff;
+    --bg-soft: #f6f7f9;
+    --line: #e2e5ea;
+    --code-bg: #f2f4f7;
+    --green: #1e7d4f;
+    --purple: #6b3fa0;
+    --orange: #d98e04;
+  }
+  * { box-sizing: border-box; }
+  body {
+    font-family: "LXGW WenKai", "Microsoft YaHei", "PingFang SC", "Segoe UI", sans-serif;
+    font-size: 17.5px;
+    line-height: 1.85;
+    letter-spacing: 0.01em;
+    color: var(--ink);
+    background: var(--bg);
+    margin: 0;
+    padding: 0;
+  }
+  .wrap { max-width: 1120px; margin: 0 auto; padding: 40px 28px 120px; }
+  h1, h2, h3, h4, .kicker, .toc a, nav, .card-title, .tag {
+    font-family: "Microsoft YaHei", "PingFang SC", sans-serif;
+  }
+  h1 { font-size: 29px; line-height: 1.45; margin: 8px 0 6px; letter-spacing: 0.02em; }
+  h2 {
+    font-size: 23px; margin: 56px 0 16px; padding-bottom: 8px;
+    border-bottom: 2px solid var(--accent);
+    letter-spacing: 0.03em;
+  }
+  h2 .sec-no { color: var(--accent); margin-right: 8px; }
+  h3 { font-size: 19px; margin: 34px 0 10px; color: #16324f; }
+  h4 { font-size: 17px; margin: 22px 0 8px; color: var(--accent2); }
+  p { margin: 10px 0; }
+  ul, ol { margin: 10px 0; padding-left: 26px; }
+  li { margin: 4px 0; }
+  .kicker {
+    font-size: 13px; letter-spacing: 0.28em; color: var(--accent);
+    text-transform: uppercase; font-weight: 600;
+  }
+  .meta { color: var(--muted); font-size: 14.5px; margin: 4px 0 0; }
+  code, pre {
+    font-family: "Cascadia Code", Consolas, "Microsoft YaHei", monospace;
+  }
+  code {
+    background: var(--code-bg); padding: 1.5px 6px; border-radius: 4px;
+    font-size: 0.86em; color: #8a1f3d;
+  }
+  pre {
+    background: #1b2230; color: #dce3f0; border-radius: 10px;
+    padding: 14px 18px; font-size: 13px; line-height: 1.6;
+    overflow-x: auto;
+  }
+  pre code { background: none; color: inherit; padding: 0; font-size: inherit; }
+  table {
+    width: 100%; border-collapse: collapse; margin: 14px 0 22px;
+    font-size: 14px; line-height: 1.6;
+  }
+  th {
+    background: #16324f; color: #fff; font-weight: 600; text-align: left;
+    padding: 7px 11px; font-family: "Microsoft YaHei", sans-serif;
+  }
+  td { padding: 6px 11px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  tr:nth-child(even) td { background: var(--bg-soft); }
+  .tag {
+    display: inline-block; font-size: 12px; font-weight: 600;
+    padding: 1px 10px; border-radius: 20px; margin-right: 6px;
+  }
+  .tag.red { background: #fdecef; color: #b3354a; }
+  .tag.blue { background: #e8f0fb; color: #2c5fa8; }
+  .tag.green { background: #e6f4ec; color: #1e7d4f; }
+  .tag.purple { background: #f0e9fa; color: #6b3fa0; }
+  .tag.gray { background: #eef0f3; color: #5c6470; }
+  .tag.orange { background: #fdf3e0; color: #a86e04; }
+  .callout {
+    background: #fdf6ec; border-left: 4px solid #d98e04; border-radius: 6px;
+    padding: 12px 18px; margin: 16px 0;
+  }
+  .callout.info { background: #eef4fc; border-left-color: #2c5fa8; }
+  .callout.green { background: #eaf6f0; border-left-color: #1e7d4f; }
+  .callout.red { background: #fdf0f2; border-left-color: #b3354a; }
+  .callout.purple { background: #f3edfb; border-left-color: #6b3fa0; }
+  .callout code { background: rgba(0,0,0,0.06); }
+  .toc {
+    background: var(--bg-soft); border: 1px solid var(--line);
+    border-radius: 12px; padding: 18px 26px; margin: 26px 0 10px;
+    font-size: 15.5px;
+  }
+  .toc a { color: #16324f; text-decoration: none; }
+  .toc a:hover { color: var(--accent); }
+  .toc ol { margin: 8px 0; padding-left: 22px; }
+  .toc ol ol { padding-left: 20px; }
+  .toc li { margin: 3px 0; }
+  .fig { margin: 22px 0; text-align: center; }
+  .fig svg { max-width: 100%; height: auto; }
+  .fig svg text { font-family: "Microsoft YaHei", "PingFang SC", sans-serif; }
+  .fig img { max-width: 100%; height: auto; border-radius: 10px; border: 1px solid var(--line); box-shadow: 0 2px 10px rgba(0,0,0,0.08); }
+  .fig .caption {
+    font-size: 13.5px; color: var(--muted); margin-top: 6px;
+    font-family: "Microsoft YaHei", sans-serif;
+  }
+  .formula {
+    background: #fbf8f0; border: 1px solid #eadfc4; border-radius: 8px;
+    padding: 10px 18px; margin: 14px auto; text-align: center;
+    font-family: "Cascadia Code", Consolas, monospace; font-size: 14.5px;
+    color: #7a5c1e; max-width: 96%;
+  }
+  .formula .lbl {
+    font-family: "Microsoft YaHei", sans-serif; color: #8a6d2f;
+    font-size: 12.5px; letter-spacing: 0.06em; margin-right: 10px;
+  }
+  .src { font-size: 12.5px; color: var(--muted); font-family: "Microsoft YaHei", sans-serif; }
+  .file-ref { color: #8a1f3d; font-family: "Cascadia Code", Consolas, monospace; font-size: 0.88em; }
+  .footer {
+    margin-top: 70px; padding-top: 18px; border-top: 1px solid var(--line);
+    color: var(--muted); font-size: 13.5px;
+  }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin: 16px 0; }
+  @media (max-width: 860px) { .grid2 { grid-template-columns: 1fr; } }
+  .card {
+    border: 1px solid var(--line); border-radius: 12px; padding: 14px 20px;
+    background: var(--bg-soft);
+  }
+  .card-title { font-weight: 600; color: #16324f; margin-bottom: 6px; }
+  a { color: var(--accent2); }
+  .kv { color: var(--accent); font-weight: 600; }
+  .kvb { color: var(--accent2); font-weight: 600; }
+  .shp { font-family: "Cascadia Code", Consolas, monospace; font-size: 0.9em; color: #16324f; }
+  .gshp { color: #b3354a; } /* 全局 shape */
+  .lshp { color: #2c5fa8; } /* 每卡 shape */
+  .note { font-size: 13.5px; color: var(--muted); }
+  /* 编号步骤块（§5.4 前向走查用） */
+  .flow { margin: 14px 0 20px; }
+  .step {
+    display: flex; gap: 10px; align-items: baseline;
+    padding: 7px 14px; margin: 6px 0;
+    border-left: 3px solid var(--accent2);
+    background: var(--bg-soft); border-radius: 6px;
+    font-size: 15px; line-height: 1.7;
+  }
+  .step-no { font-family: "Microsoft YaHei", sans-serif; font-weight: 600; color: var(--accent); min-width: 26px; }
+  .step .op { font-weight: 600; color: #16324f; }
+</style>
+</head>
+<body>
+<a href="../index.html" style="position:fixed;top:12px;right:14px;z-index:99;background:#f6f7f9;border:1px solid #e2e5ea;border-radius:999px;padding:4px 12px;font-size:14px;color:#2c5fa8;text-decoration:none;box-shadow:0 1px 4px rgba(0,0,0,.08)">← 技术地图首页</a>
+<div class="wrap">
+
+  <div class="kicker">推理系统研究 · 02 并行研究 · TP 深挖</div>
+  <h1>注意力家族的张量并行（TP）拆解<br>MHA · GQA · MLA · DSA —— 切分策略 × 完整前向 shape 走查</h1>
+  <p class="meta">
+    生成日期 2026-08-12 · 以 vLLM 源码与官方文档为实证（本地 checkout 逐行核对）·
+    案例模型 LLaMA-2-7B（MHA）· LLaMA-3.1-70B（GQA）· DeepSeek-V3（MLA）· DeepSeek-V3.2-Exp（DSA）
+    · 衔接 <span class="nolink">02_并行研究·各种并行度研究</span> 与
+    <span class="nolink">01_vllm 执行流水报告</span>
+  </p>
+
+  <div class="toc">
+    <strong>目录</strong>
+    <ol>
+      <li><a href="#s0">摘要与核心结论</a></li>
+      <li><a href="#s1">四种注意力的结构：从「每组独立」到「全局稀疏」</a></li>
+      <li><a href="#s2">TP 通用骨架：列并行 / 行并行与 shape 记法</a></li>
+      <li><a href="#s3">MHA 的 TP：全头切分（案例 LLaMA-2-7B，TP=4）</a></li>
+      <li><a href="#s4">GQA 的 TP：Q 切分 + K/V 分切或复制（案例 LLaMA-3.1-70B）</a></li>
+      <li><a href="#s5">MLA 的 TP：latent 复制 + 上行按头切（案例 DeepSeek-V3，TP=4）</a></li>
+      <li><a href="#s6">DSA 的 TP：indexer 全复制 + 稀疏注意力（案例 DeepSeek-V3.2-Exp）</a></li>
+      <li><a href="#s7">四模型完整前向 shape 总表</a></li>
+      <li><a href="#s8">KV cache 显存账：复制 vs 切分</a></li>
+      <li><a href="#s9">踩坑清单与选择指南</a></li>
+      <li><a href="#s10">结语：注意力 TP 的「切分哲学」</a></li>
+      <li><a href="#a1">附录 A：术语表</a></li>
+      <li><a href="#a2">附录 B：参考来源（含 vLLM 源码实证）</a></li>
+    </ol>
+  </div>
+
+  <!-- ==================== §0 摘要 ==================== -->
+  <h2 id="s0"><span class="sec-no">0</span>摘要与核心结论</h2>
+
+  <p>张量并行（TP）切的是<strong>权重矩阵</strong>，而注意力层里的权重只有两类角色：一类产出「每个头」的 Q/K/V（按头组织），一类把各头的输出合并回隐藏维（O 投影）。所以对任意注意力结构，TP 只回答两个问题：</p>
+  <ul>
+    <li><strong>Q 头怎么切？</strong>——永远<strong>按头列并行</strong>（column-parallel）：每卡持有 <code>n_heads/P</code> 个 Q 头，前提是 <code>n_heads % P == 0</code>；</li>
+    <li><strong>K/V 怎么获得「可见性」？</strong>——这是四种注意力分道扬镳的地方：切分、复制、还是从共享 latent 重算。它决定了 attention 打分能否<strong>完全在卡内完成</strong>。</li>
+  </ul>
+  <p>O 投影在所有结构里都一样：<strong>行并行（row-parallel）+ 每层一次 all-reduce</strong>。因此注意力路径的通信量恒定：每层恰好一次 all-reduce（消息 ≈ 2·B·S·M 字节），不存在「哪种注意力通信更多」——差别全在<strong>权重怎么放</strong>与<strong>KV cache 怎么存</strong>。</p>
+
+  <div class="callout info">
+    <strong>一句话记住四种注意力的 TP：</strong>
+    MHA 全头切（Q/K/V 都按头分，attention 卡内局部）；
+    GQA 只切 Q，K/V 头少——<code>tp ≤ kv_heads</code> 时按头分切、<code>tp &gt; kv_heads</code> 时按组复制（连续 <code>tp/kv_heads</code> 个 rank 共享同一 KV 头，Q 组恰好对齐，attention 仍卡内局部）；
+    MLA 下行 latent 投影<strong>整层复制</strong>、上行按头切（KV cache 存 latent，每卡全副本 → KV 显存按 <code>tp</code> 复制）；
+    DSA 的 indexer（打分 + top-k 选择）<strong>全部复制</strong>（全局选择必须全可见），稀疏 attention 本体同 MLA。
+  </div>
+
+  <h3>核心结论（先给答案）</h3>
+  <ul>
+    <li><strong>切头 TP 的注意力是「零跨卡 softmax」的。</strong>只要每个 rank 拥有它那组 Q 头所需的全部 K/V，打分、softmax、加权求和就全在卡内，唯一的跨卡通信是 O 投影后的 all-reduce。MHA/GQA/MLA/DSA 的 TP 都能做到这一点——这正是「切头」优于「切序列」（CP）的地方。</li>
+    <li><strong>MHA → GQA → MLA → DSA 的演进本质是「压缩 KV」</strong>，而 KV 被压缩得越狠，TP 越切不动它：MHA 的 KV 可按头分（TP 白赚 KV 显存）、GQA 头少了开始复制、MLA 的 latent 是共享向量完全复制（<code>tp=8</code> 时 KV cache 冗余 8×，vLLM 官方文档原文）、DSA 还要额外复制一张 score-key 表。KV 冗余的解药不是更大的 TP，而是 <strong>DCP（沿序列 T 维切）</strong>。</li>
+    <li><strong>MLA/DSA 的「复制」是冗余计算换零通信：</strong>每层每 token 的下行 GEMM（如 DSV3 的 7168→2112）在 P 个 rank 上重复算 P 遍，但省掉了任何跨卡同步；上行（按头）与小 GEMM 才是真正并行摊开的。这是它与 GQA「复制权重」在代价形态上的本质区别——GQA 复制的是权重（显存），MLA 复制的是计算（算力）。</li>
+    <li><strong>DSA 的 top-k 必须在所有 rank 上一致：</strong>indexer 的 Q 投影（<code>wq_b</code>）与 K 投影（<code>wk_weights_proj</code>）在 vLLM 中都是 <code>ReplicatedLinear</code> / <code>disable_tp=True</code>——因为打分需要「每个 query 对全部 token」，而主 attention 的 Q 是按头切的，拿不到全局信息。复制 indexer 后，每个 rank 算出相同的 top-k 下标，再从自己（按头切但含全部 token）的 KV cache 里本地读取，稀疏 attention 依旧卡内局部。</li>
+    <li><strong>工程细节：</strong>vLLM 把 MLA 的 <code>o_proj</code> 的 all-reduce 延后（<code>reduce_results=False</code>），与下一层输入 RMSNorm 融合（<code>fuse_allreduce_rms</code>）；DSV3 融合 Q/KV 下行投影为单 GEMM（<code>DeepSeekV2FusedQkvAProjLinear</code>，权重 2112×7168）——并行度与 kernel 优化是两件事，但 shape 语义不变。</li>
+  </ul>
+
+  <!-- ==================== §1 结构对比 ==================== -->
+  <h2 id="s1"><span class="sec-no">1</span>四种注意力的结构：从「每组独立」到「全局稀疏」</h2>
+
+  <h3>1.1 结构对比总表</h3>
+  <table>
+    <tr><th>结构</th><th>Q 投影</th><th>K / V 投影</th><th>每个 query 可见的 KV</th><th>KV cache 每 token 存什么</th><th>代表模型</th></tr>
+    <tr>
+      <td><span class="tag blue">MHA</span></td>
+      <td>每头独立 <code>W_Q</code></td>
+      <td>每头独立 <code>W_K / W_V</code>（<code>kv_heads = n_heads</code>）</td>
+      <td>自己那组头的全部 KV</td>
+      <td><code>2 × n_heads × hd</code></td>
+      <td>LLaMA-2-7B/13B、GPT-3</td>
+    </tr>
+    <tr>
+      <td><span class="tag green">GQA</span></td>
+      <td>每头独立 <code>W_Q</code></td>
+      <td>组内共享 <code>W_K / W_V</code>（<code>kv_heads &lt; n_heads</code>，每组 <code>n_heads/kv_heads</code> 个 Q 头）</td>
+      <td>自己组那 1 个（或少数几个）KV 头</td>
+      <td><code>2 × kv_heads × hd</code></td>
+      <td>LLaMA-3/3.1/4、Qwen2/2.5/3、Mistral</td>
+    </tr>
+    <tr>
+      <td><span class="tag purple">MLA</span></td>
+      <td>从低秩 <code>c_Q</code> 上采样（<code>W_UQ</code>）</td>
+      <td>K/V 共用低秩 <code>c_KV</code>，按头上采样（<code>W_UK / W_UV</code>）</td>
+      <td>共享 latent 派生出的全部头 KV</td>
+      <td><code>kv_lora_rank + rope_dim</code>（≈ 512+64）</td>
+      <td>DeepSeek-V2/V3/V3.2、GLM-5、Kimi</td>
+    </tr>
+    <tr>
+      <td><span class="tag orange">DSA</span></td>
+      <td>同 MLA（+ 独立 indexer Q）</td>
+      <td>同 MLA（+ 独立 indexer K / score-key 表）</td>
+      <td>先全局打分选 top-k（每 query ≤ <code>topk</code> 个 token），只对这些做 attention</td>
+      <td>MLA latent + indexer score-key</td>
+      <td>DeepSeek-V3.2-Exp、GLM-5</td>
+    </tr>
+  </table>
+
+  <h3>1.2 一条压缩主线</h3>
+  <div class="fig">
+    <svg viewBox="0 0 920 300" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="四种注意力 KV 压缩演进示意">
+      <defs>
+        <marker id="arw1" markerWidth="9" markerHeight="9" refX="7" refY="3.6" orient="auto">
+          <path d="M0,0 L8,3.6 L0,7.2 Z" fill="#5c6470"/>
+        </marker>
+      </defs>
+      <text x="30" y="30" font-size="13.5" font-weight="600" fill="#16324f">每 token 需要缓存的 KV 维度（示意，128 头 / hd=128 基准）</text>
+
+      <!-- MHA -->
+      <rect x="30" y="52" width="200" height="200" rx="10" fill="#ffffff" stroke="#2c5fa8"/>
+      <text x="130" y="76" text-anchor="middle" font-size="13" font-weight="600" fill="#2c5fa8">MHA</text>
+      <g font-size="10.5" fill="#16324f">
+        <rect x="46" y="92" width="168" height="14" fill="#e8f0fb"/><text x="130" y="103" text-anchor="middle">K 头 0..127</text>
+        <rect x="46" y="112" width="168" height="14" fill="#e8f0fb"/><text x="130" y="123" text-anchor="middle">V 头 0..127</text>
+      </g>
+      <text x="130" y="166" text-anchor="middle" font-size="12" fill="#b3354a" font-weight="600">2 × 128 × 128 = 32768</text>
+      <text x="130" y="188" text-anchor="middle" font-size="11" fill="#5c6470">每头独立投影，KV 全量缓存</text>
+      <text x="130" y="232" text-anchor="middle" font-size="11.5" fill="#5c6470">TP：按头切 → KV 显存 / P ✓</text>
+
+      <!-- GQA -->
+      <rect x="255" y="52" width="200" height="200" rx="10" fill="#ffffff" stroke="#1e7d4f"/>
+      <text x="355" y="76" text-anchor="middle" font-size="13" font-weight="600" fill="#1e7d4f">GQA</text>
+      <g font-size="10.5" fill="#16324f">
+        <rect x="271" y="92" width="168" height="14" fill="#e6f4ec"/><text x="355" y="103" text-anchor="middle">K 头 0..7（8 组共享）</text>
+        <rect x="271" y="112" width="168" height="14" fill="#e6f4ec"/><text x="355" y="123" text-anchor="middle">V 头 0..7</text>
+      </g>
+      <text x="355" y="166" text-anchor="middle" font-size="12" fill="#b3354a" font-weight="600">2 × 8 × 128 = 2048</text>
+      <text x="355" y="188" text-anchor="middle" font-size="11" fill="#5c6470">组内共享 KV → 缓存 ÷16</text>
+      <text x="355" y="232" text-anchor="middle" font-size="11.5" fill="#5c6470">TP：头太少 → tp&gt;8 时按组复制 ⚠</text>
+
+      <!-- MLA -->
+      <rect x="480" y="52" width="200" height="200" rx="10" fill="#ffffff" stroke="#6b3fa0"/>
+      <text x="580" y="76" text-anchor="middle" font-size="13" font-weight="600" fill="#6b3fa0">MLA</text>
+      <g font-size="10.5" fill="#16324f">
+        <rect x="496" y="92" width="168" height="14" fill="#f0e9fa"/><text x="580" y="103" text-anchor="middle">c_KV latent（512）</text>
+        <rect x="496" y="112" width="168" height="14" fill="#f0e9fa"/><text x="580" y="123" text-anchor="middle">k_pe rope（64）</text>
+      </g>
+      <text x="580" y="166" text-anchor="middle" font-size="12" fill="#b3354a" font-weight="600">512 + 64 = 576</text>
+      <text x="580" y="188" text-anchor="middle" font-size="11" fill="#5c6470">低秩压缩，头部 KV 上采样现算</text>
+      <text x="580" y="232" text-anchor="middle" font-size="11.5" fill="#5c6470">TP：latent 是共享向量 → 每卡全副本 ⚠</text>
+
+      <!-- DSA -->
+      <rect x="705" y="52" width="185" height="200" rx="10" fill="#ffffff" stroke="#d98e04"/>
+      <text x="797" y="76" text-anchor="middle" font-size="13" font-weight="600" fill="#a86e04">DSA</text>
+      <g font-size="10.5" fill="#16324f">
+        <rect x="721" y="92" width="153" height="14" fill="#fdf3e0"/><text x="797" y="103" text-anchor="middle">MLA latent（576）</text>
+        <rect x="721" y="112" width="153" height="14" fill="#fdf3e0"/><text x="797" y="123" text-anchor="middle">score-key 表（128）</text>
+      </g>
+      <text x="797" y="166" text-anchor="middle" font-size="12" fill="#b3354a" font-weight="600">576 + 128 + 稀疏化</text>
+      <text x="797" y="188" text-anchor="middle" font-size="11" fill="#5c6470">top-k 全局选择，只算选中的 KV</text>
+      <text x="797" y="232" text-anchor="middle" font-size="11.5" fill="#5c6470">TP：indexer 必须全复制 ⚠</text>
+
+      <path d="M230,152 C240,152 245,152 255,152" stroke="#5c6470" stroke-width="1.4" fill="none" marker-end="url(#arw1)"/>
+      <path d="M455,152 C465,152 470,152 480,152" stroke="#5c6470" stroke-width="1.4" fill="none" marker-end="url(#arw1)"/>
+      <path d="M680,152 C690,152 695,152 705,152" stroke="#5c6470" stroke-width="1.4" fill="none" marker-end="url(#arw1)"/>
+      <text x="460" y="282" text-anchor="middle" font-size="12" fill="#5c6470">KV 缓存越压越小（32768 → 2048 → 576），但共享性越来越强 → 越来越「切不动」、只能「复制」</text>
+    </svg>
+    <div class="caption">图 1　KV 压缩主线：MHA→GQA→MLA→DSA。缓存维度骤降，但 KV 的「共享性」上升，TP 从「按头切」逐渐退化为「整份复制」</div>
+  </div>
+
+  <h3>1.3 本报告案例模型超参（shape 走查基准）</h3>
+  <table>
+    <tr><th>模型</th><th>结构</th><th>隐藏 M</th><th>Q 头</th><th>KV 头</th><th>hd</th><th>KV 相关额外项</th></tr>
+    <tr><td>LLaMA-2-7B</td><td>MHA</td><td>4096</td><td>32</td><td>32</td><td>128</td><td>—（中间维 11008）</td></tr>
+    <tr><td>LLaMA-3.1-70B</td><td>GQA</td><td>8192</td><td>64</td><td>8</td><td>128</td><td>—（中间维 28672）</td></tr>
+    <tr><td>DeepSeek-V3</td><td>MLA</td><td>7168</td><td>128</td><td>1（latent）</td><td>qk 192 = 128 nope + 64 rope；v 128</td><td>q_lora 1536；kv_lora 512</td></tr>
+    <tr><td>DeepSeek-V3.2-Exp</td><td>DSA</td><td>7168</td><td>128</td><td>1（latent）</td><td>同上</td><td>indexer：64 score 头 × 128 维；topk=2048</td></tr>
+  </table>
+
+  <!-- ==================== §2 TP 骨架 ==================== -->
+  <h2 id="s2"><span class="sec-no">2</span>TP 通用骨架：列并行 / 行并行与 shape 记法</h2>
+
+  <h3>2.1 两条铁律</h3>
+  <ul>
+    <li><strong>TP 切权重、不切 token：</strong>输入激活 <span class="shp">[B, S, M]</span> 在 P 个 rank 上<strong>完整复制</strong>（每卡都持有全量输入），切的是 GEMM 的权重矩阵。</li>
+    <li><strong>列并行输出分片、行并行输出全量：</strong>
+      列并行（column-parallel）把权重按<strong>输出维</strong>切：<code>W ∈ ℝ^{M×N}</code> → 每卡 <code>W_i ∈ ℝ^{M×N/P}</code>，输出 <span class="shp">[B,S,N/P]</span>（分片，无需通信）；
+      行并行（row-parallel）把权重按<strong>输入维</strong>切：每卡 <code>W_i ∈ ℝ^{N/P×M}</code>，各算部分和 <span class="shp">[B,S,M]</span>（每卡都是部分和），随后 <strong>all-reduce</strong> 合并成完整输出。</li>
+  </ul>
+
+  <div class="formula"><span class="lbl">注意力路径每层通信（恒定）</span>O 投影 all-reduce：每卡收发 ≈ 2·B·S·M 字节　——　与注意力结构无关，四种结构完全一样</div>
+
+  <h3>2.2 QKV 融合权重的两种布局</h3>
+  <p>QKV 通常融合成一个 GEMM。按头切后，权重的列序有两种约定：</p>
+  <table>
+    <tr><th>布局</th><th>权重列序</th><th>使用方</th></tr>
+    <tr><td><strong>sequential（顺序）</strong></td><td><code>[全部 Q 头 | 全部 K 头 | 全部 V 头]</code>，每 rank 分到其中一段连续切片</td><td>vLLM（默认）、Megatron（默认）</td></tr>
+    <tr><td><strong>interleaved（交织）</strong></td><td><code>[q0,k0,v0, q1,k1,v1, …]</code>，按「头-组」交织</td><td>部分 kernel（如 Megatron 的 interleaved 模式、TensorRT-LLM）</td></tr>
+  </table>
+  <p class="note">本报告统一用 sequential 布局；shape 语义与布局无关，只是权重切片顺序不同。</p>
+
+  <h3>2.3 记法约定</h3>
+  <p>全文用 <span class="shp gshp">红色 shape</span> 表示<strong>全局</strong>（单份完整模型）形状，<span class="shp lshp">蓝色 shape</span> 表示<strong>每卡</strong>（TP=P 时单个 rank）形状；<code>B</code> = batch，<code>S</code> = 序列长，<code>P</code> = TP 规模。</p>
+
+  <!-- ==================== §3 MHA ==================== -->
+  <h2 id="s3"><span class="sec-no">3</span>MHA 的 TP：全头切分（案例 LLaMA-2-7B，TP=4）</h2>
+
+  <h3>3.1 切法</h3>
+  <p>MHA 是 TP 的「理想型」：Q/K/V 头数相同，全部按头列并行，每卡 <code>32/4 = 8</code> 个头（Q/K/V 各 8 头）。</p>
+  <table>
+    <tr><th>权重</th><th>全局形状</th><th>每卡形状（TP=4）</th><th>并行类型</th><th>输出</th></tr>
+    <tr><td><code>W_Q</code>（融合进 QKV）</td><td><span class="shp gshp">[4096, 32×128]</span></td><td><span class="shp lshp">[4096, 8×128=1024]</span></td><td>列并行（按头）</td><td><span class="shp lshp">Q: [B,S,1024]</span> 分片</td></tr>
+    <tr><td><code>W_K</code> / <code>W_V</code></td><td><span class="shp gshp">[4096, 32×128]</span> ×2</td><td><span class="shp lshp">[4096, 1024]</span> ×2</td><td>列并行（按头）</td><td><span class="shp lshp">K/V: [B,S,1024]</span> 分片</td></tr>
+    <tr><td><code>W_O</code></td><td><span class="shp gshp">[32×128, 4096]</span></td><td><span class="shp lshp">[1024, 4096]</span></td><td>行并行 + all-reduce</td><td><span class="shp gshp">[B,S,4096]</span> 全量</td></tr>
+  </table>
+
+  <h3>3.2 完整前向 shape 走查（注意力路径）</h3>
+  <table>
+    <tr><th>阶段</th><th>全局 shape</th><th>每卡 shape（TP=4）</th><th>说明</th></tr>
+    <tr><td>输入 token</td><td class="shp gshp">[B, S]</td><td class="shp lshp">[B, S]</td><td>每卡同一份 token id</td></tr>
+    <tr><td>embedding</td><td class="shp gshp">x: [B, S, 4096]</td><td class="shp lshp">[B, S, 4096]</td><td>权重复制，激活全量复制</td></tr>
+    <tr><td>input RMSNorm</td><td class="shp gshp">[B, S, 4096]</td><td class="shp lshp">[B, S, 4096]</td><td>逐 token 归一，全量</td></tr>
+    <tr><td>QKV GEMM（列并行）</td><td class="shp gshp">[B, S, 3×4096]</td><td class="shp lshp">[B, S, 3×1024]</td><td>每卡只算自己的 8 头；无通信</td></tr>
+    <tr><td>reshape + RoPE</td><td class="shp gshp">Q/K/V: [B, 32, S, 128]</td><td class="shp lshp">[B, 8, S, 128]</td><td>按头重排，RoPE 只作用本地头</td></tr>
+    <tr><td>score = Q·Kᵀ/√128</td><td class="shp gshp">[B, 32, S, S]</td><td class="shp lshp">[B, 8, S, S]</td><td><strong>完全卡内</strong>：本卡 Q 头 × 本卡 K 头</td></tr>
+    <tr><td>softmax（沿 S 维）</td><td class="shp gshp">[B, 32, S, S]</td><td class="shp lshp">[B, 8, S, S]</td><td><strong>无跨卡 softmax</strong>（切头不需 split-softmax）</td></tr>
+    <tr><td>attn = P·V</td><td class="shp gshp">[B, 32, S, 128]</td><td class="shp lshp">[B, 8, S, 128]</td><td>按头加权求和，仍卡内</td></tr>
+    <tr><td>concat + O GEMM（行并行）</td><td class="shp gshp">[B, S, 4096]</td><td class="shp lshp">部分和 [B, S, 4096]</td><td>每卡输入 [B,S,1024]，各算部分和</td></tr>
+    <tr><td>all-reduce</td><td class="shp gshp">[B, S, 4096]</td><td class="shp lshp">[B, S, 4096]</td><td>合并部分和 → 完整输出（每层唯一一次）</td></tr>
+    <tr><td>residual add</td><td class="shp gshp">[B, S, 4096]</td><td class="shp lshp">[B, S, 4096]</td><td>与输入残差相加</td></tr>
+  </table>
+
+  <h3>3.3 MLP 段（稠密层，SwiGLU）</h3>
+  <table>
+    <tr><th>阶段</th><th>全局 shape</th><th>每卡 shape（TP=4）</th><th>说明</th></tr>
+    <tr><td>gate/up GEMM（融合列并行）</td><td class="shp gshp">[B, S, 11008] ×2</td><td class="shp lshp">[B, S, 2752] ×2</td><td>列并行，输出分片无通信</td></tr>
+    <tr><td>SiLU(gate) ⊙ up</td><td class="shp gshp">[B, S, 11008]</td><td class="shp lshp">[B, S, 2752]</td><td>逐元素，卡内</td></tr>
+    <tr><td>down GEMM（行并行）+ all-reduce</td><td class="shp gshp">[B, S, 4096]</td><td class="shp lshp">部分和 → [B, S, 4096]</td><td>每层第二次 all-reduce</td></tr>
+    <tr><td>residual add</td><td class="shp gshp">[B, S, 4096]</td><td class="shp lshp">[B, S, 4096]</td><td>—</td></tr>
+  </table>
+  <p>因此稠密 Transformer 层每层恰好 <strong>2 次 all-reduce</strong>（注意力 O 1 次 + MLP down 1 次；gate/up 的列并行输出分片后由 SiLU·Mul 逐元素处理，无需合并）。上份报告按「MLP 两次 + 注意力一次」的口径计为 3 次——差异仅在是否把 gate/up 的列并行输出计入一次合并，shape 语义完全一致。</p>
+
+  <div class="fig">
+    <svg viewBox="0 0 920 240" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="MHA TP=4 形状流示意">
+      <defs>
+        <marker id="arw2" markerWidth="9" markerHeight="9" refX="7" refY="3.6" orient="auto">
+          <path d="M0,0 L8,3.6 L0,7.2 Z" fill="#5c6470"/>
+        </marker>
+      </defs>
+      <text x="30" y="26" font-size="13.5" font-weight="600" fill="#16324f">MHA TP=4：每卡 8 头，attention 全卡内，O 投影后一次 all-reduce（红色 = 全局、蓝色 = 每卡）</text>
+      <g font-size="11.5">
+        <rect x="30" y="48" width="120" height="56" rx="8" fill="#f6f7f9" stroke="#5c6470"/>
+        <text x="90" y="70" text-anchor="middle" fill="#16324f" font-weight="600">x</text>
+        <text x="90" y="88" text-anchor="middle" class="lshp">[B,S,4096] 复制</text>
+
+        <rect x="190" y="48" width="150" height="56" rx="8" fill="#e8f0fb" stroke="#2c5fa8"/>
+        <text x="265" y="68" text-anchor="middle" fill="#2c5fa8" font-weight="600">QKV 列并行</text>
+        <text x="265" y="86" text-anchor="middle" class="lshp">Q/K/V [B,S,1024]</text>
+
+        <rect x="380" y="48" width="150" height="56" rx="8" fill="#e6f4ec" stroke="#1e7d4f"/>
+        <text x="455" y="66" text-anchor="middle" fill="#1e7d4f" font-weight="600">score·softmax·V</text>
+        <text x="455" y="84" text-anchor="middle" class="lshp">scores [B,8,S,S]</text>
+        <text x="455" y="98" text-anchor="middle" class="lshp">attn [B,S,1024]</text>
+
+        <rect x="570" y="48" width="140" height="56" rx="8" fill="#fdecef" stroke="#b3354a"/>
+        <text x="640" y="68" text-anchor="middle" fill="#b3354a" font-weight="600">O 行并行</text>
+        <text x="640" y="86" text-anchor="middle" class="lshp">部分和 [B,S,4096]</text>
+
+        <rect x="750" y="48" width="140" height="56" rx="8" fill="#fdecef" stroke="#b3354a"/>
+        <text x="820" y="68" text-anchor="middle" fill="#b3354a" font-weight="600">all-reduce</text>
+        <text x="820" y="86" text-anchor="middle" class="gshp">[B,S,4096]</text>
+      </g>
+      <path d="M150,76 C165,76 175,76 190,76" stroke="#5c6470" stroke-width="1.3" fill="none" marker-end="url(#arw2)"/>
+      <path d="M340,76 C355,76 365,76 380,76" stroke="#5c6470" stroke-width="1.3" fill="none" marker-end="url(#arw2)"/>
+      <path d="M530,76 C545,76 555,76 570,76" stroke="#5c6470" stroke-width="1.3" fill="none" marker-end="url(#arw2)"/>
+      <path d="M710,76 C725,76 735,76 750,76" stroke="#b3354a" stroke-width="1.3" fill="none" marker-end="url(#arw2)"/>
+      <text x="90" y="150" text-anchor="middle" font-size="12" fill="#5c6470">每 rank 持有全部 token 的激活（[B,S,M] 复制），只分片权重；</text>
+      <text x="90" y="172" text-anchor="middle" font-size="12" fill="#5c6470">KV cache 每卡 8 头 → 总 KV 显存 ÷4（TP 白赚 KV）</text>
+      <text x="640" y="150" text-anchor="middle" font-size="12" fill="#b3354a">注意力路径唯一一次跨卡通信</text>
+      <text x="640" y="172" text-anchor="middle" font-size="12" fill="#5c6470">整层 2 次 all-reduce：注意力 1 次 + MLP down 1 次</text>
+    </svg>
+    <div class="caption">图 2　MHA TP=4 的 shape 流：列并行产出分片头 → 卡内 attention → 行并行 + all-reduce 还原全量</div>
+  </div>
+
+  <div class="callout green">
+    <strong>MHA 结论：</strong>TP 对 MHA 是「全都要」——权重、KV cache、算力全部按 <code>P</code> 均摊，attention 零跨卡通信，是几何上最优雅的切法。这也是 TP 被发明时（Megatron 2019）针对的形态。
+  </div>
+
+  <!-- ==================== §4 GQA ==================== -->
+  <h2 id="s4"><span class="sec-no">4</span>GQA 的 TP：Q 切分 + K/V 分切或复制（案例 LLaMA-3.1-70B）</h2>
+
+  <h3>4.1 问题：KV 头太少</h3>
+  <p>GQA 里 <code>kv_heads</code> 远小于 <code>n_heads</code>（LLaMA-3.1-70B：64 Q 头 / 8 KV 头）。Q 头照常按 <code>P</code> 切没问题，但 K/V 头只有 8 个——<code>P</code> 超过 8 就切不动了。vLLM 的 <code>QKVParallelLinear</code> 给出了精确规则（<span class="file-ref">vllm/model_executor/layers/linear.py</span> L1074-1081）：</p>
+  <pre><code>tp_size &gt;= total_num_kv_heads:   # 头太少
+    num_kv_heads = 1               # 每卡 1 个 KV 头
+    num_kv_head_replicas = tp_size // total_num_kv_heads   # 复制因子
+else:                             # 头够分
+    num_kv_heads = total_num_kv_heads // tp_size           # 每卡分到的 KV 头数</code></pre>
+
+  <h3>4.2 情形 A：切分（tp ≤ kv_heads）——TP=8</h3>
+  <p>TP=8、kv_heads=8：每卡 <code>64/8 = 8</code> 个 Q 头 + <code>1</code> 个 KV 头。Q 头按顺序切分（rank r 持 Q 头 <code>8r..8r+7</code>），而这 8 个 Q 头恰好就是「组 r」——组 r 的 Q 头本来就只关注 KV 头 r，且 rank r 手里正是 KV 头 r。组对齐天然成立，attention 完全卡内。</p>
+
+  <h3>4.3 情形 B：复制（tp &gt; kv_heads）——TP=16</h3>
+  <p>TP=16、kv_heads=8：每卡 <code>4</code> 个 Q 头 + <code>1</code> 个 KV 头，复制因子 <code>replicas = 16/8 = 2</code>。关键在 KV 头怎么分配给 rank（vLLM 权重加载：<span class="file-ref">linear.py</span> L1379 <code>shard_rank = tp_rank // num_kv_head_replicas</code>）：</p>
+  <table>
+    <tr><th>rank</th><th>0</th><th>1</th><th>2</th><th>3</th><th>4</th><th>5</th><th>…</th><th>14</th><th>15</th></tr>
+    <tr><td>KV 头（shard = rank//2）</td><td>0</td><td>0</td><td>1</td><td>1</td><td>2</td><td>2</td><td>…</td><td>7</td><td>7</td></tr>
+    <tr><td>Q 头（4 个/卡）</td><td>0-3</td><td>4-7</td><td>8-11</td><td>12-15</td><td>16-19</td><td>20-23</td><td>…</td><td>56-59</td><td>60-63</td></tr>
+    <tr><td>Q 所属组</td><td>组0</td><td>组0</td><td>组1</td><td>组1</td><td>组2</td><td>组2</td><td>…</td><td>组7</td><td>组7</td></tr>
+  </table>
+  <p>结论：<strong>同一组 Q 头恰好横跨「持有同一 KV 头」的连续 <code>replicas</code> 个 rank</strong>——每卡的 Q 头只关注本卡的 KV 头，attention 依旧完全卡内，无需任何跨卡 attention 通信。代价是 K/V 权重与 KV cache 被复制了 <code>replicas</code> 份。</p>
+
+  <div class="fig">
+    <svg viewBox="0 0 920 260" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="GQA TP=16 复制模式 rank 分配示意">
+      <text x="30" y="28" font-size="13.5" font-weight="600" fill="#16324f">GQA 复制模式（TP=16, kv_heads=8, replicas=2）：连续 2 个 rank 共享同一 KV 头，Q 组与 KV 副本组对齐</text>
+      <g font-size="11">
+        <!-- 8 组，每组 2 个 rank -->
+        <g>
+          <rect x="40" y="60" width="96" height="130" rx="8" fill="#f6f7f9" stroke="#1e7d4f"/>
+          <text x="88" y="80" text-anchor="middle" fill="#16324f" font-weight="600">组 0</text>
+          <rect x="50" y="90" width="76" height="22" rx="4" fill="#e6f4ec" stroke="#1e7d4f"/><text x="88" y="105" text-anchor="middle" fill="#1e7d4f">rank0: KV头0</text>
+          <rect x="50" y="118" width="76" height="22" rx="4" fill="#e6f4ec" stroke="#1e7d4f"/><text x="88" y="133" text-anchor="middle" fill="#1e7d4f">rank1: KV头0</text>
+          <rect x="50" y="150" width="76" height="30" rx="4" fill="#e8f0fb" stroke="#2c5fa8"/><text x="88" y="162" text-anchor="middle" fill="#2c5fa8">Q 0-3</text><text x="88" y="175" text-anchor="middle" fill="#2c5fa8">Q 4-7</text>
+        </g>
+        <g>
+          <rect x="150" y="60" width="96" height="130" rx="8" fill="#f6f7f9" stroke="#1e7d4f"/>
+          <text x="198" y="80" text-anchor="middle" fill="#16324f" font-weight="600">组 1</text>
+          <rect x="160" y="90" width="76" height="22" rx="4" fill="#e6f4ec" stroke="#1e7d4f"/><text x="198" y="105" text-anchor="middle" fill="#1e7d4f">rank2: KV头1</text>
+          <rect x="160" y="118" width="76" height="22" rx="4" fill="#e6f4ec" stroke="#1e7d4f"/><text x="198" y="133" text-anchor="middle" fill="#1e7d4f">rank3: KV头1</text>
+          <rect x="160" y="150" width="76" height="30" rx="4" fill="#e8f0fb" stroke="#2c5fa8"/><text x="198" y="162" text-anchor="middle" fill="#2c5fa8">Q 8-11</text><text x="198" y="175" text-anchor="middle" fill="#2c5fa8">Q 12-15</text>
+        </g>
+        <g>
+          <rect x="260" y="60" width="96" height="130" rx="8" fill="#f6f7f9" stroke="#1e7d4f"/>
+          <text x="308" y="80" text-anchor="middle" fill="#16324f" font-weight="600">组 2</text>
+          <rect x="270" y="90" width="76" height="22" rx="4" fill="#e6f4ec" stroke="#1e7d4f"/><text x="308" y="105" text-anchor="middle" fill="#1e7d4f">rank4: KV头2</text>
+          <rect x="270" y="118" width="76" height="22" rx="4" fill="#e6f4ec" stroke="#1e7d4f"/><text x="308" y="133" text-anchor="middle" fill="#1e7d4f">rank5: KV头2</text>
+          <rect x="270" y="150" width="76" height="30" rx="4" fill="#e8f0fb" stroke="#2c5fa8"/><text x="308" y="162" text-anchor="middle" fill="#2c5fa8">Q 16-19</text><text x="308" y="175" text-anchor="middle" fill="#2c5fa8">Q 20-23</text>
+        </g>
+        <g>
+          <rect x="370" y="60" width="96" height="130" rx="8" fill="#f6f7f9" stroke="#1e7d4f"/>
+          <text x="418" y="80" text-anchor="middle" fill="#16324f" font-weight="600">组 3</text>
+          <rect x="380" y="90" width="76" height="22" rx="4" fill="#e6f4ec" stroke="#1e7d4f"/><text x="418" y="105" text-anchor="middle" fill="#1e7d4f">rank6: KV头3</text>
+          <rect x="380" y="118" width="76" height="22" rx="4" fill="#e6f4ec" stroke="#1e7d4f"/><text x="418" y="133" text-anchor="middle" fill="#1e7d4f">rank7: KV头3</text>
+          <rect x="380" y="150" width="76" height="30" rx="4" fill="#e8f0fb" stroke="#2c5fa8"/><text x="418" y="162" text-anchor="middle" fill="#2c5fa8">Q 24-27</text><text x="418" y="175" text-anchor="middle" fill="#2c5fa8">Q 28-31</text>
+        </g>
+        <g>
+          <rect x="480" y="60" width="96" height="130" rx="8" fill="#f6f7f9" stroke="#1e7d4f"/>
+          <text x="528" y="80" text-anchor="middle" fill="#16324f" font-weight="600">组 4</text>
+          <rect x="490" y="90" width="76" height="22" rx="4" fill="#e6f4ec" stroke="#1e7d4f"/><text x="528" y="105" text-anchor="middle" fill="#1e7d4f">rank8: KV头4</text>
+          <rect x="490" y="118" width="76" height="22" rx="4" fill="#e6f4ec" stroke="#1e7d4f"/><text x="528" y="133" text-anchor="middle" fill="#1e7d4f">rank9: KV头4</text>
+          <rect x="490" y="150" width="76" height="30" rx="4" fill="#e8f0fb" stroke="#2c5fa8"/><text x="528" y="162" text-anchor="middle" fill="#2c5fa8">Q 32-35</text><text x="528" y="175" text-anchor="middle" fill="#2c5fa8">Q 36-39</text>
+        </g>
+        <g>
+          <rect x="590" y="60" width="96" height="130" rx="8" fill="#f6f7f9" stroke="#1e7d4f"/>
+          <text x="638" y="80" text-anchor="middle" fill="#16324f" font-weight="600">组 5</text>
+          <rect x="600" y="90" width="76" height="22" rx="4" fill="#e6f4ec" stroke="#1e7d4f"/><text x="638" y="105" text-anchor="middle" fill="#1e7d4f">rank10: KV头5</text>
+          <rect x="600" y="118" width="76" height="22" rx="4" fill="#e6f4ec" stroke="#1e7d4f"/><text x="638" y="133" text-anchor="middle" fill="#1e7d4f">rank11: KV头5</text>
+          <rect x="600" y="150" width="76" height="30" rx="4" fill="#e8f0fb" stroke="#2c5fa8"/><text x="638" y="162" text-anchor="middle" fill="#2c5fa8">Q 40-43</text><text x="638" y="175" text-anchor="middle" fill="#2c5fa8">Q 44-47</text>
+        </g>
+        <g>
+          <rect x="700" y="60" width="96" height="130" rx="8" fill="#f6f7f9" stroke="#1e7d4f"/>
+          <text x="748" y="80" text-anchor="middle" fill="#16324f" font-weight="600">组 6</text>
+          <rect x="710" y="90" width="76" height="22" rx="4" fill="#e6f4ec" stroke="#1e7d4f"/><text x="748" y="105" text-anchor="middle" fill="#1e7d4f">rank12: KV头6</text>
+          <rect x="710" y="118" width="76" height="22" rx="4" fill="#e6f4ec" stroke="#1e7d4f"/><text x="748" y="133" text-anchor="middle" fill="#1e7d4f">rank13: KV头6</text>
+          <rect x="710" y="150" width="76" height="30" rx="4" fill="#e8f0fb" stroke="#2c5fa8"/><text x="748" y="162" text-anchor="middle" fill="#2c5fa8">Q 48-51</text><text x="748" y="175" text-anchor="middle" fill="#2c5fa8">Q 52-55</text>
+        </g>
+        <g>
+          <rect x="810" y="60" width="96" height="130" rx="8" fill="#f6f7f9" stroke="#1e7d4f"/>
+          <text x="858" y="80" text-anchor="middle" fill="#16324f" font-weight="600">组 7</text>
+          <rect x="820" y="90" width="76" height="22" rx="4" fill="#e6f4ec" stroke="#1e7d4f"/><text x="858" y="105" text-anchor="middle" fill="#1e7d4f">rank14: KV头7</text>
+          <rect x="820" y="118" width="76" height="22" rx="4" fill="#e6f4ec" stroke="#1e7d4f"/><text x="858" y="133" text-anchor="middle" fill="#1e7d4f">rank15: KV头7</text>
+          <rect x="820" y="150" width="76" height="30" rx="4" fill="#e8f0fb" stroke="#2c5fa8"/><text x="858" y="162" text-anchor="middle" fill="#2c5fa8">Q 56-59</text><text x="858" y="175" text-anchor="middle" fill="#2c5fa8">Q 60-63</text>
+        </g>
+      </g>
+      <text x="460" y="220" text-anchor="middle" font-size="12" fill="#b3354a">每卡：4 Q 头 + 1 KV 头；KV 头被复制 2 份 → KV cache 冗余 ×(tp/kv_heads) = ×2</text>
+      <text x="460" y="242" text-anchor="middle" font-size="12" fill="#5c6470">任意 rank 的 Q 头只依赖本卡 KV 头 → 打分/softmax/加权全部卡内，仅 O 投影 all-reduce</text>
+    </svg>
+    <div class="caption">图 3　GQA 复制模式：KV 头按「连续 rank 组」复制，与 Q 头分组对齐（vLLM：<code>shard_rank = tp_rank // replicas</code>）</div>
+  </div>
+
+  <h3>4.4 shape 走查（TP=8 切分情形）</h3>
+  <table>
+    <tr><th>阶段</th><th>全局 shape</th><th>每卡 shape（TP=8）</th><th>说明</th></tr>
+    <tr><td>QKV GEMM</td><td class="shp gshp">[B,S, 8192 + 2×1024]</td><td class="shp lshp">Q [B,S,1024]；K/V [B,S,128]</td><td>Q 按 8 头/卡切；KV 1 头/卡</td></tr>
+    <tr><td>score</td><td class="shp gshp">[B, 64, S, S]</td><td class="shp lshp">[B, 8, S, S]</td><td>8 个 Q 头 × 本卡 1 个 KV 头（组对齐）</td></tr>
+    <tr><td>attn_out</td><td class="shp gshp">[B,S,8192]</td><td class="shp lshp">[B,S,1024]</td><td>卡内</td></tr>
+    <tr><td>O proj + all-reduce</td><td class="shp gshp">[B,S,8192]</td><td class="shp lshp">[B,S,8192]</td><td>每层一次</td></tr>
+    <tr><td>MLP（中间 28672）</td><td class="shp gshp">[B,S,28672]→[B,S,8192]</td><td class="shp lshp">[B,S,3584]→ar→[B,S,8192]</td><td>gate/up 列并行 + down 行并行</td></tr>
+  </table>
+
+  <div class="callout info">
+    <strong>实测案例（vLLM 官方文档）：</strong>Qwen3-235B-A22B 只有 4 个 KV 头，<code>-tp 8</code> 时 KV cache 冗余 2×（<code>tp/kv_heads = 8/4</code>）；再加 <code>-dcp 2</code>（decode context parallel，沿序列 T 维切）即可把冗余消掉。GQA 的复制只发生在「KV 头数 &lt; TP」时，且要求 <code>tp % kv_heads == 0</code>。
+  </div>
+
+  <!-- ==================== §5 MLA ==================== -->
+  <h2 id="s5"><span class="sec-no">5</span>MLA 的 TP：latent 复制 + 上行按头切（案例 DeepSeek-V3，TP=4）</h2>
+
+  <div class="fig">
+    <img src="assets/deepseek-v3-architecture.jpg"
+         alt="DeepSeek-V3 整体架构图（CalvinXKY/InfraTech）"
+         loading="lazy">
+    <div class="caption">DeepSeek-V3 整体架构图 —— 先看全局，再对照本节的 TP 拆解。图片来源：
+      <a href="https://github.com/CalvinXKY/InfraTech/blob/main/models/deepseek_v3/deepseek_v3_architecture.jpg">CalvinXKY/InfraTech · models/deepseek_v3</a>（本地文件 <code>E:\Desktop\deepseek_v3_architecture.jpg</code> 加载）
+    </div>
+  </div>
+
+  <h3>5.1 MLA 是什么：共享摘要 + 两段投影链（先讲为什么）</h3>
+  <p>普通 GQA 的 K/V 是<strong>按头存权重</strong>的：每个 KV 头一套投影，8 个头 = 8 组权重。MLA 完全不同——它把 K/V 先压成一个<strong>很小的共享向量</strong>（latent，DSV3 里只有 512 维），128 个头需要的 K/V 都是<strong>从这份共享摘要临时算出来的</strong>。打个比方：</p>
+  <ul>
+    <li><strong>GQA</strong>：每个小组发一本自己的教材（K/V 权重），8 本；</li>
+    <li><strong>MLA</strong>：全班共读一份摘要（latent，512+64 维），128 个同学各自根据摘要<strong>现场写自己的笔记</strong>（K/V）。</li>
+  </ul>
+  <p>所以 MLA 的投影链天然分成两段（DeepSeek-V2 论文；vLLM 把下行融合成单 GEMM）：</p>
+  <div class="formula"><span class="lbl">MLA 投影链（两段）</span>
+    下行（压）：x [B,S,7168] → 共享摘要 [B,S,2112] = c_Q[1536] + kv_c[512] + k_pe[64]
+    · 上行（展）：c_Q·W<sub>UQ</sub> → Q [B,S,128×192]；kv_c·W<sub>UK</sub>/W<sub>UV</sub> → K/V [B,S,128×128]×2
+  </div>
+  <p><strong>关键性质：</strong>「头结构」只存在于上行的 W_UQ / W_UK / W_UV 里，latent 本身是 128 个头共用的一个向量——这是 TP 一切安排的总根源。</p>
+
+  <h4>论文中的官方公式（DeepSeek-V2，arXiv:2405.04434，§2.1.1）</h4>
+  <p>论文记号：<code>d_c</code> = KV 压缩维（kv_lora_rank，512）；<code>d<sub>c</sub>' = d<sub>c</sub> + d<sub>k</sub><sup>R</sup></code> = 576；<code>d<sub>k</sub><sup>R</sup></code> = rope 维（64）；<code>d<sub>h</sub></code> = 每头维度（128）；<code>n<sub>h</sub></code> = 头数（128）。对第 t 个 token <code>h<sub>t</sub></code>：</p>
+  <table>
+    <tr><th>#</th><th>论文公式</th><th>含义</th></tr>
+    <tr><td>(1)</td><td>c<sub>t</sub><sup>Q</sup> = W<sup>DQ</sup> h<sub>t</sub></td><td>Q 侧低秩压缩（q_lora_rank = 1536）</td></tr>
+    <tr><td>(2)</td><td>q<sub>t</sub><sup>C</sup> = W<sup>UQ</sup> c<sub>t</sub><sup>Q</sup>；q<sub>t</sub><sup>R</sup> = RoPE(W<sup>QR</sup> c<sub>t</sub><sup>Q</sup>)；q<sub>t</sub> = [q<sub>t</sub><sup>C</sup>; q<sub>t</sub><sup>R</sup>]</td><td>Q 上采样：无 rope 部分 + rope 部分拼接</td></tr>
+    <tr><td>(3)</td><td>c<sub>t</sub><sup>KV</sup> = W<sup>DKV</sup> h<sub>t</sub></td><td>KV 侧低秩压缩（kv_lora_rank = 512）</td></tr>
+    <tr><td>(4)</td><td>k<sub>t</sub><sup>C</sup> = W<sup>UK</sup> c<sub>t</sub><sup>KV</sup>；k<sub>t</sub><sup>R</sup> = RoPE(W<sup>KR</sup> c<sub>t</sub><sup>KV</sup>)；k<sub>t</sub> = [k<sub>t</sub><sup>C</sup>; k<sub>t</sub><sup>R</sup>]</td><td>K 上采样（128 维 nope + 64 维 rope）</td></tr>
+    <tr><td>(5)</td><td>v<sub>t</sub><sup>C</sup> = W<sup>UV</sup> c<sub>t</sub><sup>KV</sup>；v<sub>t</sub> = v<sub>t</sub><sup>C</sup></td><td>V 上采样（128 维）</td></tr>
+    <tr><td>(6)</td><td>o<sub>t</sub><sup>(i)</sup> = Σ<sub>j≤t</sub> softmax<sub>j</sub>( (q<sub>t</sub><sup>(i)</sup>)<sup>T</sup> k<sub>j</sub><sup>(i)</sup> / √d<sub>h</sub> ) v<sub>j</sub><sup>(i)</sup>，对每个头 i</td><td>缩放点积注意力（自回归掩码 j ≤ t）</td></tr>
+    <tr><td>(7)</td><td>o<sub>t</sub> = W<sup>O</sup> [o<sub>t</sub><sup>(1)</sup>; o<sub>t</sub><sup>(2)</sup>; …; o<sub>t</sub><sup>(n<sub>h</sub>)</sup>]</td><td>头拼接 + 输出投影（回到 d 维）</td></tr>
+  </table>
+  <div class="formula"><span class="lbl">论文的关键结论 · 推理 KV cache</span>每 token 只需缓存 [c<sub>t</sub><sup>KV</sup>; k<sub>t</sub><sup>R</sup>] ∈ ℝ<sup>d<sub>c</sub> + d<sub>k</sub><sup>R</sup></sup> = ℝ<sup>512+64</sup> —— 128 个头的完整 K/V 都从这 576 维<strong>现场重算</strong>，这就是「KV 被压缩进 latent」的精确含义</div>
+  <p><strong>「只有一份」的含义（k<sub>t</sub><sup>R</sup> 的共享性）：</strong><code>k<sub>t</sub><sup>R</sup> = RoPE(W<sup>KR</sup> c<sub>t</sub><sup>KV</sup>) ∈ ℝ<sup>64</sup></code> 是<strong>跨头共享的单个向量</strong>（MQA 式）——W<sup>KR</sup> ∈ ℝ<sup>64×512</sup> 对所有 128 个头只输出一份 64 维 rope 键，拼接进每个头时广播（unsqueeze + expand）。而 <code>k<sub>t</sub><sup>C</sup></code> / <code>v<sub>t</sub><sup>C</sup></code> 的「多头」藏在 W<sup>UK</sup> / W<sup>UV</sup> 的输出维里（W<sup>UK</sup> ∈ ℝ<sup>n<sub>h</sub>·d<sub>h</sub> × d<sub>c</sub></sup> = [16384, 512]，输出是 128 个 d<sub>h</sub> 维块拼接，reshape 即多头）。正是 <strong>K 侧 rope 的共享</strong>，才让 KV cache 的 rope 部分只需要 64 维。</p>
+  <p>对照 5.1 开头的简化链：vLLM 把 (1)+(3) 的压缩与 rope 键<strong>融合成单个下行 GEMM</strong>（输出 2112 = 1536 + 512 + 64，即 <code>DeepSeekV2FusedQkvAProjLinear</code>）；上采样 (2)(4)(5) 仍是论文的 W<sup>UQ</sup>/W<sup>UK</sup>/W<sup>UV</sup>，按头切分正是对它们做的（按输出维的 n<sub>h</sub> 个块切）。Q 侧 rope 段并入 W<sup>UQ</sup>（每个头 192 维中的后 64 维，<strong>随 Q 按头切</strong>）；K 侧 W<sup>KR</sup> 是跨头共享的 64 维小矩阵（k<sub>t</sub><sup>R</sup> 只有一份），TP 下<strong>整份复制</strong>。</p>
+
+  <h3>5.2 TP 的判断规则（一句话）</h3>
+  <div class="callout">
+    <strong>MLA 的 TP 规则：</strong>「生成共享摘要的机器（下行投影）」<strong>复制</strong>——摘要只有一份，切了任何一张卡都会缺信息；「每个头各自的加工器（上行投影）」<strong>按头切</strong>——头结构只在这里，切成 4 份正好每卡 32 个头；「合并输出的 O 投影」<strong>行并行 + 每层一次 all-reduce</strong>。
+  </div>
+
+  <h3>5.3 TP=4 时，每张卡持有什么权重</h3>
+  <table>
+    <tr><th>权重</th><th>全局形状</th><th>每卡形状（TP=4）</th><th>并行类型</th><th>vLLM 实现（实证）</th></tr>
+    <tr><td><code>W_DQ + W_DKV</code>（融合 A 投影）</td><td class="shp gshp">[7168, 1536+576]</td><td class="shp lshp">[7168, 2112] <strong>整份复制</strong></td><td>复制（disable_tp）</td><td><code>DeepSeekV2FusedQkvAProjLinear(disable_tp=True)</code>，权重 2112×7168（deepseek_v2.py L912-927）</td></tr>
+    <tr><td><code>W_UQ</code>（Q 上采样）</td><td class="shp gshp">[1536, 128×192]</td><td class="shp lshp">[1536, 32×192=6144]</td><td>列并行（按头）</td><td><code>q_b_proj = ColumnParallelLinear</code>（L289-295）</td></tr>
+    <tr><td><code>W_UK + W_UV</code>（K/V 上采样）</td><td class="shp gshp">[512, 128×(128+128)]</td><td class="shp lshp">[512, 32×256=8192]</td><td>列并行（按头）</td><td><code>kv_b_proj = ColumnParallelLinear</code>（L218-224）</td></tr>
+    <tr><td>RoPE 部分（<code>k_pe</code> / q 的 rope 段）</td><td class="shp gshp">k_pe [B,S,64]；q_pe 是 Q 的后 64 维</td><td class="shp lshp">整份复制 / 随 Q 按头切</td><td>复制 + 随头</td><td>vLLM 把 k_pe 直接并入融合 A 投影输出（576 = 512+64），无独立 <code>W_KR</code> 权重（论文版 <code>W_KR</code> 亦为共享小矩阵）</td></tr>
+    <tr><td><code>W_O</code></td><td class="shp gshp">[128×128, 7168]</td><td class="shp lshp">[4096, 7168]</td><td>行并行 + all-reduce</td><td><code>o_proj = RowParallelLinear</code>（reduce 可延后，L298-305）</td></tr>
+  </table>
+  <p class="src">（无 q_lora_rank 的变体，如 DeepSeek-V2-Lite 与部分 V3.2 实现：Q 直接由 <code>q_proj = ColumnParallelLinear(hidden → n_heads×qk_head_dim)</code> 按头切，K/V 下行 <code>kv_a_proj_with_mqa = ReplicatedLinear</code> 复制，语义不变。）</p>
+
+  <h3>5.4 前向在每张卡上实际发生什么（DSV3 真实数字，TP=4）</h3>
+  <div class="flow">
+    <div class="step"><span class="step-no">①</span><span><span class="op">输入</span>：<span class="shp">x [B,S,7168]</span> 在 4 张卡上各持一份（TP 不切激活，只切权重）</span></div>
+    <div class="step"><span class="step-no">②</span><span><span class="op">下行（复制，无通信）</span>：每卡独立算完整摘要 —— <span class="shp">[B,S,7168] @ [7168,2112] → [B,S,2112]</span>。4 卡权重相同、输入相同 → 结果逐位相同，等于同一 GEMM 算了 4 遍。<strong>冗余计算换零跨卡通信</strong>（摘要只有 2112 维，重复算比通信划算）</span></div>
+    <div class="step"><span class="step-no">③</span><span><span class="op">上行（按头切，真并行）</span>：每卡只加工自己那 32 个头 —— <span class="shp">Q [B,S,1536] @ [1536,32×192] → [B,S,32×192]</span>；<span class="shp">K/V [B,S,512] @ [512,32×256] → [B,S,32×256]</span>。4 卡合起来正好 128 个头（rank0 头 0-31、rank1 头 32-63…），互不依赖、无通信</span></div>
+    <div class="step"><span class="step-no">④</span><span><span class="op">attention（完全卡内）</span>：每卡拿着自己的 32 个头做 score / softmax / 加权 —— <span class="shp">scores [B,32,S,S] → attn_out [B,S,32×128]</span>。因为摘要每卡都有，派生 K/V 不欠任何别的卡</span></div>
+    <div class="step"><span class="step-no">⑤</span><span><span class="op">O 投影（行并行，唯一一次通信）</span>：每卡 <span class="shp">[B,S,4096] @ [4096,7168] → 部分和 [B,S,7168]</span> → <strong>all-reduce</strong> → 完整 <span class="shp">[B,S,7168]</span>（vLLM 可把 reduce 延后与下一层 RMSNorm 融合）</span></div>
+  </div>
+  <p>逐阶段 shape 汇总：</p>
+  <table>
+    <tr><th>阶段</th><th>全局 shape</th><th>每卡 shape（TP=4）</th><th>说明</th></tr>
+    <tr><td>输入</td><td class="shp gshp">x: [B,S,7168]</td><td class="shp lshp">[B,S,7168]</td><td>激活复制</td></tr>
+    <tr><td>融合 A 投影（复制）</td><td class="shp gshp">[B,S,2112]</td><td class="shp lshp">[B,S,2112] <strong>每卡全量</strong></td><td><strong>冗余计算</strong>：4 卡算 4 遍同一 GEMM</td></tr>
+    <tr><td>split + RMSNorm</td><td class="shp gshp">c_Q [B,S,1536]；kv_c [B,S,512]；k_pe [B,S,64]</td><td class="shp lshp">同左（全量）</td><td>norm 逐 token，卡内</td></tr>
+    <tr><td>Q 上采样（列并行）</td><td class="shp gshp">[B,S,128×192]</td><td class="shp lshp">[B,S,32×192]</td><td>32 头/卡；RoPE 作用 rope 段</td></tr>
+    <tr><td>K/V 上采样（列并行）</td><td class="shp gshp">K<sub>nope</sub> [B,S,128×128]；V [B,S,128×128]</td><td class="shp lshp">各 [B,S,32×128]</td><td>由共享 kv_c 派生，只算本地头</td></tr>
+    <tr><td>score（卡内）</td><td class="shp gshp">[B,128,S,S]</td><td class="shp lshp">[B,32,S,S]</td><td>Q 头 × K 头全在本地</td></tr>
+    <tr><td>attn_out</td><td class="shp gshp">[B,S,128×128]</td><td class="shp lshp">[B,S,32×128=4096]</td><td>卡内</td></tr>
+    <tr><td>O 投影（行并行）+ all-reduce</td><td class="shp gshp">[B,S,7168]</td><td class="shp lshp">[B,S,7168]</td><td>vLLM 可把 reduce 延后与下一层 RMSNorm 融合（<code>fuse_allreduce_rms</code>）</td></tr>
+  </table>
+
+  <div class="fig">
+    <svg viewBox="0 0 920 300" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="MLA TP=4 布局示意">
+      <defs>
+        <marker id="arw3" markerWidth="9" markerHeight="9" refX="7" refY="3.6" orient="auto">
+          <path d="M0,0 L8,3.6 L0,7.2 Z" fill="#5c6470"/>
+        </marker>
+      </defs>
+      <text x="30" y="28" font-size="13.5" font-weight="600" fill="#16324f">MLA TP=4：下行 A 投影整份复制（红框，4 卡各算一遍）→ 上行按头切（蓝框）→ attention 卡内 → O 行并行 all-reduce</text>
+
+      <rect x="30" y="52" width="150" height="88" rx="8" fill="#f6f7f9" stroke="#5c6470"/>
+      <text x="105" y="74" text-anchor="middle" font-size="12" fill="#16324f" font-weight="600">x [B,S,7168]</text>
+      <text x="105" y="96" text-anchor="middle" font-size="11" fill="#5c6470">每卡复制</text>
+
+      <rect x="220" y="52" width="190" height="88" rx="8" fill="#fdecef" stroke="#b3354a"/>
+      <text x="315" y="72" text-anchor="middle" font-size="12" fill="#b3354a" font-weight="600">融合 A 投影（复制）</text>
+      <text x="315" y="92" text-anchor="middle" font-size="11" fill="#b3354a">W: [7168, 2112] 每卡整份</text>
+      <text x="315" y="110" text-anchor="middle" font-size="11" fill="#b3354a">c_Q [B,S,1536] + kv [B,S,576]</text>
+      <text x="315" y="128" text-anchor="middle" font-size="11" fill="#5c6470">4 卡算 4 遍（冗余计算）</text>
+
+      <rect x="455" y="52" width="200" height="88" rx="8" fill="#e8f0fb" stroke="#2c5fa8"/>
+      <text x="555" y="72" text-anchor="middle" font-size="12" fill="#2c5fa8" font-weight="600">上行按头切（列并行）</text>
+      <text x="555" y="92" text-anchor="middle" font-size="11" fill="#2c5fa8">q_b_proj → Q [B,S,32×192]</text>
+      <text x="555" y="110" text-anchor="middle" font-size="11" fill="#2c5fa8">kv_b_proj → K/V [B,S,32×128]</text>
+      <text x="555" y="128" text-anchor="middle" font-size="11" fill="#5c6470">每卡 32 头，无通信</text>
+
+      <rect x="700" y="52" width="190" height="88" rx="8" fill="#e6f4ec" stroke="#1e7d4f"/>
+      <text x="795" y="72" text-anchor="middle" font-size="12" fill="#1e7d4f" font-weight="600">attention 卡内</text>
+      <text x="795" y="92" text-anchor="middle" font-size="11" fill="#1e7d4f">scores [B,32,S,S]</text>
+      <text x="795" y="110" text-anchor="middle" font-size="11" fill="#1e7d4f">attn [B,S,32×128]</text>
+      <text x="795" y="128" text-anchor="middle" font-size="11" fill="#5c6470">→ O 行并行 → all-reduce</text>
+
+      <path d="M180,96 C195,96 205,96 220,96" stroke="#5c6470" stroke-width="1.3" fill="none" marker-end="url(#arw3)"/>
+      <path d="M410,96 C425,96 435,96 455,96" stroke="#5c6470" stroke-width="1.3" fill="none" marker-end="url(#arw3)"/>
+      <path d="M655,96 C670,96 680,96 700,96" stroke="#5c6470" stroke-width="1.3" fill="none" marker-end="url(#arw3)"/>
+
+      <text x="30" y="186" font-size="12" fill="#16324f" font-weight="600">KV cache（每 token 每卡）</text>
+      <rect x="30" y="198" width="860" height="52" rx="8" fill="#f0e9fa" stroke="#6b3fa0"/>
+      <text x="460" y="220" text-anchor="middle" font-size="12" fill="#6b3fa0">存 latent：kv_c(512) + k_pe(64) = 576 维 —— <strong>每卡存全量</strong>（vLLM 官方：MLA KV cache 在 TP 各 rank 复制）</text>
+      <text x="460" y="240" text-anchor="middle" font-size="11.5" fill="#5c6470">每头的 K/V 在读 cache 时由 kv_b_proj 现场上采样（per-head 部分按卡切，latent 部分复制）</text>
+      <text x="460" y="280" text-anchor="middle" font-size="12.5" fill="#b3354a">TP=4 → KV cache 冗余 4×；TP=8 → 8×（DeepSeek-R1 单节点 tp8 官方案例）→ 用 -dcp 沿序列维消除</text>
+    </svg>
+    <div class="caption">图 4　MLA 的 TP 布局：复制下行（算力冗余）＋ 切上行（头并行）＋ KV latent 全副本（显存冗余）</div>
+  </div>
+
+  <h3>5.5 为什么 KV cache 是 ×4（最反直觉的点）</h3>
+  <p>attention 能在卡内算的前提是：<strong>每张卡都得能读到全部历史 token 的摘要</strong>——它要给自己 32 个头打分，需要所有历史 token 的 K/V，而 K/V 是从摘要现场算的。所以 KV cache 里存的就是摘要本身（每 token 512+64 维），而且<strong>每张卡各存一份完整的</strong>。对比 MHA/GQA：K/V 按头分开存，TP 后每卡只存 1/P；MLA 的摘要没有「头」可以切，只能整份复制 → <strong>集群总 KV = 单份 × P</strong>。三种代价量化如下（DSV3，TP=4，fp8 KV cache）：</p>
+  <table>
+    <tr><th>代价项</th><th>计算</th><th>结论</th></tr>
+    <tr><td>冗余计算（下行 A 投影）</td><td>每层每 token <code>7168→2112</code> 的 GEMM 算 P 遍</td><td>2112×7168 ≈ 1510 万 MAC/token/层 × 4 卡重复 —— 与每层主 GEMM 相比占比小，换来零通信</td></tr>
+    <tr><td>KV cache 冗余</td><td>每 token 每卡 <code>(512+64)×dtype</code>，P 份</td><td>fp8 下 576 B/token/卡；TP=4 时总 KV = 4× 单副本 —— <strong>TP 不摊 MLA 的 KV</strong></td></tr>
+    <tr><td>注意力通信</td><td>O 投影 all-reduce 一次</td><td>与 MHA/GQA 完全相同，不因 MLA 增加</td></tr>
+  </table>
+
+  <div class="callout red">
+    <strong>为什么「MLA 的 KV 切不动」：</strong>KV 头的结构被压缩进共享 latent（576 维），TP 按头切只会切坏上采样矩阵，而 latent 本身是 128 个头共用的一个向量——没有「头」可以切。因此每 rank 的 KV cache 存的是<strong>全量 latent</strong>，TP 从 1 涨到 8，KV 显存反而涨 8 倍。这正是上一份报告里 GLM-5 文档「TP 无法切分 MLA 的 KV cache」的机理。解药是 <strong>DCP</strong>（沿序列维把 latent 切到各卡，<code>-dcp 8</code> 即可完全消除复制）。
+  </div>
+
+  <!-- ==================== §6 DSA ==================== -->
+  <h2 id="s6"><span class="sec-no">6</span>DSA 的 TP：indexer 全复制 + 稀疏注意力（案例 DeepSeek-V3.2-Exp）</h2>
+
+  <h3>6.1 结构回顾：两阶段</h3>
+  <p>DeepSeek Sparse Attention（DSA，DeepSeek-V3.2-Exp）在 MLA 之上加了一个「选择器」：</p>
+  <ul>
+    <li><strong>阶段 1 —— indexer（打分 + top-k 选择）</strong>：用轻量 score 网络对「每个 query × 全部 token」打分，选出每 query 的 top-k 个 token（V3.2-Exp：64 个 score 头 × 128 维，topk=2048）。score-key 表单独缓存（fp8，每 token 128 维 + 缩放）；</li>
+    <li><strong>阶段 2 —— 稀疏注意力</strong>：主 MLA 只对选中的 ≤2048 个 token 做 attention（序列不长于 topk 时退化为稠密 attention）。</li>
+  </ul>
+
+  <h4>官方公式（DeepSeek-V3.2-Exp 技术报告，arXiv:2509.17490）</h4>
+  <p>DSA 在 MLA 之上增加 indexer 打分与 top-k 选择，完整公式链（n<sub>s</sub> = 64 个 score 头、d<sub>s</sub> = 128、topk k = 2048；形状经 vLLM 博客与 <span class="file-ref">deepseek_v2.py</span> Indexer 实现实证）：</p>
+  <table>
+    <tr><th>#</th><th>公式</th><th>含义</th></tr>
+    <tr><td>(1)</td><td>q<sub>t</sub><sup>score</sup> = W<sup>score</sup><sub>Q</sub> c<sub>t</sub><sup>Q</sup> ∈ ℝ<sup>n<sub>s</sub>×d<sub>s</sub></sup></td><td>score 查询（64 头 × 128 维；vLLM <code>wq_b</code>，复制）</td></tr>
+    <tr><td>(2)</td><td>k<sub>j</sub><sup>score</sup> = W<sup>score</sup><sub>K</sub> h<sub>j</sub> ∈ ℝ<sup>d<sub>s</sub></sup></td><td>score 键（MQA 式，每 token 一个共享键；<code>wk_weights_proj</code> + k_norm）</td></tr>
+    <tr><td>(3)</td><td>L<sub>t,j</sub><sup>(h)</sup> = (q<sub>t</sub><sup>(h)</sup>)<sup>T</sup> k<sub>j</sub><sup>score</sup> / √d<sub>s</sub></td><td>逐 score 头 logits → [n<sub>s</sub>, n]</td></tr>
+    <tr><td>(4)</td><td>s<sub>t,j</sub> = Σ<sub>h</sub> w<sub>t,h</sub> · L<sub>t,j</sub><sup>(h)</sup></td><td>头加权合并（w<sub>t</sub> ∈ ℝ<sup>n<sub>s</sub></sup> 学习权重；vLLM 博客：logits (n,h) × 头权重 (h,) → (n,)）</td></tr>
+    <tr><td>(5)</td><td>I<sub>t</sub> = topk<sub>k</sub>(s<sub>t,·</sub>)，k = 2048</td><td>全局 top-k 选择（因果：j ≤ t）</td></tr>
+    <tr><td>(6)</td><td>o<sub>t</sub> = Σ<sub>j∈I<sub>t</sub></sub> softmax<sub>j</sub>( q<sub>t</sub><sup>T</sup> k<sub>j</sub> / √d<sub>qk</sub> ) v<sub>j</sub></td><td>稀疏注意力（只对选中 token；S ≤ topk 时退化稠密）</td></tr>
+  </table>
+
+  <h4>三种计算形态：MHA / MLA / MQA —— 吸收（absorb）与不吸收的实现</h4>
+  <p>「吸收」是 MLA kernel 层的术语（FlashMLA / DeepSeek kernel / vLLM 的 kimi_k3 MLA 实现注释原文 <code>absorbs kv_b_proj into W_UK_T / W_UV</code>、<code>BMM1: absorb q_nope into latent space</code>），指把 KV 上采样矩阵折叠进打分/输出侧，让 K/V 永不物化。下面三张图从不同视角画同一个 DeepSeek-V3.2 注意力架构（来源：<a href="https://github.com/CalvinXKY/InfraTech/tree/main/models/deepseek_v3_2">CalvinXKY/InfraTech · models/deepseek_v3_2</a>）：</p>
+  <div class="grid2">
+    <div class="fig">
+      <img src="assets/dsv32-attention-mha.png" alt="DeepSeek-V3.2 注意力架构 MHA 视角" loading="lazy">
+      <div class="caption">MHA 视角 —— <strong>非吸收形态</strong>：每头 Q/K/V 显式上采样（W<sup>UK</sup>/W<sup>UV</sup> 物化 512→16384）后再做 attention，即论文公式的直观画法</div>
+    </div>
+    <div class="fig">
+      <img src="assets/dsv32-attention-mla.png" alt="DeepSeek-V3.2 注意力架构（MLA）" loading="lazy">
+      <div class="caption">MLA 基础视角 —— latent 压缩 + 上行按头切（§5 的主体结构）</div>
+    </div>
+  </div>
+  <div class="fig">
+    <img src="assets/dsv32-attention-mqa.png" alt="DeepSeek-V3.2 注意力架构 MQA 视角" loading="lazy">
+    <div class="caption">MQA 视角 —— <strong>吸收形态（decode 路径）</strong>：q' = W<sup>UK</sup><sup>T</sup> q<sub>nope</sub>（BMM1 把 q 吸收进 latent 空间）直接对 c<sup>KV</sup> 打分，K 永不物化；V 上采样挪到注意力输出之后（o = W<sub>UV</sub><sup>T</sup>(P·c)）</div>
+  </div>
+  <div class="formula"><span class="lbl">两种形态的等价性（矩阵乘法结合律）</span>非吸收：score = q<sub>nope</sub><sup>T</sup>(W<sup>UK</sup>·c)，o = P·(W<sup>UV</sup>·c)　·　吸收：score = (W<sup>UK</sup><sup>T</sup>·q<sub>nope</sub>)<sup>T</sup>·c，o = W<sup>UV</sup><sup>T</sup>·(P·c)</div>
+  <p class="note">吸收形态省掉每 token 每层的 512→16384 上采样 GEMM（≈16.8M MACs）与中间 K/V 张量的显存/带宽，decode 每 token 只读 576 维 latent——FlashMLA 稀疏解码 kernel 与 indexer 打分（天然 MQA 共享键）都走这条路径。</p>
+
+  <h3>6.2 切法：indexer 全复制，主 attention 同 MLA</h3>
+  <table>
+    <tr><th>模块</th><th>vLLM 实现（实证）</th><th>TP 语义</th></tr>
+    <tr><td>indexer Q 投影 <code>wq_b</code></td><td><code>ReplicatedLinear</code>（deepseek_v2.py L669-675，注释原文 "no tensor parallel, just replicated"）</td><td><strong>复制</strong></td></tr>
+    <tr><td>indexer K 投影 <code>wk_weights_proj</code></td><td><code>MergedColumnParallelLinear(disable_tp=True)</code>（L678-685）</td><td><strong>复制</strong></td></tr>
+    <tr><td>score-key 缓存 <code>k_cache</code></td><td><code>DeepseekV32IndexerCache</code>（每 token 一个向量）</td><td><strong>复制</strong>（每 rank 全量）</td></tr>
+    <tr><td>主 MLA（Q/K/V/O）</td><td>同 §5：<code>fused_qkv_a_proj</code> 复制 + <code>q_b_proj/kv_b_proj</code> 列并行 + <code>o_proj</code> 行并行</td><td>同 MLA</td></tr>
+    <tr><td>top-k 下标</td><td><code>topk_indices_buffer</code>（所有层共享）</td><td><strong>各 rank 相同</strong>（因为输入与网络都复制）</td></tr>
+  </table>
+
+  <h3>6.3 为什么 indexer 必须复制（这是 DSA 与前面三种的本质区别）</h3>
+  <ul>
+    <li><strong>top-k 是全局运算</strong>：每个 query 要跟<strong>全部</strong>历史 token 打分才能选出全局 top-k。若 indexer 的 Q 按头切（像主 attention 那样），每个 rank 只能看到「自己的头 × 全部 token」——分数矩阵的「头维」被切分后，softmax/top-k 沿序列维的全局性不受影响，但 K 的投影若按头切则每 rank 只有部分 score 头……而 vLLM 干脆让 Q 和 K 都复制：每个 rank 独立算出<strong>完全相同</strong>的 top-k 下标，无需跨卡同步；</li>
+    <li><strong>复制是便宜的</strong>：score 维度只有 128（+64 rope），远小于主 attention 的 qk 维度 192×128 头；且 indexer 的 K 表在推理时是「写一次、全 rank 复用」的缓存；</li>
+    <li><strong>稀疏 attention 依旧卡内局部</strong>：主 MLA 的 KV cache 每 rank 本来就含<strong>全部 token</strong>（latent 全副本，只是按头切了上采样），拿到全局一致的 top-k 下标后，各 rank 直接从本地 cache 读选中的块——跨卡通信仍是 O 投影那一次 all-reduce。</li>
+  </ul>
+
+  <div class="fig">
+    <svg viewBox="0 0 920 290" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="DSA indexer 全复制数据流示意">
+      <defs>
+        <marker id="arw4" markerWidth="9" markerHeight="9" refX="7" refY="3.6" orient="auto">
+          <path d="M0,0 L8,3.6 L0,7.2 Z" fill="#5c6470"/>
+        </marker>
+      </defs>
+      <text x="30" y="28" font-size="13.5" font-weight="600" fill="#16324f">DSA TP：indexer（红框）在 P 个 rank 上全复制、算出同一份 top-k；稀疏 MLA 只读选中 token（每 rank 本地 KV 全 token 副本）</text>
+
+      <rect x="30" y="52" width="150" height="70" rx="8" fill="#f6f7f9" stroke="#5c6470"/>
+      <text x="105" y="76" text-anchor="middle" font-size="12" fill="#16324f" font-weight="600">hidden x</text>
+      <text x="105" y="96" text-anchor="middle" font-size="11" fill="#5c6470">[B,S,7168] 复制</text>
+
+      <rect x="220" y="52" width="250" height="150" rx="8" fill="#fdecef" stroke="#b3354a"/>
+      <text x="345" y="72" text-anchor="middle" font-size="12" fill="#b3354a" font-weight="600">indexer（全复制，每 rank 独立）</text>
+      <text x="345" y="94" text-anchor="middle" font-size="11" fill="#5c6470">wq_b: q_score [B,S,64×128]（复制）</text>
+      <text x="345" y="112" text-anchor="middle" font-size="11" fill="#5c6470">wk_weights_proj: k_score [S_ctx,128]（复制）</text>
+      <text x="345" y="130" text-anchor="middle" font-size="11" fill="#5c6470">score = q·kᵀ → [B,64,S,S_ctx]</text>
+      <text x="345" y="148" text-anchor="middle" font-size="11" fill="#b3354a" font-weight="600">top-k（每 query ≤ 2048 个 token）</text>
+      <text x="345" y="166" text-anchor="middle" font-size="11" fill="#5c6470">下标写入共享 topk_indices_buffer</text>
+      <text x="345" y="186" text-anchor="middle" font-size="11" fill="#1e7d4f" font-weight="600">P 个 rank 结果完全相同（输入/网络全复制）</text>
+
+      <rect x="520" y="52" width="200" height="70" rx="8" fill="#f0e9fa" stroke="#6b3fa0"/>
+      <text x="620" y="76" text-anchor="middle" font-size="12" fill="#6b3fa0" font-weight="600">MLA latent 路径（同 §5）</text>
+      <text x="620" y="96" text-anchor="middle" font-size="11" fill="#5c6470">每 rank 本地 KV cache = 全 token 的 latent</text>
+
+      <rect x="520" y="140" width="200" height="62" rx="8" fill="#e6f4ec" stroke="#1e7d4f"/>
+      <text x="620" y="162" text-anchor="middle" font-size="12" fill="#1e7d4f" font-weight="600">稀疏 attention</text>
+      <text x="620" y="182" text-anchor="middle" font-size="11" fill="#5c6470">只读 top-k 选中块的 latent（卡内）</text>
+      <text x="620" y="196" text-anchor="middle" font-size="11" fill="#5c6470">→ O 行并行 → all-reduce</text>
+
+      <rect x="770" y="52" width="120" height="62" rx="8" fill="#fdecef" stroke="#b3354a"/>
+      <text x="830" y="74" text-anchor="middle" font-size="11.5" fill="#b3354a" font-weight="600">score-key</text>
+      <text x="830" y="92" text-anchor="middle" font-size="11" fill="#b3354a">缓存</text>
+      <text x="830" y="108" text-anchor="middle" font-size="10.5" fill="#5c6470">每 token 128+scale</text>
+
+      <path d="M180,86 C195,86 205,86 220,86" stroke="#5c6470" stroke-width="1.3" fill="none" marker-end="url(#arw4)"/>
+      <path d="M470,120 C490,120 500,100 520,90" stroke="#b3354a" stroke-width="1.3" fill="none" marker-end="url(#arw4)"/>
+      <path d="M620,122 C620,132 620,138 620,140" stroke="#6b3fa0" stroke-width="1.3" fill="none" marker-end="url(#arw4)"/>
+      <path d="M665,86 C700,86 740,84 770,82" stroke="#b3354a" stroke-width="1.3" fill="none" marker-end="url(#arw4)"/>
+
+      <text x="460" y="240" text-anchor="middle" font-size="12" fill="#5c6470">默认每层都算一次 top-k（index_topk_freq=1）；IndexCache 特性可跨层复用（index_topk_freq=4 或 F/S pattern，arXiv:2603.12201）</text>
+      <text x="460" y="262" text-anchor="middle" font-size="12" fill="#b3354a">复制 indexer 的冗余计算随层数 × token 数增长 —— 这是 DSA + TP 的主要成本，稀疏化省下的 attention 算力远大于它</text>
+    </svg>
+    <div class="caption">图 5　DSA 的 TP：选择器全复制保证 top-k 全局一致，稀疏 attention 本体与 MLA 完全相同</div>
+  </div>
+
+  <h3>6.4 shape 走查（TP=4，prefill：S 个新 token，上下文 S_ctx）</h3>
+  <table>
+    <tr><th>阶段</th><th>全局 shape</th><th>每卡 shape（TP=4）</th><th>说明</th></tr>
+    <tr><td>indexer Q</td><td class="shp gshp">q_score: [B,S,64×128]</td><td class="shp lshp">[B,S,64×128] 全量</td><td>复制</td></tr>
+    <tr><td>indexer K（score-key）</td><td class="shp gshp">k_score: [S_ctx,128]</td><td class="shp lshp">[S_ctx,128] 全量</td><td>复制，写入 k_cache</td></tr>
+    <tr><td>打分 + top-k</td><td class="shp gshp">scores [B,64,S,S_ctx] → topk [B,S,2048]</td><td class="shp lshp">同左（完全相同）</td><td>各 rank 独立算、结果一致</td></tr>
+    <tr><td>主 MLA Q</td><td class="shp gshp">[B,S,128×192]</td><td class="shp lshp">[B,S,32×192]</td><td>按头切（同 §5）</td></tr>
+    <tr><td>稀疏 attention</td><td class="shp gshp">scores [B,128,S,≤2048]</td><td class="shp lshp">[B,32,S,≤2048]</td><td>只对选中 token；序列 ≤ topk 时退化稠密</td></tr>
+    <tr><td>attn_out → O</td><td class="shp gshp">[B,S,7168]</td><td class="shp lshp">[B,S,32×128] → ar → [B,S,7168]</td><td>每层一次 all-reduce</td></tr>
+  </table>
+
+  <div class="callout purple">
+    <strong>DSA 结论：</strong>TP 视角下 DSA = 「MLA 的 TP」+「indexer 全复制」。稀疏化的收益（attention 算力与 KV 读取量降一个数量级）与 TP 正交：TP 负责把 128 个头摊到卡上，DSA 负责把每个头要看的 token 从 S_ctx 砍到 2048。代价是 indexer 的复制计算随层数线性增长——这也是「IndexCache 跨层复用 top-k」这一优化（vLLM 特性、TensorRT-LLM PR #15513）出现的动机。
+  </div>
+
+  <!-- ==================== §7 总表 ==================== -->
+  <h2 id="s7"><span class="sec-no">7</span>四模型完整前向 shape 总表</h2>
+  <p>把四条走查并成一张表（prefill 阶段；<span class="shp gshp">红=全局</span> / <span class="shp lshp">蓝=每卡</span>，P=TP）。</p>
+  <table>
+    <tr><th>阶段</th><th>MHA · LLaMA-2-7B（TP=4）</th><th>GQA · LLaMA-3.1-70B（TP=8）</th><th>MLA · DeepSeek-V3（TP=4）</th><th>DSA · DeepSeek-V3.2-Exp（TP=4）</th></tr>
+    <tr><td>输入</td><td class="shp lshp">[B,S]</td><td class="shp lshp">[B,S]</td><td class="shp lshp">[B,S]</td><td class="shp lshp">[B,S]</td></tr>
+    <tr><td>embed / norm</td><td class="shp gshp">[B,S,4096]</td><td class="shp gshp">[B,S,8192]</td><td class="shp gshp">[B,S,7168]</td><td class="shp gshp">[B,S,7168]</td></tr>
+    <tr><td>Q 投影</td><td class="shp gshp">[B,S,4096] → <span class="lshp">[B,S,1024]</span></td><td class="shp gshp">[B,S,8192] → <span class="lshp">[B,S,1024]</span></td><td class="shp gshp">[B,S,24576] → <span class="lshp">[B,S,6144]</span></td><td class="shp gshp">[B,S,24576] → <span class="lshp">[B,S,6144]</span></td></tr>
+    <tr><td>K/V 投影</td><td class="shp gshp">[B,S,4096]×2 → <span class="lshp">[B,S,1024]×2</span></td><td class="shp gshp">[B,S,1024]×2 → <span class="lshp">[B,S,128]×2</span></td><td class="shp gshp">latent [B,S,576] → <span class="lshp">[B,S,576]（复制）</span>；K/V 上行 <span class="lshp">[B,S,32×128]</span></td><td class="shp gshp">latent [B,S,576]（复制）；+ score-key <span class="lshp">[S_ctx,128]（复制）</span></td></tr>
+    <tr><td>score</td><td class="shp gshp">[B,32,S,S] → <span class="lshp">[B,8,S,S]</span></td><td class="shp gshp">[B,64,S,S] → <span class="lshp">[B,8,S,S]</span></td><td class="shp gshp">[B,128,S,S] → <span class="lshp">[B,32,S,S]</span></td><td class="shp gshp">[B,128,S,≤2048] → <span class="lshp">[B,32,S,≤2048]</span></td></tr>
+    <tr><td>attn_out</td><td class="shp gshp">[B,S,4096] → <span class="lshp">[B,S,1024]</span></td><td class="shp gshp">[B,S,8192] → <span class="lshp">[B,S,1024]</span></td><td class="shp gshp">[B,S,16384] → <span class="lshp">[B,S,4096]</span></td><td class="shp gshp">同左</td></tr>
+    <tr><td>O 投影（行并行 + all-reduce）</td><td class="shp gshp">[B,S,4096]</td><td class="shp gshp">[B,S,8192]</td><td class="shp gshp">[B,S,7168]</td><td class="shp gshp">[B,S,7168]</td></tr>
+    <tr><td>MLP / MoE 段</td><td class="shp gshp">gate/up [B,S,11008] → <span class="lshp">[B,S,2752]</span>；down → ar → <span class="shp gshp">[B,S,4096]</span></td><td class="shp gshp">[B,S,28672] → <span class="lshp">[B,S,3584]</span>；down → ar → <span class="shp gshp">[B,S,8192]</span></td><td class="shp gshp">MoE：gate [B,S,256]；专家 up/gate [B,S,2048]、down [2048,7168]；EP 时按专家切（见并行度报告 §5）</td><td class="shp gshp">同左</td></tr>
+    <tr><td>最终 norm + lm_head</td><td class="shp gshp">[B,S,4096] → <span class="shp gshp">[B,S,V]</span></td><td class="shp gshp">[B,S,8192] → <span class="shp gshp">[B,S,V]</span></td><td class="shp gshp">[B,S,7168] → <span class="shp gshp">[B,S,V]</span></td><td class="shp gshp">[B,S,7168] → <span class="shp gshp">[B,S,V]</span></td></tr>
+  </table>
+
+  <h3>7.1 通信与冗余清单（每层）</h3>
+  <table>
+    <tr><th>结构</th><th>all-reduce 次数（注意力路径）</th><th>冗余权重</th><th>冗余计算</th><th>KV cache 冗余</th></tr>
+    <tr><td>MHA</td><td>1（O 投影）</td><td>无</td><td>无</td><td>无（按头切）</td></tr>
+    <tr><td>GQA（切分）</td><td>1</td><td>无</td><td>无</td><td>无（按头切）</td></tr>
+    <tr><td>GQA（复制，tp&gt;kv_heads）</td><td>1</td><td>K/V 权重 ×replicas</td><td>无</td><td>×replicas = ×(tp/kv_heads)</td></tr>
+    <tr><td>MLA</td><td>1</td><td>下行 A 投影（W_DQ/W_DKV）整份</td><td>下行 GEMM ×P（每 token 每层重复算）</td><td>×tp（latent 全副本）</td></tr>
+    <tr><td>DSA</td><td>1</td><td>indexer 全部（wq_b / wk_weights_proj / k_cache）</td><td>下行 GEMM ×P + indexer 打分 ×P</td><td>×tp（latent）+ ×tp（score-key）</td></tr>
+  </table>
+
+  <!-- ==================== §8 KV 显存账 ==================== -->
+  <h2 id="s8"><span class="sec-no">8</span>KV cache 显存账：复制 vs 切分</h2>
+
+  <p>设每 token 单份 KV 显存为 <code>C₀</code>，TP=P 时每卡每 token 的 KV 显存：</p>
+  <table>
+    <tr><th>结构</th><th>C₀（每 token 单份）</th><th>每卡每 token（TP=P）</th><th>集群总 KV</th><th>结论</th></tr>
+    <tr><td>MHA</td><td>2·n_heads·hd·d</td><td>C₀ / P</td><td>C₀</td><td>TP 按头摊 KV ✓</td></tr>
+    <tr><td>GQA（切分）</td><td>2·kv_heads·hd·d</td><td>C₀ / P</td><td>C₀</td><td>TP 按头摊 KV ✓</td></tr>
+    <tr><td>GQA（复制）</td><td>2·kv_heads·hd·d</td><td>C₀ / kv_heads</td><td>C₀ · (P/kv_heads)</td><td>超过 kv_heads 后 TP 开始复制 ✗</td></tr>
+    <tr><td>MLA</td><td>(kv_lora + rope)·d</td><td><strong>C₀（每卡全量）</strong></td><td><strong>C₀ · P</strong></td><td>TP 完全不摊 KV，还 ×P ✗✗</td></tr>
+    <tr><td>DSA</td><td>(kv_lora + rope)·d + score_key·d</td><td><strong>C₀（全量）×2 份表</strong></td><td><strong>C₀ · P</strong></td><td>同 MLA，另加 score-key 表 ✗✗</td></tr>
+  </table>
+  <p class="src">d = 每元素字节（fp16=2，fp8=1）；n_heads/kv_heads 为全局头数。示例（fp8，DSV3：kv_lora=512、rope=64）：MLA 单份 576 B/token；TP=4 集群总 2304 B/token，TP=8 时 4608 B/token。</p>
+
+  <div class="callout info">
+    <strong>解药是 DCP，不是更大的 TP：</strong>vLLM 的 <code>--decode-context-parallel-size</code> 沿序列 T 维把 KV 切开（交织分块），与 TP 的 H 维切分正交。对 MLA：<code>-tp 8 -dcp 8</code> 把 8× 冗余消到 0；对 GQA 复制（Qwen3-235B，kv=4，tp=8）：<code>-dcp 2</code> 消掉 2× 冗余。原则：<strong>先用 TP 摊权重与算力，再用 DCP 消 KV 冗余</strong>。
+  </div>
+
+  <!-- ==================== §9 踩坑 ==================== -->
+  <h2 id="s9"><span class="sec-no">9</span>踩坑清单与选择指南</h2>
+
+  <h3>9.1 决策要点（按注意力结构）</h3>
+  <div class="grid2">
+    <div class="card">
+      <div class="card-title">MHA / GQA（稠密小模型）</div>
+      <p>TP 是默认答案：头够多（MHA 全切、GQA 在 tp ≤ kv_heads 时全切），权重、KV、算力一起摊。GQA 注意 <code>tp % kv_heads == 0</code> 约束；超过 kv_heads 后 KV 开始复制，用 DCP 补。</p>
+    </div>
+    <div class="card">
+      <div class="card-title">MLA（DeepSeek 系 / GLM / Kimi）</div>
+      <p>TP 只能摊「上行按头」的权重与算力；latent 下行与 KV cache 是复制。别指望 TP 省 KV 显存——单机 8 卡就是 8× KV 冗余，配 <code>-dcp</code>。MoE 大模型更常见的组合是 TP=1 + EP（见并行度报告 §7）。</p>
+    </div>
+    <div class="card">
+      <div class="card-title">DSA（V3.2 / GLM-5 长上下文）</div>
+      <p>TP 语义与 MLA 相同，额外注意 indexer 复制计算的成本随层数增长；长序列 + 大 topk 时 indexer 的 GEMM 不可忽略。IndexCache（跨层复用 top-k）可砍掉大部分重复打分。稀疏化省的是 attention 算力，省不了 latent 的 KV 复制——KV 冗余仍靠 DCP。</p>
+    </div>
+    <div class="card">
+      <div class="card-title">量化与 TP 的叠加</div>
+      <p>FP4 权重 + TP 在 NVIDIA CUDA 上被禁（DeepSeek-V4，见并行度报告 §2.3）；MLA 的 fp8 KV cache 有专用布局（<code>fp8_ds_mla</code>）。MLA 的 <code>o_proj</code> all-reduce 常与下一层 RMSNorm 融合，评估通信开销时别把「未归约的局部输出」误当成已完成。</p>
+    </div>
+  </div>
+
+  <h3>9.2 踩坑清单</h3>
+  <table>
+    <tr><th>坑</th><th>表现</th><th>对策</th></tr>
+    <tr><td><code>tp</code> 不整除 <code>n_heads</code></td><td>启动即断言失败（vLLM <code>assert num_heads % tp_size == 0</code>）</td><td>先查模型头数再定 TP（DSV3 128 头 → 只支持 1/2/4/8/16/32/64/128）</td></tr>
+    <tr><td>GQA 的 <code>tp &gt; kv_heads</code> 且 <code>tp % kv_heads ≠ 0</code></td><td>断言失败（如 kv=3 时 tp=8 不可用）</td><td>选 3/6/12… 或换结构（复制要求整除）</td></tr>
+    <tr><td>MLA 指望 TP 摊 KV cache</td><td>KV 显存不降反升（×tp）</td><td>用 DCP（<code>-dcp</code>）沿序列切；或 EP/DP 布局</td></tr>
+    <tr><td>DSA 忘了 indexer 的复制成本</td><td>TP 越大，每层重复打分越浪费（尤其大 batch）</td><td>开 IndexCache（<code>index_topk_freq</code>）；batch 大时评估 indexer GEMM 占比</td></tr>
+    <tr><td>MLA 的 O 投影未归约就当完成</td><td>错误统计通信 / 数值错误（部分和）</td><td>确认 all-reduce 与下个算子（RMSNorm）的融合方式</td></tr>
+    <tr><td>GQA 复制模式的组对齐想当然</td><td>手写切分时 Q 组与 KV 副本组错位 → 结果错误</td><td>按 vLLM 规则：<code>kv_shard = rank // replicas</code>，Q 顺序切</td></tr>
+    <tr><td>把 CP（切序列）与 TP（切头）混用而不查整除</td><td>DCP 要求 <code>tp % dcp == 0</code> 等约束</td><td>先 TP 后 DCP，逐级验证（见 §8 与并行度报告 §6.3）</td></tr>
+  </table>
+
+  <!-- ==================== §10 结语 ==================== -->
+  <h2 id="s10"><span class="sec-no">10</span>结语：注意力 TP 的「切分哲学」</h2>
+  <ul>
+    <li><strong>TP 对注意力是「切头」而不是「切序列」：</strong>只要每个 rank 的 Q 头所依赖的 K/V 全部在本地，打分/softmax/加权就零通信——这是所有四种结构的共同地基。代价只在权重与 KV 的「放法」不同。</li>
+    <li><strong>KV 越压缩，TP 越无能为力：</strong>MHA 时代 TP 白赚 KV 显存；GQA 头少开始复制；MLA 的 latent 完全复制；DSA 还要复制选择器。演进方向上，TP 在注意力里的角色从「全能切分」退化为「只切 Q 头与上行」——这解释了为什么 MoE + MLA 时代官方配方普遍 TP=1 + EP（并行度报告 §7）。</li>
+    <li><strong>冗余的两种形态要分清：</strong>GQA 复制的是权重（显存账），MLA/DSA 复制的是计算与 KV（算力账 + 显存账）。「复制权重」在推理侧通常是划算的（权重只读、一次加载）；「复制计算」要按 batch 与层数算账；「复制 KV」则几乎总是坏账——用 DCP 消。</li>
+    <li><strong>shape 走查的价值：</strong>把每个阶段的全局/每卡形状写下来，就能在任何引擎上核对并行语义是否正确（vLLM 的 <code>base_model_tp_plan</code>、Megatron-Bridge 的切分脚本都只是这套 shape 规则的自动化）。下一份报告可以沿这条线继续：EP 视角的 MoE 层 shape 走查、或 CP/DCP 的 KV 分块粒度。</li>
+  </ul>
+
+  <!-- ==================== 附录 A ==================== -->
+  <h2 id="a1"><span class="sec-no">A</span>附录 A：术语表</h2>
+  <table>
+    <tr><th>术语</th><th>含义</th></tr>
+    <tr><td>column-parallel / row-parallel</td><td>列并行：权重按输出维切（输出分片）；行并行：按输入维切（输出为部分和，需 all-reduce）</td></tr>
+    <tr><td>sequential / interleaved QKV 布局</td><td>融合 QKV 权重的列序：<code>[Q|K|V]</code> 顺序排列 vs <code>[q0,k0,v0,…]</code> 按头交织</td></tr>
+    <tr><td>num_kv_head_replicas</td><td>GQA 中 KV 头复制因子 = tp / kv_heads；连续若干 rank 共享同一 KV 头</td></tr>
+    <tr><td>kv_lora_rank / q_lora_rank</td><td>MLA 的 KV/Q 低秩压缩维度（DSV3：512 / 1536）</td></tr>
+    <tr><td>qk_nope_head_dim / qk_rope_head_dim / v_head_dim</td><td>MLA 每头维度：无 RoPE 的 qk 部分（128）、RoPE 部分（64）、v（128）</td></tr>
+    <tr><td>indexer / score-key / topk</td><td>DSA 选择器：打分网络 / 缓存的打分键表 / 每 query 选中的 token 数（2048）</td></tr>
+    <tr><td>IndexCache</td><td>跨层复用 top-k 下标的优化（index_topk_freq / index_topk_pattern，arXiv:2603.12201）</td></tr>
+    <tr><td>DCP / PCP</td><td>decode/prefill context parallel：沿序列 T 维切 KV（消 TP 复制）</td></tr>
+    <tr><td>fuse_allreduce_rms</td><td>vLLM 编译 pass：把 O 投影的 all-reduce 与下一层 RMSNorm 融合</td></tr>
+  </table>
+
+  <!-- ==================== 附录 B ==================== -->
+  <h2 id="a2"><span class="sec-no">B</span>附录 B：参考来源（含 vLLM 源码实证）</h2>
+  <ol class="src">
+    <li><strong>vLLM 源码（本地 checkout 逐行核对）</strong>：
+      <span class="file-ref">vllm/model_executor/layers/linear.py</span> L1074-1081（QKVParallelLinear 的 KV 头分切/复制规则）、L1379（<code>shard_rank = tp_rank // num_kv_head_replicas</code>）；
+      <span class="file-ref">vllm/model_executor/models/deepseek_v2.py</span> L912-927（<code>DeepSeekV2FusedQkvAProjLinear disable_tp=True</code>）、L645-717（Indexer：wq_b ReplicatedLinear、wk_weights_proj disable_tp、k_cache）、L1000-1066（MLA 各投影的并行类型）；
+      <span class="file-ref">vllm/models/deepseek_v32/attention.py</span> L176-320（V3.2 的 TP 装配：fused_qkv_a_proj / q_b_proj / kv_b_proj / o_proj / indexer）。</li>
+    <li><strong>vLLM 官方文档（本地 checkout）</strong>：
+      <span class="file-ref">docs/serving/context_parallel_deployment.md</span>（"DeepSeek-R1 … -tp 8 causes 8x KV cache duplication"、Qwen3-235B 4 KV 头 2× 复制案例）；
+      <span class="file-ref">docs/features/index_cache.md</span>（DSA top-k 跨层复用，index_topk_freq / pattern）；
+      <span class="file-ref">docs/design/attention_backends.md</span>（MLA 专用后端、稀疏 MLA）；
+      <span class="file-ref">docs/design/nixl_connector_compatibility.md</span>（"MLA KV cache is replicated across TP workers"）；
+      <span class="file-ref">docs/design/fusions.md</span>（fuse_allreduce_rms / MLA 量化融合）。</li>
+    <li>DeepSeek-V2 论文（arXiv:2405.04434）：MLA 的 W_DQ/W_DKV/W_UQ/W_UK/W_UV 定义与维度。</li>
+    <li>DeepSeek-V3 技术报告（arXiv:2412.19437）：MLA 配置（q_lora 1536 / kv_lora 512 / qk_nope 128 / qk_rope 64 / v 128）。</li>
+    <li>DeepSeek-V3.2-Exp 技术报告（arXiv:2509.17490）与 vLLM recipes（docs.vllm.ai DeepSeek-V3.2 使用指南）：DSA 的 indexer 超参（64 score 头 × 128 维、topk=2048）、FP8 稀疏 MLA 后端。</li>
+    <li>IndexCache 论文（arXiv:2603.12201）：DSA 跨层 top-k 复用。</li>
+    <li>Megatron-LM（Narayanan et al. 2021，arXiv:1909.08053）：列/行并行、按头切分与 sequential/interleaved 布局；Megatron-Core 对 GQA 的 kv 头分切/复制语义与 vLLM 一致。</li>
+    <li>TensorRT-LLM PR #15513（DSA indexer top-k 跨层复用）、PR #11990（GLM-5 支持与 DSA MTP）；NVIDIA 博客 Optimizing DeepSeek-V3.2 on Blackwell。</li>
+    <li>本工作区配套：<span class="nolink">02_并行研究·各种并行度研究</span>（TP/PP/DP/EP/SP/CP 全景）；<span class="nolink">01_vllm 执行流水拆解报告</span>（MTP/DSA 算子级细节）；<a href="sp-vs-cp.html">SP vs CP 详解</a>（SP/CP 两线演化的完整对比）。</li>
+  </ol>
+
+  <div class="footer">
+    02_并行研究 · 注意力家族的张量并行拆解 —— 生成于 2026-08-12。本报告为研究性综述；所有 shape 与并行语义以 vLLM 源码、vLLM 官方文档及各模型发布文档为准，随版本可能变化。
+  </div>
+
+</div>
+</body>
+</html>
