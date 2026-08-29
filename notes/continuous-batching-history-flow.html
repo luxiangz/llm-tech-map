@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Continuous Batching 完整梳理——机制、意义与前世今生（vLLM）</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/lxgw-wenkai-webfont@1.7.0/style.css">
+<style>
+  :root {
+    --ink: #1f2430; --muted: #5c6470; --accent: #b3354a; --accent2: #2c5fa8;
+    --bg: #ffffff; --bg-soft: #f6f7f9; --line: #e2e5ea; --code-bg: #f2f4f7;
+    --green: #1e7d4f; --purple: #6b3fa0; --orange: #d98e04;
+  }
+  * { box-sizing: border-box; }
+  body {
+    font-family: "LXGW WenKai", "Microsoft YaHei", "PingFang SC", "Segoe UI", sans-serif;
+    font-size: 17px; line-height: 1.85; letter-spacing: 0.01em;
+    color: var(--ink); background: var(--bg); margin: 0; padding: 0;
+  }
+  .wrap { max-width: 1160px; margin: 0 auto; padding: 40px 28px 120px; }
+  h1, h2, h3, h4, .kicker, .toc a, .card-title, .tag, .step-no { font-family: "Microsoft YaHei", "PingFang SC", sans-serif; }
+  h1 { font-size: 28px; line-height: 1.45; margin: 8px 0 6px; }
+  h2 { font-size: 23px; margin: 56px 0 16px; padding-bottom: 8px; border-bottom: 2px solid var(--accent); letter-spacing: 0.03em; }
+  h2 .sec-no { color: var(--accent); margin-right: 8px; }
+  h3 { font-size: 19px; margin: 34px 0 10px; color: #16324f; }
+  p { margin: 10px 0; }
+  ul, ol { margin: 10px 0; padding-left: 26px; }
+  li { margin: 4px 0; }
+  .kicker { font-size: 13px; letter-spacing: 0.28em; color: var(--accent); text-transform: uppercase; font-weight: 600; }
+  .meta { color: var(--muted); font-size: 14.5px; margin: 4px 0 0; }
+  code, pre { font-family: "Cascadia Code", Consolas, "Microsoft YaHei", monospace; }
+  code { background: var(--code-bg); padding: 1.5px 6px; border-radius: 4px; font-size: 0.86em; color: #8a1f3d; }
+  pre {
+    background: #1b2230; color: #dce3f0; border-radius: 10px;
+    padding: 14px 18px; font-size: 13px; line-height: 1.6; overflow-x: auto;
+  }
+  pre code { background: none; color: inherit; padding: 0; font-size: inherit; }
+  pre .cm { color: #7d8aa0; }
+  table { width: 100%; border-collapse: collapse; margin: 14px 0 22px; font-size: 14px; line-height: 1.6; }
+  th { background: #16324f; color: #fff; font-weight: 600; text-align: left; padding: 7px 11px; font-family: "Microsoft YaHei", sans-serif; }
+  td { padding: 6px 11px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  tr:nth-child(even) td { background: var(--bg-soft); }
+  .tag { display: inline-block; font-size: 12px; font-weight: 600; padding: 1px 10px; border-radius: 20px; margin-right: 6px; }
+  .tag.red { background: #fdecef; color: #b3354a; }
+  .tag.blue { background: #e8f0fb; color: #2c5fa8; }
+  .tag.green { background: #e6f4ec; color: #1e7d4f; }
+  .tag.purple { background: #f0e9fa; color: #6b3fa0; }
+  .callout { background: #fdf6ec; border-left: 4px solid #d98e04; border-radius: 6px; padding: 12px 18px; margin: 16px 0; }
+  .callout.info { background: #eef4fc; border-left-color: #2c5fa8; }
+  .callout.green { background: #eaf6f0; border-left-color: #1e7d4f; }
+  .callout.red { background: #fdf0f2; border-left-color: #b3354a; }
+  .callout.purple { background: #f3edfb; border-left-color: #6b3fa0; }
+  .callout code { background: rgba(0,0,0,0.06); }
+  .toc { background: var(--bg-soft); border: 1px solid var(--line); border-radius: 12px; padding: 18px 26px; margin: 26px 0 10px; font-size: 15px; }
+  .toc a { color: #16324f; text-decoration: none; }
+  .toc a:hover { color: var(--accent); }
+  .toc ol { margin: 8px 0; padding-left: 22px; }
+  .toc li { margin: 3px 0; }
+  .file-ref { color: #8a1f3d; font-family: "Cascadia Code", Consolas, monospace; font-size: 0.88em; }
+  .footer { margin-top: 70px; padding-top: 18px; border-top: 1px solid var(--line); color: var(--muted); font-size: 13.5px; }
+  a { color: var(--accent2); }
+  .note { font-size: 13.5px; color: var(--muted); }
+  /* 流程步骤块 */
+  .step {
+    margin: 14px 0; padding: 12px 18px; border: 1px solid var(--line);
+    border-left: 4px solid var(--accent2); border-radius: 8px; background: var(--bg-soft);
+  }
+  .step .step-no { display: inline-block; font-weight: 700; color: var(--accent); margin-right: 6px; font-size: 15px; }
+  .step .step-title { font-weight: 600; color: #16324f; font-size: 15.5px; }
+  .step .src { font-size: 12.5px; color: var(--muted); }
+</style>
+</head>
+<body>
+<a href="../index.html" style="position:fixed;top:12px;right:14px;z-index:99;background:#f6f7f9;border:1px solid #e2e5ea;border-radius:999px;padding:4px 12px;font-size:14px;color:#2c5fa8;text-decoration:none;box-shadow:0 1px 4px rgba(0,0,0,.08)">← 技术地图首页</a>
+<div class="wrap">
+
+  <div class="kicker">推理系统研究 · 并行研究 · Continuous Batching</div>
+  <h1>Continuous Batching 完整梳理<br>机制、意义与前世今生（vLLM）</h1>
+  <p class="meta">
+    生成日期 2026-08-24 · 基于本地 vLLM checkout（MRV2，锚定 main @ 6e448d0ea）·
+    主题：<strong>连续批处理</strong>（iteration-level scheduling）的机制、为何诞生、与
+    PagedAttention / chunked prefill / PCP 的关系。与
+    <a href="chunked-prefill-history-flow.html">Chunked Prefill 完整梳理</a>、<a href="pcp-code-walkthrough.html">PCP 完整过程梳理</a> 配套阅读。
+  </p>
+
+  <div class="toc">
+    <strong>目录</strong>
+    <ol>
+      <li><a href="#s0">一句话 + 与静态批处理的对比</a></li>
+      <li><a href="#s1">前世：问题与起源</a></li>
+      <li><a href="#s2">机制：完整流程（代码）</a></li>
+      <li><a href="#s3">意义：吞吐、延迟与两根支柱</a></li>
+      <li><a href="#s4">今生：V1 的演进与上下游关系</a></li>
+      <li><a href="#s5">行号索引</a></li>
+    </ol>
+  </div>
+
+  <!-- ==================== §0 一句话 ==================== -->
+  <h2 id="s0"><span class="sec-no">0</span>一句话 + 与静态批处理的对比</h2>
+  <div class="callout info"><strong>Continuous batching = 每一"步"（iteration）都重新组建 batch</strong>：完成的请求立刻出队、新请求随时入队、每个请求按当前阶段贡献 token（decode 给 1 个、prefill 给一小块）——<strong>batch 从诞生到结束没有任何固定边界</strong>。也叫 <strong>iteration-level scheduling</strong>。三个精确化：
+  <ol>
+    <li><strong>重组发生在"前向之间"</strong>：每步四拍 <code>schedule（重组）→ forward（一次完整前向）→ sample → update（回写）</code>——重组是每步的<strong>第一拍</strong>，决定"这一步跑谁、各算多少 token"，发生在两次前向之间，不是"前向之后"；</li>
+    <li><strong>重组是增量微调，不是推倒重建</strong>：新 batch = 上一步未完成的请求（默认续跑）+ 新插入的请求 − 已完成的请求——只动"边界"（进/出），running 成员不重排；</li>
+    <li><strong>一步 = 一次完整前向</strong>（穿过所有层），不是每层重组；<strong>async scheduling</strong>（双缓冲）下重组会提前一个身位——前向跑着时已在为下一步重组（<span class="file-ref">core.py:596</span> 的 <code>non_block=True</code>），频率仍是每步一次。</li>
+  </ol></div>
+  <table>
+    <tr><th></th><th>静态批处理（static batching）</th><th>连续批处理（continuous batching）</th></tr>
+    <tr><td>batch 组成</td><td>一批请求凑齐后一起跑，全部结束后才换下一批</td><td>每步动态进出：完成即走、新到即入</td></tr>
+    <tr><td>GPU 利用</td><td>批尾"空泡"：短请求等长请求</td><td>几乎无空泡：走一个补一个</td></tr>
+    <tr><td>延迟</td><td>短请求被同批最长请求拖死（长尾严重）</td><td>decode 步长毫秒级，交互延迟有界</td></tr>
+    <tr><td>KV 显存</td><td>可静态预分配（batch 固定）</td><td><strong>必须动态分配</strong>（batch 每步变）→ PagedAttention</td></tr>
+    <tr><td>内核形状</td><td>固定 batch、固定 seq 长</td><td>每步形状可变 → 需要可变 batch 内核 / CUDA graph 补齐</td></tr>
+    <tr><td>重组时机</td><td>整批全部完成才换下一批</td><td><strong>每步前向之间</strong>（增量微调，见上方 callout）</td></tr>
+  </table>
+
+  <!-- ==================== §1 前世 ==================== -->
+  <h2 id="s1"><span class="sec-no">1</span>前世：问题与起源</h2>
+
+  <h3>1.1 静态批处理的问题</h3>
+  <ul>
+    <li><strong>利用率</strong>：一批请求里长短不一，长的跑完整个 batch 才轮到下一批——GPU 在批尾空转；</li>
+    <li><strong>长尾延迟</strong>：一个 100 token 的短请求要陪一个 128K 的长请求跑完整个 prefill + decode，P99 延迟完全失控；</li>
+    <li><strong>等待即浪费</strong>：请求在"凑批"时排队，batch 没满也要等。</li>
+  </ul>
+
+  <h3>1.2 Orca（OSDI'22）：continuous batching 得名</h3>
+  <p>"Continuous batching" 一词来自 <strong>Orca</strong>（微软，OSDI 2022，<em>Orca: A Distributed Serving System for Transformer-Based Generative Models</em>）。它的核心贡献就是 <strong>iteration-level scheduling</strong>：不再以"请求"为调度粒度，而是以"一步"（一次前向）为粒度——每一步重新决定 batch 里放谁。这是与静态批处理（request-level batching，如早期 TGI/FasterTransformer）的根本分野。</p>
+
+  <h3>1.3 vLLM（SOSP'23）：两根支柱必须同时存在</h3>
+  <p>vLLM（PagedAttention 论文）把 continuous batching 变成主流，但有一个关键洞察：<strong>连续批处理离不开 PagedAttention，两者互为前提</strong>——</p>
+  <ul>
+    <li>batch 每步都在变 → 每个请求的 KV 显存需求每步都在变 → <strong>不能静态预分配</strong>；</li>
+    <li>PagedAttention 把 KV 切成固定大小的块、按需分配（页表映射）→ 动态 batch 才有内存基础；</li>
+    <li>反过来，页表/块复用也只有在"每步重组的动态 batch"里才有意义（前缀缓存、抢占都建立在它上面）。</li>
+  </ul>
+  <div class="callout green"><strong>记忆锚点</strong>：连续批处理解决"<strong>算</strong>什么"（每步谁的 token 进前向）；PagedAttention 解决"<strong>存</strong>在哪"（动态 batch 的 KV 怎么放）。一个是调度机制，一个是内存机制。</div>
+
+  <h3>1.4 V1：默认开启，与 chunked prefill 合流</h3>
+  <p>vLLM 从 V0 起 continuous batching 就是默认；V1 把它与 <strong>chunked prefill</strong> 绑成一套：每步 token 预算（<code>max_num_batched_tokens</code>）同时约束 decode 与 prefill 块，长 prefill 天然切成小块混进 decode 步（见 <span class="file-ref">chunked_prefill_history_flow.html</span> §1.2）。</p>
+
+  <!-- ==================== §2 机制 ==================== -->
+  <h2 id="s2"><span class="sec-no">2</span>机制：完整流程（代码）</h2>
+
+  <div class="step">
+    <span class="step-no">2a</span><span class="step-title">引擎主循环：一步 = 调度 → 前向 → 采样 → 回写</span>
+    <p class="src">文件：<span class="file-ref">vllm/v1/engine/core.py:584-614</span></p>
+    <pre><code>def step(self):                                   <span class="cm"># 无限循环，每步一次</span>
+    if not self.scheduler.has_requests():
+        return {}, False                          <span class="cm"># 没有请求就空转</span>
+    scheduler_output = self.scheduler.schedule(...)              <span class="cm"># :595 ① 重组本步 batch</span>
+    future = self.model_executor.execute_model(scheduler_output, non_block=True)  <span class="cm"># :596 ② 前向（异步）</span>
+    grammar_output = self.scheduler.get_grammar_bitmask(scheduler_output)
+    model_output = future.result()                <span class="cm"># :602 等前向结果</span>
+    if model_output is None:
+        model_output = self.model_executor.sample_tokens(grammar_output)   <span class="cm"># :604 ③ 采样</span>
+    engine_core_outputs = self.scheduler.update_from_output(
+        scheduler_output, model_output)           <span class="cm"># :609 ④ 回写（出队/推进状态）</span>
+    return engine_core_outputs, ...</code></pre>
+    <p>关键：<code>schedule()</code> 和 <code>update_from_output()</code> 是<strong>同一个进程里的两个半场</strong>——前向期间新请求可以随时 <code>add_request</code> 进 waiting 队列，下一次 <code>schedule()</code> 就把它们收进来。<strong>这就是"连续"：请求在任意时刻加入，不等批凑齐。</strong></p>
+  </div>
+
+  <div class="step">
+    <span class="step-no">2b</span><span class="step-title">调度器的两条队列</span>
+    <p class="src">文件：<span class="file-ref">vllm/v1/core/sched/scheduler.py:109, 187-190</span></p>
+    <pre><code>self.max_num_running_reqs = self.scheduler_config.max_num_seqs   <span class="cm"># :109 并发上限</span>
+self.waiting = create_request_queue(self.policy)   <span class="cm"># :187 待调度队列（按策略排序，如 FCFS）</span>
+self.skipped_waiting = create_request_queue(self.policy)   <span class="cm"># :189 被阻塞的等待（语法/KV 依赖）</span>
+self.running: list[Request] = []                  <span class="cm"># :190 正在跑的请求（本步的 batch 成员）</span></code></pre>
+    <p>每个请求的旅程：<code>add_request</code> → waiting →（被调度）→ running →（完成）→ 移除。running 就是"当前 batch"的抽象——<strong>每步 schedule() 都会重排它</strong>。注意：重排是<strong>增量微调</strong>——未完成的 running 成员默认续跑，schedule 只动"进/出"边界（完成即出、新请求补位），不会把整批推倒重来。</p>
+  </div>
+
+  <div class="step">
+    <span class="step-no">2c</span><span class="step-title">schedule() 的三个动作：跑 running → 抢占 → 放新请求</span>
+    <p class="src">文件：<span class="file-ref">scheduler.py:439-1113</span></p>
+    <pre><code>token_budget = self.max_num_scheduled_tokens     <span class="cm"># :459 本步 token 总预算</span>
+
+<span class="cm"># ① 先喂 running（decode 每请求 1 token；continued prefill 按预算给块）:485-636</span>
+while req_index &lt; len(self.running) and token_budget &gt; 0:
+    request = self.running[req_index]
+    num_new_tokens = min(num_new_tokens, token_budget)   <span class="cm"># :523</span>
+    num_scheduled_tokens[request_id] = num_new_tokens    <span class="cm"># :636</span>
+    token_budget -= num_new_tokens                       <span class="cm"># :637</span>
+
+<span class="cm"># ② 预算/KV 不够时抢占（:591-624）：把 running 里优先级最低的踢回 waiting</span>
+preempted_req = max(self.running, key=policy_key)       <span class="cm"># :591-595</span>
+self.running.remove(preempted_req)
+self._preempt_request(preempted_req, ...)               <span class="cm"># :617 → :1274 回 waiting、释放块</span>
+
+<span class="cm"># ③ 从 waiting 放新请求（:687-1055）：受并发上限 + token 预算约束</span>
+while (self.waiting or self.skipped_waiting) and token_budget &gt; 0:
+    if num_running &gt;= self.max_num_running_reqs:        <span class="cm"># :690-691 并发满就停</span>
+        break
+    request = self._select_waiting_queue_for_scheduling()  <span class="cm"># :694</span>
+    ... 分配 KV 块、算 num_new_tokens（prefill 首块）...
+    self.running.append(request)                        <span class="cm"># :1055 新请求入 batch</span></code></pre>
+    <p>三步合起来就是"每步重组 batch"：<strong>老成员按需贡献 → 超载就踢最不重要的 → 空位立即被新请求填上</strong>。抢占（preemption）是连续批处理能扛过载的关键——KV 不够时不是拒绝新请求，而是把低优先级请求的 KV 块腾出来（请求保留进度，稍后从 waiting 回来续跑）。</p>
+  </div>
+
+  <div class="step">
+    <span class="step-no">2d</span><span class="step-title">请求状态机</span>
+    <p class="src">文件：<span class="file-ref">vllm/v1/request.py:348-389</span></p>
+    <pre><code>class RequestStatus(enum.IntEnum):
+    WAITING = enum.auto()        <span class="cm"># 排队中（不在 batch）</span>
+    WAITING_FOR_STRUCTURED_OUTPUT_GRAMMAR = ...   <span class="cm"># 等语法编译</span>
+    WAITING_FOR_REMOTE_KVS = ...  <span class="cm"># 等远端 KV</span>
+    WAITING_FOR_STREAMING_REQ = ...
+    RUNNING = enum.auto()        <span class="cm"># 在 batch 里</span>
+    PREEMPTED = ...              <span class="cm"># 被抢占（等待期间保留进度）</span>
+    FINISHED_STOPPED / FINISHED_LENGTH_CAPPED / FINISHED_ABORTED / ...  <span class="cm"># 终态</span></code></pre>
+    <p>旅程：<code>WAITING → RUNNING →（完成）FINISHED_*</code>，或 <code>RUNNING → PREEMPTED →（重新）WAITING → RUNNING</code>。没有"一批一起结束"的概念——<strong>每个请求独立走完自己的状态机</strong>，这就是连续批处理与静态批处理在数据模型上的根本差异。</p>
+  </div>
+
+  <div class="step">
+    <span class="step-no">2e</span><span class="step-title">update_from_output：出队与推进</span>
+    <p class="src">文件：<span class="file-ref">scheduler.py:1670-1952</span></p>
+    <pre><code># :1905-1951 —— 采样结果回来后的回写
+stopped_running_reqs.add(request)               <span class="cm"># 已完成的请求（stop/长度到/abort）</span>
+self.running = remove_all(self.running, stopped_running_reqs)   <span class="cm"># :1948 出队</span>
+self.waiting.remove_requests(stopped_preempted_reqs)
+<span class="cm"># 同时：更新 num_computed_tokens、推进 prefill→decode、释放不再用的 KV 块…</span></code></pre>
+    <p>这一步让"batch 永不固定"闭环：<strong>完成的请求腾出的位置（KV 块 + 并发槽位）在下一轮 schedule() 立即被新请求占用</strong>。</p>
+  </div>
+
+  <!-- ==================== §3 意义 ==================== -->
+  <h2 id="s3"><span class="sec-no">3</span>意义：吞吐、延迟与两根支柱</h2>
+  <ol>
+    <li><strong>吞吐</strong>：GPU 几乎无空泡——每个位置都在服务"能立刻产出 token"的请求；</li>
+    <li><strong>延迟</strong>：单步毫秒级，任何请求都不会被"同批最长请求"拖住（长尾消失）；</li>
+    <li><strong>过载有界</strong>：抢占机制让 KV 压力下系统优雅降级，而不是拒绝服务；</li>
+    <li><strong>一切上层机制的地基</strong>：chunked prefill（长 prefill 切块混入 decode 步）、前缀缓存（跨请求复用块）、PCP（调度输出广播给所有 rank）都构建在"每步重组 batch"之上。</li>
+  </ol>
+  <div class="callout purple"><strong>代价</strong>：每步形状可变 → 内核要支持可变 batch（或 CUDA graph 按捕获尺寸补齐）；调度器本身每步有开销（必须远小于一步的毫秒级）；KV 必须动态分配 → 与 PagedAttention 强绑定。V1 用 <strong>async scheduling</strong>（调度与前向双缓冲）进一步隐藏调度开销。</div>
+
+  <!-- ==================== §4 今生 ==================== -->
+  <h2 id="s4"><span class="sec-no">4</span>今生：V1 的演进与上下游关系</h2>
+  <table>
+    <tr><th>机制</th><th>与 continuous batching 的关系</th></tr>
+    <tr><td><strong>chunked prefill</strong></td><td>长 prefill 通过每步 token 预算"嵌入"连续 batch：每步 = 若干 decode + 一小块 prefill（详见 companion 文档）</td></tr>
+    <tr><td><strong>async scheduling</strong></td><td>调度（CPU）与前向（GPU）双缓冲：前向跑着时调度下一步，隐藏调度开销（<span class="file-ref">core.py:596</span> 的 non_block 就是入口）</td></tr>
+    <tr><td><strong>PagedAttention / 前缀缓存</strong></td><td>动态 batch 的内存支柱：块分配、跨请求块复用、CoW</td></tr>
+    <tr><td><strong>PCP</strong></td><td>调度输出（每步重组的全局 batch）广播给所有 rank，PCP 在其后切 query（<span class="file-ref">pcp_code_walkthrough.html</span> 流转①-③）</td></tr>
+    <tr><td><strong>抢占 / swap</strong></td><td>连续批处理的"安全阀"：KV 压力时踢低优先级请求并保留进度</td></tr>
+  </table>
+
+  <!-- ==================== §5 行号索引 ==================== -->
+  <h2 id="s5"><span class="sec-no">5</span>行号索引</h2>
+  <table>
+    <tr><th>过程</th><th>位置</th></tr>
+    <tr><td>引擎主循环（一步四拍）</td><td><span class="file-ref">core.py:584-614</span></td></tr>
+    <tr><td>并发上限 max_num_seqs</td><td><span class="file-ref">scheduler.py:109</span></td></tr>
+    <tr><td>waiting / running 队列</td><td><span class="file-ref">scheduler.py:187-190</span></td></tr>
+    <tr><td>schedule() 入口</td><td><span class="file-ref">scheduler.py:439</span></td></tr>
+    <tr><td>跑 running + token 预算</td><td><span class="file-ref">scheduler.py:459-637</span></td></tr>
+    <tr><td>抢占（踢回 waiting）</td><td><span class="file-ref">scheduler.py:591-624</span>、<span class="file-ref">:1274-1315</span></td></tr>
+    <tr><td>放新请求进 running</td><td><span class="file-ref">scheduler.py:687-1055</span></td></tr>
+    <tr><td>update_from_output（出队）</td><td><span class="file-ref">scheduler.py:1670-1952</span></td></tr>
+    <tr><td>请求状态机</td><td><span class="file-ref">request.py:348-389</span></td></tr>
+    <tr><td>add_request 入口</td><td><span class="file-ref">scheduler.py:2224-2230</span></td></tr>
+  </table>
+
+  <div class="footer">
+    并行研究 · Continuous Batching 完整梳理 —— 生成于 2026-08-24。所有行号基于本地 vLLM checkout（MRV2，锚定 main @ 6e448d0ea），随版本可能变化；本报告为研究性导读，与 <a href="chunked-prefill-history-flow.html">Chunked Prefill 完整梳理</a>、<a href="pcp-code-walkthrough.html">PCP 完整过程梳理</a> 配套。
+  </div>
+
+</div>
+</body>
+</html>

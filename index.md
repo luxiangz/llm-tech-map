@@ -172,7 +172,7 @@ description: 面向大模型方向的完整技术知识目录，覆盖从数学�
 ## 五、推理引擎与 Serving
 ### 5.1 推理机制
 - [ ] 自回归解码与 KV Cache
-- [ ] PagedAttention、连续批处理（Continuous Batching）
+- [ ] PagedAttention、连续批处理（Continuous Batching） — 📄 [Continuous Batching 完整梳理笔记](notes/continuous-batching-history-flow.html)
 - [ ] 分块预填充（Chunked Prefill）、PD 分离 — 📄 [Chunked Prefill 完整梳理笔记](notes/chunked-prefill-history-flow.html)
 - [ ] 前缀缓存（prefix cache）、RadixAttention
 - [ ] 采样家族：top-k/top-p/temperature/min-p/typical、平行采样
