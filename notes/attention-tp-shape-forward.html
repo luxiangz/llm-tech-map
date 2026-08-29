@@ -159,13 +159,11 @@
 <a href="../index.html" style="position:fixed;top:12px;right:14px;z-index:99;background:#f6f7f9;border:1px solid #e2e5ea;border-radius:999px;padding:4px 12px;font-size:14px;color:#2c5fa8;text-decoration:none;box-shadow:0 1px 4px rgba(0,0,0,.08)">← 技术地图首页</a>
 <div class="wrap">
 
-  <div class="kicker">推理系统研究 · 02 并行研究 · TP 深挖</div>
+  <div class="kicker">推理系统研究 · 并行研究 · TP 深挖</div>
   <h1>注意力家族的张量并行（TP）拆解<br>MHA · GQA · MLA · DSA —— 切分策略 × 完整前向 shape 走查</h1>
   <p class="meta">
     生成日期 2026-08-12 · 以 vLLM 源码与官方文档为实证（本地 checkout 逐行核对）·
     案例模型 LLaMA-2-7B（MHA）· LLaMA-3.1-70B（GQA）· DeepSeek-V3（MLA）· DeepSeek-V3.2-Exp（DSA）
-    · 衔接 <span class="nolink">02_并行研究·各种并行度研究</span> 与
-    <span class="nolink">01_vllm 执行流水报告</span>
   </p>
 
   <div class="toc">
@@ -917,11 +915,11 @@ else:                             # 头够分
     <li>IndexCache 论文（arXiv:2603.12201）：DSA 跨层 top-k 复用。</li>
     <li>Megatron-LM（Narayanan et al. 2021，arXiv:1909.08053）：列/行并行、按头切分与 sequential/interleaved 布局；Megatron-Core 对 GQA 的 kv 头分切/复制语义与 vLLM 一致。</li>
     <li>TensorRT-LLM PR #15513（DSA indexer top-k 跨层复用）、PR #11990（GLM-5 支持与 DSA MTP）；NVIDIA 博客 Optimizing DeepSeek-V3.2 on Blackwell。</li>
-    <li>本工作区配套：<span class="nolink">02_并行研究·各种并行度研究</span>（TP/PP/DP/EP/SP/CP 全景）；<span class="nolink">01_vllm 执行流水拆解报告</span>（MTP/DSA 算子级细节）；<a href="sp-vs-cp.html">SP vs CP 详解</a>（SP/CP 两线演化的完整对比）。</li>
+    <li>本工作区配套：<a href="sp-vs-cp.html">SP vs CP 详解</a>（SP/CP 两线演化的完整对比）。</li>
   </ol>
 
   <div class="footer">
-    02_并行研究 · 注意力家族的张量并行拆解 —— 生成于 2026-08-12。本报告为研究性综述；所有 shape 与并行语义以 vLLM 源码、vLLM 官方文档及各模型发布文档为准，随版本可能变化。
+    并行研究 · 注意力家族的张量并行拆解 —— 生成于 2026-08-12。本报告为研究性综述；所有 shape 与并行语义以 vLLM 源码、vLLM 官方文档及各模型发布文档为准，随版本可能变化。
   </div>
 
 </div>

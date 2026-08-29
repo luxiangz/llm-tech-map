@@ -148,13 +148,12 @@
 <a href="../index.html" style="position:fixed;top:12px;right:14px;z-index:99;background:#f6f7f9;border:1px solid #e2e5ea;border-radius:999px;padding:4px 12px;font-size:14px;color:#2c5fa8;text-decoration:none;box-shadow:0 1px 4px rgba(0,0,0,.08)">← 技术地图首页</a>
 <div class="wrap">
 
-  <div class="kicker">推理系统研究 · 02 并行研究 · 序列/上下文并行专题</div>
+  <div class="kicker">推理系统研究 · 并行研究 · 序列/上下文并行专题</div>
   <h1>SP 与 CP 详解<br>序列并行 vs 上下文并行 —— 来龙去脉 · 机制拆解 · 完整对比</h1>
   <p class="meta">
     生成日期 2026-08-24 · 聚焦两个最容易被混淆的并行维度：Megatron 序列并行（SP）与上下文并行（CP）·
     以 Megatron-LM（2023）、Ring Attention / Ulysses（2023）、vLLM enable_sp 与 PCP/DCP 实现为实证 ·
-    衔接 <span class="nolink">各种并行度研究 §6</span> 与
-    <a href="attention-tp-shape-forward.html">注意力家族 TP 拆解</a>
+    衔接 <a href="attention-tp-shape-forward.html">注意力家族 TP 拆解</a>
   </p>
 
   <div class="toc">
@@ -725,11 +724,11 @@
     <li>Liu et al., <em>Ring Attention with Blockwise Transformers for Near-Infinite Context</em>（arXiv:2310.01889，2023）：ring 环形轮转 + blockwise online softmax。</li>
     <li>Jacobs et al., <em>DeepSpeed Ulysses: System Optimizations for Enabling Training of Extreme Long Sequence Transformer Models</em>（arXiv:2309.14509，2023）：all-to-all 上下文并行。</li>
     <li>vLLM（本地 checkout）：<span class="file-ref">docs/design/fusions.md</span>（Sequence Parallelism / enable_sp：AllReduce→ReduceScatter+AllGather、AsyncTP 前置）；<span class="file-ref">docs/serving/context_parallel_deployment.md</span>（PCP 的 partial-query/full-KV 与 partial-query/partial-KV 两策略、DCP 与 TP 的整除约束、先 TP 后 DCP）。</li>
-    <li>本工作区配套：<span class="nolink">各种并行度研究 §6</span>（SP/CP 总表、ring/Ulysses、PCP/DCP、DSA 与 CP 的互补）；<a href="attention-tp-shape-forward.html">注意力家族 TP 拆解</a>（MLA 的 KV 为何切不动、TP 的 KV 复制与 DCP 解药）；<a href="pcp-code-walkthrough.html">PCP 完整过程梳理</a>（vLLM 里 PCP 的落地走查）。</li>
+    <li>本工作区配套：<a href="attention-tp-shape-forward.html">注意力家族 TP 拆解</a>（MLA 的 KV 为何切不动、TP 的 KV 复制与 DCP 解药）；<a href="pcp-code-walkthrough.html">PCP 完整过程梳理</a>（vLLM 里 PCP 的落地走查）。</li>
   </ol>
 
   <div class="footer">
-    02_并行研究 · SP 与 CP 详解 —— 生成于 2026-08-24。本报告为研究性综述；机制描述以 Megatron-LM、vLLM 源码与官方文档、以及各论文为准。
+    并行研究 · SP 与 CP 详解 —— 生成于 2026-08-24。本报告为研究性综述；机制描述以 Megatron-LM、vLLM 源码与官方文档、以及各论文为准。
   </div>
 
 </div>
