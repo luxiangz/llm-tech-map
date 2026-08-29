@@ -51,7 +51,7 @@ description: 面向大模型方向的完整技术知识目录，覆盖从数学�
 ### 2.1 Attention 全谱系
 - [ ] Attention 动机：序列建模困境、RNN 串行计算与信息瓶颈
 - [ ] 核心机制：QKV、缩放点积注意力、为什么除以 √dk、Softmax 与掩码
-- [ ] 变体：MHA / MQA / GQA / MLA（多潜在注意力）
+- [ ] 变体：MHA / MQA / GQA / MLA（多潜在注意力） — 📄 [MLA 计算流图解笔记](notes/mla-absorb-compute-flow.html)
 - [ ] 稀疏注意力：窗口/全局/BigBird/NSA/DSA（DeepSeek 稀疏注意力）
 - [ ] 高效实现：FlashAttention 1/2/3、PagedAttention、线性注意力（Performer）
 - [ ] KV 压缩：H2O/SnapKV/StreamingLLM
