@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Chunked Prefill 完整梳理——流程、意义与前世今生（vLLM）</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/lxgw-wenkai-webfont@1.7.0/style.css">
+<style>
+  :root {
+    --ink: #1f2430; --muted: #5c6470; --accent: #b3354a; --accent2: #2c5fa8;
+    --bg: #ffffff; --bg-soft: #f6f7f9; --line: #e2e5ea; --code-bg: #f2f4f7;
+    --green: #1e7d4f; --purple: #6b3fa0; --orange: #d98e04;
+  }
+  * { box-sizing: border-box; }
+  body {
+    font-family: "LXGW WenKai", "Microsoft YaHei", "PingFang SC", "Segoe UI", sans-serif;
+    font-size: 17px; line-height: 1.85; letter-spacing: 0.01em;
+    color: var(--ink); background: var(--bg); margin: 0; padding: 0;
+  }
+  .wrap { max-width: 1160px; margin: 0 auto; padding: 40px 28px 120px; }
+  h1, h2, h3, h4, .kicker, .toc a, .card-title, .tag, .step-no { font-family: "Microsoft YaHei", "PingFang SC", sans-serif; }
+  h1 { font-size: 28px; line-height: 1.45; margin: 8px 0 6px; }
+  h2 { font-size: 23px; margin: 56px 0 16px; padding-bottom: 8px; border-bottom: 2px solid var(--accent); letter-spacing: 0.03em; }
+  h2 .sec-no { color: var(--accent); margin-right: 8px; }
+  h3 { font-size: 19px; margin: 34px 0 10px; color: #16324f; }
+  p { margin: 10px 0; }
+  ul, ol { margin: 10px 0; padding-left: 26px; }
+  li { margin: 4px 0; }
+  .kicker { font-size: 13px; letter-spacing: 0.28em; color: var(--accent); text-transform: uppercase; font-weight: 600; }
+  .meta { color: var(--muted); font-size: 14.5px; margin: 4px 0 0; }
+  code, pre { font-family: "Cascadia Code", Consolas, "Microsoft YaHei", monospace; }
+  code { background: var(--code-bg); padding: 1.5px 6px; border-radius: 4px; font-size: 0.86em; color: #8a1f3d; }
+  pre {
+    background: #1b2230; color: #dce3f0; border-radius: 10px;
+    padding: 14px 18px; font-size: 13px; line-height: 1.6; overflow-x: auto;
+  }
+  pre code { background: none; color: inherit; padding: 0; font-size: inherit; }
+  pre .cm { color: #7d8aa0; }
+  table { width: 100%; border-collapse: collapse; margin: 14px 0 22px; font-size: 14px; line-height: 1.6; }
+  th { background: #16324f; color: #fff; font-weight: 600; text-align: left; padding: 7px 11px; font-family: "Microsoft YaHei", sans-serif; }
+  td { padding: 6px 11px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  tr:nth-child(even) td { background: var(--bg-soft); }
+  .tag { display: inline-block; font-size: 12px; font-weight: 600; padding: 1px 10px; border-radius: 20px; margin-right: 6px; }
+  .tag.red { background: #fdecef; color: #b3354a; }
+  .tag.blue { background: #e8f0fb; color: #2c5fa8; }
+  .tag.green { background: #e6f4ec; color: #1e7d4f; }
+  .tag.purple { background: #f0e9fa; color: #6b3fa0; }
+  .callout { background: #fdf6ec; border-left: 4px solid #d98e04; border-radius: 6px; padding: 12px 18px; margin: 16px 0; }
+  .callout.info { background: #eef4fc; border-left-color: #2c5fa8; }
+  .callout.green { background: #eaf6f0; border-left-color: #1e7d4f; }
+  .callout.red { background: #fdf0f2; border-left-color: #b3354a; }
+  .callout.purple { background: #f3edfb; border-left-color: #6b3fa0; }
+  .callout code { background: rgba(0,0,0,0.06); }
+  .toc { background: var(--bg-soft); border: 1px solid var(--line); border-radius: 12px; padding: 18px 26px; margin: 26px 0 10px; font-size: 15px; }
+  .toc a { color: #16324f; text-decoration: none; }
+  .toc a:hover { color: var(--accent); }
+  .toc ol { margin: 8px 0; padding-left: 22px; }
+  .toc li { margin: 3px 0; }
+  .file-ref { color: #8a1f3d; font-family: "Cascadia Code", Consolas, monospace; font-size: 0.88em; }
+  .footer { margin-top: 70px; padding-top: 18px; border-top: 1px solid var(--line); color: var(--muted); font-size: 13.5px; }
+  a { color: var(--accent2); }
+  .note { font-size: 13.5px; color: var(--muted); }
+  /* 流程步骤块 */
+  .step {
+    margin: 14px 0; padding: 12px 18px; border: 1px solid var(--line);
+    border-left: 4px solid var(--accent2); border-radius: 8px; background: var(--bg-soft);
+  }
+  .step .step-no { display: inline-block; font-weight: 700; color: var(--accent); margin-right: 6px; font-size: 15px; }
+  .step .step-title { font-weight: 600; color: #16324f; font-size: 15.5px; }
+  .step .src { font-size: 12.5px; color: var(--muted); }
+</style>
+</head>
+<body>
+<a href="../index.html" style="position:fixed;top:12px;right:14px;z-index:99;background:#f6f7f9;border:1px solid #e2e5ea;border-radius:999px;padding:4px 12px;font-size:14px;color:#2c5fa8;text-decoration:none;box-shadow:0 1px 4px rgba(0,0,0,.08)">← 技术地图首页</a>
+<div class="wrap">
+
+  <div class="kicker">推理系统研究 · 并行研究 · Chunked Prefill</div>
+  <h1>Chunked Prefill 完整梳理<br>流程、意义与前世今生（vLLM）</h1>
+  <p class="meta">
+    生成日期 2026-08-24 · 基于本地 vLLM checkout（MRV2，锚定 main @ 6e448d0ea）·
+    主题：<strong>分块 prefill</strong> 的三个层次（调度级切步 / 工作区级切 context / PCP 跨卡切 query）、
+    完整代码流程、设计动机与演进历史。与 <span class="file-ref">pcp_code_walkthrough.html</span> 配套阅读。
+  </p>
+
+  <div class="toc">
+    <strong>目录</strong>
+    <ol>
+      <li><a href="#s0">先厘清：三个都叫"chunk"的东西</a></li>
+      <li><a href="#s1">前世：问题与起源</a></li>
+      <li><a href="#s2">完整流程（两级）</a></li>
+      <li><a href="#s3">意义（为什么这三层设计是必要的）</a></li>
+      <li><a href="#s4">今生：三块拼图如何叠加</a></li>
+      <li><a href="#s5">行号索引</a></li>
+    </ol>
+  </div>
+
+  <!-- ==================== §0 三个分块 ==================== -->
+  <h2 id="s0"><span class="sec-no">0</span>先厘清：三个都叫"chunk"的东西</h2>
+  <p>"分块 prefill"在 vLLM 里其实指<strong>三个不同层次</strong>的分块，经常被混为一谈。它们正交、可叠加：</p>
+  <table>
+    <tr><th>分块</th><th>切什么</th><th>目的</th><th>代码位置</th></tr>
+    <tr><td><strong>调度级分块</strong>（时间切片）</td><td>长 prefill 切成多<strong>步</strong></td><td>步长有界、与 decode 交错（延迟 SLO）</td><td><span class="file-ref">scheduler.py:459-523</span></td></tr>
+    <tr><td><strong>工作区级分块</strong>（chunked context）</td><td>一步内把大 <strong>context</strong> 按 workspace 切块</td><td>内存有界（不物化全量 k_nope/v）</td><td><span class="file-ref">mla_attention.py:1595-1773</span></td></tr>
+    <tr><td><strong>空间分块</strong>（PCP / CP）</td><td>query 跨<strong>卡</strong>切</td><td>并行度（不是时间切片）</td><td><span class="file-ref">pcp_manager.py:195-250</span></td></tr>
+  </table>
+  <div class="callout info"><strong>本报告的主角是前两个</strong>（它们才是"chunk prefill"的字面意思）；PCP 是第三个，本报告最后会讲三者如何叠加，并指出 PCP 的 attention 执行循环<strong>原封不动复用</strong>了 chunked context 的机制。</div>
+  <div class="callout purple"><strong>chunked prefill 和 PCP 的区别：不是"单卡 vs 多卡"，是"切片维度不同"</strong>——</div>
+  <p><strong>chunked prefill 的主要意义</strong> = 把 O(T²) 的长 prefill 从"一次性的巨石"切成"可控小块"，换两个有界：</p>
+  <ul>
+    <li><strong>延迟有界</strong>（调度级切步）：decode 不被长 prefill 饿死，SLO 可保证；</li>
+    <li><strong>内存有界</strong>（工作区级 chunked context）：不物化全量 <code>[Skv, N, P]</code> 的 k_nope/v，长历史不爆显存。</li>
+  </ul>
+  <p><strong>与 PCP 的关系：叠加，不是替代</strong>。常见误解是"单卡用 chunked prefill、多卡用 PCP"——错。两者各管一段：</p>
+  <table>
+    <tr><th></th><th>切片维度</th><th>目标</th><th>增加卡数吗</th></tr>
+    <tr><td>chunked prefill（调度级）</td><td><strong>时间</strong>（步）</td><td>延迟有界（decode 不饿死）</td><td>否</td></tr>
+    <tr><td>chunked prefill（工作区级）</td><td><strong>内存</strong>（context 块）</td><td>不爆显存</td><td>否</td></tr>
+    <tr><td>PCP</td><td><strong>空间</strong>（跨卡 query）</td><td>prefill 墙钟 /W（TTFT）</td><td>是</td></tr>
+  </table>
+  <p><strong>PCP 的每个 rank 内部，用的正是 chunked prefill 的同一套执行循环</strong>（<code>run_prefill_context_chunk</code> + <code>merge_attn_states</code>）——PCP 把 query 摊到多卡后，每个 rank 面对的 context 依然是长历史（全量 KV 在手），依然要按 workspace 切块。一句话：<strong>chunked prefill 管"context 怎么分块读入"，PCP 管"query 在哪张卡算"，前者所有场景都要，后者是额外的并行维度。</strong></p>
+
+  <!-- ==================== §1 前世 ==================== -->
+  <h2 id="s1"><span class="sec-no">1</span>前世：问题与起源</h2>
+
+  <h3>1.1 问题：长 prefill 是"毒药"</h3>
+  <p>128K prompt 的 prefill 是 O(T²) 的巨型计算（attention 的 QK^T 随序列平方增长），一次灌满 GPU 数秒。没有分块时三个问题叠加：</p>
+  <ul>
+    <li><strong>decode 饿死</strong>：同一批的其他请求等首个 token，被这条长 prefill 堵住几秒 → 交互式 SLO 直接爆表；</li>
+    <li><strong>GPU 利用率差</strong>：单条 prefill 的 batch 只有 1 个请求，算力用不满；</li>
+    <li><strong>内核形状冲突</strong>：decode 是"1 query token/请求"（memory-bound，页表 gather），prefill 是"多 query token"（compute-bound）——两种 kernel 形状完全不同，这就是 <code>split_decodes_and_prefills</code> 批序契约（decode 在前、prefill 殿后）的根源。</li>
+  </ul>
+
+  <h3>1.2 时间线：V0 → V1 → MRV2</h3>
+  <table>
+    <tr><th>阶段</th><th>做了什么</th><th>关键点</th></tr>
+    <tr><td><strong>V0</strong>（PagedAttention 论文 SOSP'23 同期）</td><td><code>enable_chunked_prefill</code> 开关：调度器把长 prefill 切成小 chunk，每步"decode + 一小块 prefill"混合执行</td><td>attention 后端必须支持混合批；V0 的 <code>ChunkedPrefillMetadataBuilder</code> 就是 <code>split_decodes_and_prefills</code> 的前身</td></tr>
+    <tr><td><strong>V1</strong>（MRV1 / MRV2）</td><td>continuous batching 成为默认，chunked prefill 不再需要开关</td><td>调度器每步有 token 预算（<code>max_num_batched_tokens</code>），长 prefill 自然被切成多步，每步与 decode 混合</td></tr>
+    <tr><td><strong>MRV2 + MLA</strong></td><td>新增<strong>工作区级</strong>分块（chunked context）</td><td>MLA 的 compute-friendly 路径在大 context 下内存爆炸（见 2.2），必须按工作区再切</td></tr>
+  </table>
+
+  <h3>1.3 背景：MLA 的两种算路径（文件头注释）</h3>
+  <p><span class="file-ref">mla_attention.py:13-21</span> 定义了选路径的准则——<strong>Sq / Skv 的比值</strong>：</p>
+  <pre><code><span class="cm"># mla_attention.py:13-21</span>
+MLA 有两条计算路径：
+* "compute friendly"：适合 prefill（Sq/Skv 较大，常接近 1）
+  —— 把 latent 上采样成 MHA 的 k_nope/v 再算（数据量大、算得省）
+* "data-movement friendly"：适合 decode（Sq/Skv 很小，常接近 0）
+  —— 把 q 吸收进 latent（bmm(q_nope, W_UK_T)），MQA 语义、数据搬运少
+
+NOTE：什么算"大/小"目前由调度器打的是 prefill 还是 decode 标签决定，
+     未来应该按比值动态调。</code></pre>
+  <p>MLA 的完整矩阵定义（<span class="file-ref">mla_attention.py:34-63</span>）：C=context 长、Lkv=512、P=128、R=64、V=128（DeepSeek-V3 口径）。</p>
+
+  <!-- ==================== §2 完整流程 ==================== -->
+  <h2 id="s2"><span class="sec-no">2</span>完整流程（两级）</h2>
+
+  <div class="step">
+    <span class="step-no">2a</span><span class="step-title">调度级：长 prefill 切成多步（时间切片）</span>
+    <p class="src">文件：<span class="file-ref">vllm/v1/core/sched/scheduler.py</span></p>
+    <pre><code>token_budget = self.max_num_scheduled_tokens       <span class="cm"># :459 ≈ max_num_batched_tokens</span>
+...
+if 0 &lt; self.scheduler_config.long_prefill_token_threshold &lt; num_new_tokens:
+    num_new_tokens = self.scheduler_config.long_prefill_token_threshold   <span class="cm"># :521-522 长 prefill 专用上限</span>
+num_new_tokens = min(num_new_tokens, token_budget)                        <span class="cm"># :523 每请求每步 token 上限</span>
+...
+num_scheduled_tokens[request_id] = num_new_tokens                         <span class="cm"># :636 写进 SchedulerOutput</span>
+token_budget -= num_new_tokens                                           <span class="cm"># :637 扣预算</span></code></pre>
+    <p>128K prefill 在 budget=16K 时被切成 <strong>8 步</strong>，每步与 decode 混合：</p>
+    <ul>
+      <li>第 1 步：算 token 0~16K，写进 KV 缓存（fresh prefill）；</li>
+      <li>第 2 步：算 token 16K~32K——此时它是 <strong>continued prefill</strong>（context = 前 16K，从缓存读），<code>local_start_pos = num_computed + 偏移</code> 是<strong>绝对位置</strong>，RoPE 不坏；</li>
+      <li>……直到 prefill 完成才采样首个 token（TTFT 的终点）。</li>
+    </ul>
+    <p>每步的 <code>num_scheduled_tokens</code>、<code>query_start_loc</code>、<code>positions</code> 由 <code>prepare_inputs</code>（<span class="file-ref">gpu_model_runner.py:932-1165</span>）翻译成 InputBatch——这就是"chunk prefill"的第一步。</p>
+  </div>
+
+  <div class="step">
+    <span class="step-no">2b</span><span class="step-title">工作区级：一步内的 chunked context（内存切片）</span>
+    <p class="src">文件：<span class="file-ref">vllm/model_executor/layers/attention/mla_attention.py:121-187</span>（文件头注释，权威设计文档）</p>
+    <p><strong>为什么必须切</strong>（:127-132 原文）：</p>
+    <pre><code>compute-friendly 路径要物化 k_nope = (kv_c @ W_UK).view(Skv, N, P)
+—— 128K context × 128 头 × 128 维，直接爆显存。
+所以把 attention 的计算按当前 context（cache_kv_c / cache_k_pe）切成块，
+用固定 workspace 大小。</code></pre>
+    <p><strong>怎么切</strong>（伪代码，:134-187）：</p>
+    <pre><code>MCC = Max Chunk of Context（每轮最多处理的 context token 数，动态算）
+
+new_kv 的 attention（本步自己的 chunk）：causal=True
+    curr_o, curr_lse = sdpa(q, new_k_nope/k_pe, new_v, causal=True, return_lse=True)
+
+for chunk_idx in range(cdiv(C, MCC)):          <span class="cm"># 对已算的 context（在缓存里）</span>
+    cache_kv_c_chunk = cache_kv_c[start:end]   <span class="cm"># 从缓存取该块</span>
+    cache_k_nope_chunk = cache_kv_c_chunk @ W_UK  <span class="cm"># 上采样</span>
+    chunk_o, chunk_lse = sdpa(q, cache_k..., causal=False, return_lse=True)
+    curr_o, curr_lse = merge_attn_states(      <span class="cm"># 在线 softmax 合并</span>
+        suffix_output=curr_o, suffix_lse=curr_lse,
+        prefix_output=chunk_o, prefix_lse=chunk_lse)
+return curr_o @ W_O</code></pre>
+  </div>
+
+  <div class="step">
+    <span class="step-no">2c</span><span class="step-title">元数据构建：build_mla_chunked_context_metadata</span>
+    <p class="src">文件：<span class="file-ref">mla_attention.py:1595-1773</span>（dense 与 sparse MLA 共用）</p>
+    <pre><code><span class="cm"># context_lens = seq_len - query_len（前缀长度，已算部分）</span>
+max_context_chunk = chunked_prefill_workspace_size // num_prefills_with_context  <span class="cm"># :1641 每个带 context 的 prefill 均分 workspace</span>
+max_context_chunk = round_down(max_context_chunk, block_size)   <span class="cm"># :1642-1645 gather kernel 要求 chunk 起点按块对齐</span>
+num_chunks = cdiv(max_context_len, max_context_chunk)           <span class="cm"># :1648</span>
+
+<span class="cm"># 每 chunk 的几何，全部在 CPU 上算好（下游用 to_list）：</span>
+chunk_starts / chunk_ends / chunk_seq_lens    <span class="cm"># :1652-1663 各请求在每 chunk 里的 token 区间</span>
+cu_seq_lens_cpu    <span class="cm"># :1666-1669 每 chunk 内的前缀和（跨请求）</span>
+token_to_seq_cpu   <span class="cm"># :1673-1679 chunk 内 token → 请求号</span></code></pre>
+    <p>举例（注释 :1649-1650）：max_context_chunk=256、num_chunks=3、4 个 prefill → chunk_starts 是 <code>[[0,0,0,0],[256,256,256,256],[512,512,512,512]]</code>——所有请求在同一 chunk 里取各自的 <code>[start, end)</code> 区间。</p>
+  </div>
+
+  <div class="step">
+    <span class="step-no">2d</span><span class="step-title">执行：suffix + context 循环 + 在线合并</span>
+    <p class="src">文件：<span class="file-ref">mla_attention.py:2581-2660</span>（forward_mha）+ <span class="file-ref">:2301-2390</span>（_compute_prefill_context）</p>
+    <pre><code><span class="cm"># forward_mha :2608-2629 —— suffix（本步新 token 自己之间，causal）</span>
+kv_nope = self.kv_b_proj(kv_c_normed)[0].view(-1, N, P + V)   <span class="cm"># 用【本地】kv_c_normed 上采样</span>
+k_nope, v = kv_nope.split([P, V], dim=-1)
+output_prefill = run_prefill_new_tokens(q, k, v, return_softmax_lse=True)
+
+<span class="cm"># _compute_prefill_context :2323-2390 —— context（本步 query 对全部历史，causal=False）</span>
+for i in range(iters):                            <span class="cm"># 对每个 context chunk</span>
+    ops.gather_and_maybe_dequant_cache(           <span class="cm"># 从本地缓存 gather 该 chunk 的 KV 到 workspace</span>
+        src_cache=kv_c_and_k_pe_cache, dst=workspace, block_table=...,
+        cu_seq_lens=chunked_context.cu_seq_lens[i], token_to_seq=...)
+    kv_c_normed = workspace[:toks][..., :Lkv]     <span class="cm"># 从 workspace 里取回 latent</span>
+    k_pe = workspace[:toks][..., Lkv:].unsqueeze(1)
+    kv_nope = self.kv_b_proj(kv_c_normed)[0]...   <span class="cm"># 上采样 → K_nope/V</span>
+    attn_output, attn_softmax_lse = run_prefill_context_chunk(   <span class="cm"># causal=False</span>
+        chunk_idx=i, ...)
+
+<span class="cm"># forward_mha :2653-2660 —— 最后把 suffix 与 context 合并</span>
+merge_attn_states(output=output, prefix_output=context_output,
+                  prefix_lse=context_lse, suffix_output=suffix_output,
+                  suffix_lse=suffix_lse)</code></pre>
+    <p><code>run_prefill_context_chunk</code>（<span class="file-ref">prefill/flash_attn.py:451-470</span>）用 <code>causal=False</code>——context 全是合法前缀，不需要掩码；返回 <strong>LSE</strong> 供在线合并。<code>merge_attn_states</code> 是 <strong>rank 内</strong>的 online-softmax 合并（PCP 下也不跨 rank，因为 KV 已全量本地）。</p>
+    <div class="callout green"><strong>数学等价性</strong>：分块 + LSE 在线合并 = 一次算全 context。这正是 flash-attention 的 online softmax，只是把"内部 tile"放大成"显式 chunk"——分块不改变结果，只约束峰值内存。</div>
+  </div>
+
+  <!-- ==================== §3 意义 ==================== -->
+  <h2 id="s3"><span class="sec-no">3</span>意义（为什么这三层设计是必要的）</h2>
+  <ol>
+    <li><strong>内存有界</strong>（工作区级）：不物化 <code>[Skv, N, P]</code> 的 k_nope/v，固定 workspace——128K context 也能跑，这是"能跑长序列"的前提；</li>
+    <li><strong>延迟有界</strong>（调度级）：长 prefill 不堵死 decode，交互式 SLO 可保证；</li>
+    <li><strong>利用率</strong>：decode token 填满 prefill 之间的 batch 空隙，GPU 不闲；</li>
+    <li><strong>为 PCP 铺路</strong>：chunked context 的执行循环（<code>run_prefill_context_chunk</code> + <code>merge_attn_states</code>）正是 PCP 每个 rank 用的同一套——PCP 只是把"query 也切到多卡"（空间分块），context 的处理逻辑原封不动复用。<strong>这就是为什么 PCP 流转⑤里能看到一模一样的 chunked context 代码。</strong></li>
+  </ol>
+
+  <!-- ==================== §4 今生：三块拼图 ==================== -->
+  <h2 id="s4"><span class="sec-no">4</span>今生：三块拼图如何叠加（128K prefill，PCP=2，budget=16K）</h2>
+  <pre><code>调度级：128K → 8 步，每步 16K（时间切片，与 decode 交错）
+  每步内 PCP：16K query → 每 rank 8K（空间切片，DualChunkSwap）
+    每 rank 内 chunked context：已算前缀（如第 5 步时 64K）按 workspace 切块
+      逐块：gather 缓存 → kv_b_proj → run_prefill_context_chunk(causal=False)
+            → merge_attn_states（在线 softmax）
+      加上 suffix（本步 8K 新 token，causal=True）→ 合并出本 rank 的输出</code></pre>
+  <table>
+    <tr><th>层次</th><th>管什么</th><th>切分粒度</th><th>代价/收益</th></tr>
+    <tr><td>调度级（时间）</td><td>步长 / 延迟 SLO</td><td>每步 ≤ budget 个 token</td><td>多步调度开销 vs decode 不被饿死</td></tr>
+    <tr><td>工作区级（内存）</td><td>峰值显存</td><td>每 chunk ≤ MCC 个 context token</td><td>多几次 kernel launch vs 不爆显存</td></tr>
+    <tr><td>PCP（空间）</td><td>并行度 / TTFT</td><td>每 rank 1/W 的 query</td><td>latent gather vs prefill 墙钟 /W</td></tr>
+  </table>
+  <div class="callout purple"><strong>三者的关系</strong>：调度级"切步"决定每步的 query 是什么；PCP 决定 query 在哪张卡；chunked context 决定 context 怎么分块读入。三层各管一件事——时间、空间、内存——缺一不可，且完全正交、可任意组合。</div>
+
+  <!-- ==================== §5 行号索引 ==================== -->
+  <h2 id="s5"><span class="sec-no">5</span>行号索引</h2>
+  <table>
+    <tr><th>过程</th><th>位置</th></tr>
+    <tr><td>调度 token 预算 / 长 prefill 上限</td><td><span class="file-ref">scheduler.py:459-523</span></td></tr>
+    <tr><td>每步 num_scheduled_tokens 写入</td><td><span class="file-ref">scheduler.py:636-637</span></td></tr>
+    <tr><td>新请求 prefill 切步</td><td><span class="file-ref">scheduler.py:879-942</span></td></tr>
+    <tr><td>prepare_inputs 翻译 InputBatch</td><td><span class="file-ref">gpu_model_runner.py:932-1165</span></td></tr>
+    <tr><td>MLA 两种算路径的选择准则</td><td><span class="file-ref">mla_attention.py:13-21</span></td></tr>
+    <tr><td>MLA 矩阵定义（Lkv/P/R/V）</td><td><span class="file-ref">mla_attention.py:34-63</span></td></tr>
+    <tr><td>chunked prefill 设计文档（伪代码）</td><td><span class="file-ref">mla_attention.py:121-187</span></td></tr>
+    <tr><td>chunked context 元数据构建</td><td><span class="file-ref">mla_attention.py:1595-1773</span></td></tr>
+    <tr><td>context 执行循环（逐 chunk）</td><td><span class="file-ref">mla_attention.py:2301-2390</span></td></tr>
+    <tr><td>suffix 新 token attention</td><td><span class="file-ref">mla_attention.py:2581-2629</span></td></tr>
+    <tr><td>suffix + context 在线合并</td><td><span class="file-ref">mla_attention.py:2653-2660</span></td></tr>
+    <tr><td>run_prefill_context_chunk（causal=False）</td><td><span class="file-ref">prefill/flash_attn.py:451-470</span></td></tr>
+    <tr><td>PCP 空间分块（DualChunkSwap）</td><td><span class="file-ref">pcp_manager.py:195-250</span></td></tr>
+  </table>
+
+  <div class="footer">
+    并行研究 · Chunked Prefill 完整梳理 —— 生成于 2026-08-24。所有行号基于本地 vLLM checkout（MRV2，锚定 main @ 6e448d0ea），随版本可能变化；本报告为研究性导读，与 <a href="pcp-code-walkthrough.html">PCP 完整过程梳理</a> 配套。
+  </div>
+
+</div>
+</body>
+</html>

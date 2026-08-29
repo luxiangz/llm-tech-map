@@ -173,7 +173,7 @@ description: 面向大模型方向的完整技术知识目录，覆盖从数学�
 ### 5.1 推理机制
 - [ ] 自回归解码与 KV Cache
 - [ ] PagedAttention、连续批处理（Continuous Batching）
-- [ ] 分块预填充（Chunked Prefill）、PD 分离
+- [ ] 分块预填充（Chunked Prefill）、PD 分离 — 📄 [Chunked Prefill 完整梳理笔记](notes/chunked-prefill-history-flow.html)
 - [ ] 前缀缓存（prefix cache）、RadixAttention
 - [ ] 采样家族：top-k/top-p/temperature/min-p/typical、平行采样
 - [ ] 投机解码：草稿模型/自投机/Medusa/EAGLE、接受率与加速比建模
