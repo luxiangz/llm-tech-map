@@ -367,16 +367,40 @@ if step % args.accumulation_steps == 0:                            # 凑满 accu
 <tr><td>优化器更新</td><td>批改总结（真正"学到东西"）</td><td>每 8 个 step 一次 ≈ 39 次</td></tr>
 </tbody>
 </table>
-<pre><code>10000 道题（数据集）
-└── 按 batch_size=32 切 → 313 个 batch
-    ├── 第 1 个 batch → step=1   ┐
-    ├── ...                      │ 攒 8 个（只 backward 不清梯度）
-    ├── 第 8 个 batch → step=8   ┘ → 优化器更新 1 次
-    ├── 第 9 个 batch → step=9   ┐
-    ├── ...                      │ 再攒 8 个
-    └── 第 16 个 batch → step=16 ┘ → 优化器更新第 2 次
-    ...
-    └── 第 313 个 batch → step=313 → epoch 结束（共更新 ≈39 次）</code></pre>
+<figure>
+<svg viewBox="0 0 560 330" style="max-width:560px; width:100%; height:auto;" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="step batch epoch 关系示意图">
+  <defs>
+    <marker id="arr" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+      <path d="M0,0 L8,4 L0,8 z" fill="#57606a"/>
+    </marker>
+  </defs>
+  <rect x="190" y="10" width="180" height="40" rx="6" fill="#eef6ff" stroke="#0969da"/>
+  <text x="280" y="35" text-anchor="middle" font-size="14" fill="#1f2328">数据集：10000 道题</text>
+  <line x1="280" y1="50" x2="280" y2="78" stroke="#57606a" stroke-width="1.5" marker-end="url(#arr)"/>
+  <text x="292" y="69" font-size="12" fill="#57606a">÷ batch_size=32</text>
+  <rect x="130" y="82" width="300" height="40" rx="6" fill="#eef6ff" stroke="#0969da"/>
+  <text x="280" y="107" text-anchor="middle" font-size="14" fill="#1f2328">313 个 batch = 313 个 step</text>
+  <line x1="280" y1="122" x2="280" y2="150" stroke="#57606a" stroke-width="1.5" marker-end="url(#arr)"/>
+  <text x="292" y="140" font-size="12" fill="#57606a">每 accumulation_steps=8 个 step 攒一次梯度</text>
+  <rect x="40" y="156" width="140" height="38" rx="6" fill="#fff8c5" stroke="#d4a72c"/>
+  <text x="110" y="180" text-anchor="middle" font-size="13" fill="#1f2328">step 1 ~ 8</text>
+  <line x1="180" y1="175" x2="240" y2="175" stroke="#57606a" stroke-width="1.5" marker-end="url(#arr)"/>
+  <rect x="240" y="156" width="280" height="38" rx="6" fill="#f6f8fa" stroke="#57606a"/>
+  <text x="380" y="180" text-anchor="middle" font-size="13" fill="#1f2328">优化器更新第 1 次</text>
+  <rect x="40" y="204" width="140" height="38" rx="6" fill="#fff8c5" stroke="#d4a72c"/>
+  <text x="110" y="228" text-anchor="middle" font-size="13" fill="#1f2328">step 9 ~ 16</text>
+  <line x1="180" y1="223" x2="240" y2="223" stroke="#57606a" stroke-width="1.5" marker-end="url(#arr)"/>
+  <rect x="240" y="204" width="280" height="38" rx="6" fill="#f6f8fa" stroke="#57606a"/>
+  <text x="380" y="228" text-anchor="middle" font-size="13" fill="#1f2328">优化器更新第 2 次</text>
+  <text x="110" y="264" text-anchor="middle" font-size="15" fill="#57606a">……</text>
+  <rect x="40" y="272" width="140" height="38" rx="6" fill="#fff8c5" stroke="#d4a72c"/>
+  <text x="110" y="296" text-anchor="middle" font-size="13" fill="#1f2328">step 313</text>
+  <line x1="180" y1="291" x2="240" y2="291" stroke="#57606a" stroke-width="1.5" marker-end="url(#arr)"/>
+  <rect x="240" y="272" width="280" height="38" rx="6" fill="#f6f8fa" stroke="#57606a"/>
+  <text x="380" y="296" text-anchor="middle" font-size="13" fill="#1f2328">epoch 结束（共 ≈39 次更新）</text>
+</svg>
+<figcaption>梯度累积：batch_size 决定每个 step 的样本数；accumulation_steps 决定攒多少个 step 才真正更新一次参数。</figcaption>
+</figure>
 <p>三个最容易混的关系：</p>
 <ol>
 <li><strong>一个 step = 一个 batch</strong>：<code>for step, (input_ids, labels) in enumerate(loader)</code> 每取出一批样本，step 就 +1；</li>
