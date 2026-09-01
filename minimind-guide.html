@@ -544,6 +544,39 @@ else:  # 手写回退：带因果上三角掩码
     output = softmax(scores) @ xv
 output = o_proj(output.reshape(B, S, 768))</code></pre>
 <p>GQA 的注意力计算量不变（KV 复制后维度相同），但 KV Cache 只存 4 组而非 8 组，推理显存减半——这是 Llama 2/3、Qwen 2/3 的通用设计。QK-Norm 显著提升低精度训练稳定性（Qwen3 风格）。Flash Attention 有 FA 用 FA（快且省显存），没有则手写 softmax 注意力（带因果上三角掩码），保证任意环境可跑。</p>
+<p><strong>通俗比喻：提问的人多、记笔记的人少。</strong>8 个 Q 头就像 8 个提问的人，但只安排 4 个"记笔记的人"（KV 头）。每个记笔记的人同时服务 2 个提问者——提问各自独立，但笔记只写 4 份，再复制成 8 份给大家用。</p>
+<ul>
+<li>提问（Q）：8 份，每个 Q 头独立，决定"我想关注什么"；</li>
+<li>笔记（K/V）：只存 4 份，每个 KV 头被 2 个 Q 头共享，决定"上下文里有什么"。<code>repeat_kv</code> 就是"把 4 份笔记各复印一份，凑成 8 份"；</li>
+<li>好处：注意力计算量不变，但推理时缓存的 KV 从 8 份变 4 份，显存减半。</li>
+</ul>
+<figure>
+<svg viewBox="0 0 480 250" style="max-width:480px; width:100%; height:auto;" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="GQA 分组查询注意力示意图">
+  <g font-size="12" text-anchor="middle" fill="#1f2328">
+    <circle cx="62" cy="20" r="14" fill="#eef6ff" stroke="#0969da"/><text x="62" y="24">Q0</text>
+    <circle cx="62" cy="48" r="14" fill="#eef6ff" stroke="#0969da"/><text x="62" y="52">Q1</text>
+    <circle cx="62" cy="76" r="14" fill="#eef6ff" stroke="#0969da"/><text x="62" y="80">Q2</text>
+    <circle cx="62" cy="104" r="14" fill="#eef6ff" stroke="#0969da"/><text x="62" y="108">Q3</text>
+    <circle cx="62" cy="132" r="14" fill="#eef6ff" stroke="#0969da"/><text x="62" y="136">Q4</text>
+    <circle cx="62" cy="160" r="14" fill="#eef6ff" stroke="#0969da"/><text x="62" y="164">Q5</text>
+    <circle cx="62" cy="188" r="14" fill="#eef6ff" stroke="#0969da"/><text x="62" y="192">Q6</text>
+    <circle cx="62" cy="216" r="14" fill="#eef6ff" stroke="#0969da"/><text x="62" y="220">Q7</text>
+  </g>
+  <g stroke="#57606a" stroke-width="1.2" fill="none">
+    <line x1="76" y1="20" x2="320" y2="34"/><line x1="76" y1="48" x2="320" y2="34"/>
+    <line x1="76" y1="76" x2="320" y2="90"/><line x1="76" y1="104" x2="320" y2="90"/>
+    <line x1="76" y1="132" x2="320" y2="146"/><line x1="76" y1="160" x2="320" y2="146"/>
+    <line x1="76" y1="188" x2="320" y2="202"/><line x1="76" y1="216" x2="320" y2="202"/>
+  </g>
+  <g font-size="12" text-anchor="middle" fill="#1f2328">
+    <rect x="322" y="20" width="120" height="28" rx="5" fill="#fff8c5" stroke="#d4a72c"/><text x="382" y="38">KV0</text>
+    <rect x="322" y="76" width="120" height="28" rx="5" fill="#fff8c5" stroke="#d4a72c"/><text x="382" y="94">KV1</text>
+    <rect x="322" y="132" width="120" height="28" rx="5" fill="#fff8c5" stroke="#d4a72c"/><text x="382" y="150">KV2</text>
+    <rect x="322" y="188" width="120" height="28" rx="5" fill="#fff8c5" stroke="#d4a72c"/><text x="382" y="206">KV3</text>
+  </g>
+</svg>
+<figcaption>GQA：8 个 Q 头（左）共享 4 组 KV（右），每个 KV 头通过 repeat_kv 服务 2 个 Q 头。</figcaption>
+</figure>
 <h3>5.5 SwiGLU FFN：三个线性层</h3>
 $$\operatorname{SwiGLU}(x) = \big(\operatorname{SiLU}(x W_g) \odot (x W_u)\big) W_d, \qquad \operatorname{SiLU}(z) = z\cdot\sigma(z) = \frac{z}{1+e^{-z}}$$
 <pre><code class="language-python">class FeedForward(nn.Module):
@@ -627,6 +660,34 @@ $$y = \sum_{i=1}^{N} g_i(x)\,\operatorname{FFN}_i(x), \qquad g(x) = \operatornam
 
         return final</code></pre>
 <p>稀疏激活：每个 token 只路由到 1 个专家（<code>num_experts_per_tok=1</code>），激活参数 ≈ dense 版，但总容量翻 3 倍（198M-A64M）。aux_loss（coef=5e-4）鼓励各专家被均匀使用，防止"赢家通吃"——这就是预训练日志里 <code>aux_loss</code> 那一列的来源（dense 模型为 0）。</p>
+<p><strong>通俗比喻：分诊台。</strong>把路由门想象成医院的分诊台，4 个专家是 4 个专科科室。每个 token（病人）进来看一眼"病情"（路由得分），被分到最合适的 1 个科室；只有被选中的那个医生处理它，其余 3 个医生不动。这样总容量翻 3 倍（4 个医生），但每个病人实际只消耗 1 个医生的算力。</p>
+<figure>
+<svg viewBox="0 0 480 210" style="max-width:480px; width:100%; height:auto;" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="MoE 专家路由示意图">
+  <defs>
+    <marker id="arr2" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+      <path d="M0,0 L8,4 L0,8 z" fill="#57606a"/>
+    </marker>
+  </defs>
+  <rect x="150" y="10" width="180" height="34" rx="6" fill="#eef6ff" stroke="#0969da"/>
+  <text x="240" y="32" text-anchor="middle" font-size="13" fill="#1f2328">token 流（B*T 个）</text>
+  <line x1="240" y1="44" x2="240" y2="66" stroke="#57606a" stroke-width="1.5" marker-end="url(#arr2)"/>
+  <rect x="150" y="70" width="180" height="34" rx="6" fill="#fff8c5" stroke="#d4a72c"/>
+  <text x="240" y="92" text-anchor="middle" font-size="13" fill="#1f2328">路由门 gate（top-1）</text>
+  <g stroke="#57606a" stroke-width="1.2">
+    <line x1="190" y1="104" x2="70" y2="140" marker-end="url(#arr2)"/>
+    <line x1="220" y1="104" x2="180" y2="140" marker-end="url(#arr2)"/>
+    <line x1="260" y1="104" x2="290" y2="140" marker-end="url(#arr2)"/>
+    <line x1="290" y1="104" x2="400" y2="140" marker-end="url(#arr2)"/>
+  </g>
+  <g font-size="12" text-anchor="middle" fill="#1f2328">
+    <rect x="20" y="144" width="100" height="40" rx="6" fill="#f6f8fa" stroke="#57606a"/><text x="70" y="169">专家 0</text>
+    <rect x="130" y="144" width="100" height="40" rx="6" fill="#f6f8fa" stroke="#57606a"/><text x="180" y="169">专家 1</text>
+    <rect x="240" y="144" width="100" height="40" rx="6" fill="#f6f8fa" stroke="#57606a"/><text x="290" y="169">专家 2</text>
+    <rect x="350" y="144" width="100" height="40" rx="6" fill="#f6f8fa" stroke="#57606a"/><text x="400" y="169">专家 3</text>
+  </g>
+</svg>
+<figcaption>MoE 稀疏路由：路由门把每个 token 分给 top-1 专家，只有被选中的专家参与计算。</figcaption>
+</figure>
 <figure>
   <img src="blog/images/LLM-structure-moe.jpg" alt="MiniMind MoE 模型结构图">
   <figcaption>MiniMind MoE 模型结构：FFN 层由路由门 + 4 个专家组成，每个 token 只激活 1 个专家</figcaption>
@@ -690,6 +751,29 @@ $$\theta_{t+1} = \theta_t - \eta \cdot g_t$$
 <p>核心思想：在 SGD 基础上累积历史梯度方向，让更新方向更平滑。</p>
 $$m_t = \beta m_{t-1} + (1-\beta)g_t, \qquad \theta_{t+1} = \theta_t - \eta \cdot m_t$$
 <p>其中 $\beta$ 通常 0.9，$m_t$ 是历史梯度的指数滑动平均。</p>
+<p><strong>通俗比喻：惯性小球滚下山。</strong>把参数更新想象成一颗小球在山坡上滚动：</p>
+<ul>
+<li><strong>梯度 $g_t$</strong>：当前所在位置的"坡度方向"——只在这一点上指哪儿陡就滚哪儿；</li>
+<li><strong>动量 $m_t$</strong>：之前滚动的"惯性"——把历史速度累积进来，滚过平坦区（梯度很小）和震荡区（梯度来回变）时不会停下来，方向更平滑；</li>
+<li>$\beta=0.9$ 表示"更相信历史惯性，只拿 0.1 的分量给当前坡度"。</li>
+</ul>
+<figure>
+<svg viewBox="0 0 480 210" style="max-width:480px; width:100%; height:auto;" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="动量惯性小球示意图">
+  <defs>
+    <marker id="arr3" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+      <path d="M0,0 L8,4 L0,8 z" fill="#57606a"/>
+    </marker>
+  </defs>
+  <path d="M 20 35 C 120 175, 360 175, 460 35" fill="none" stroke="#c0c6cc" stroke-width="2"/>
+  <circle cx="140" cy="135" r="12" fill="#fff" stroke="#1f2328" stroke-width="1.5"/>
+  <line x1="140" y1="135" x2="195" y2="156" stroke="#d1242f" stroke-width="2" marker-end="url(#arr3)"/>
+  <text x="205" y="168" font-size="12" fill="#d1242f">梯度（当前坡度）</text>
+  <line x1="140" y1="135" x2="225" y2="126" stroke="#0969da" stroke-width="2" marker-end="url(#arr3)"/>
+  <text x="215" y="112" font-size="12" fill="#0969da">动量（历史惯性）</text>
+  <text x="250" y="196" font-size="12" fill="#57606a">损失曲面（山谷）</text>
+</svg>
+<figcaption>动量：小球既沿当前坡度（梯度）滚，又带着历史速度（动量），方向更平滑、更能冲出震荡。</figcaption>
+</figure>
 <h3>三、AdaGrad——自适应学习率的开端</h3>
 <p>核心思想：<strong>每个参数有自己的学习率</strong>。历史梯度平方累积和 $G_t$ 作分母：梯度经常大的参数分母大、步长小；反之步长大。即"梯度大的参数自动放缓"。</p>
 $$G_t = \sum_{i=1}^{t} g_i^2, \qquad \theta_{t+1} = \theta_t - \frac{\eta}{\sqrt{G_t + \epsilon}} \cdot g_t$$
