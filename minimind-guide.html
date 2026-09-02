@@ -1059,7 +1059,13 @@ python train_full_sft.py \
 <tr><td><code>max_seq_len</code></td><td>340</td><td><strong>768</strong>（对话更长）</td></tr>
 </tbody>
 </table>
-<p>lr 为什么这么低：SFT 在已训练好的权重上做精修，过大 lr 会破坏预训练知识（灾难性遗忘）。</p>
+<p>这些差异的根源是一条主线：<strong>预训练是"从零学语言"，要大步快学；SFT 是"精修对话能力"，要小步微调、防遗忘。</strong>逐个说明：</p>
+<ul>
+<li><strong>learning_rate：5e-4 → 1e-5（低 100 倍）</strong>。预训练从随机初始化的权重开始，模型是一张"白纸"，需要大步快速把语言规律压进参数；SFT 在已经训练好的权重上做精修，lr 太大会破坏预训练学到的知识（灾难性遗忘），所以只做"温柔调整"。</li>
+<li><strong>max_seq_len：340 → 768</strong>。预训练数据是纯文本流，mini 文本较短，340 token 足够（全量 pretrain 推荐 380）；SFT 是多轮对话（system/user/assistant 可能多轮），天然更长，768 才能容纳完整对话，否则 assistant 回答会被截断、学到残缺样本。</li>
+<li><strong>batch_size 32→16 与 accumulation_steps 8→1（要配套看）</strong>。两者的乘积是"有效 batch"：预训练 $32\times8=256$，SFT $16\times1=16$。预训练需要大的有效 batch——梯度估计更稳定，才能扛住 5e-4 的大学习率；SFT 序列更长（768）单条更占显存、且本身是精修收敛快，不需要那么大的有效 batch。</li>
+</ul>
+<p>一句话：预训练"大步 + 大有效 batch + 短序列"，SFT"小步 + 小有效 batch + 长序列"——本质是"学新知识"和"改已有知识"的区别。</p>
 <p>常见问题：过拟合（epochs 默认 2，减少 epochs 或加 dropout）；指令截断（长对话控制在 max_seq_len 内）；混合数据（主线 sft_t2t 已混入工具调用与思考链样本）。</p>
 <h3>7.5 LoRA：只训低秩增量</h3>
 <p>LoRA 冻结原模型，挂一条低秩分支 <code>BA</code>，只训这条分支：</p>
