@@ -820,6 +820,17 @@ $$\theta_{t+1} = \theta_t - \text{更新量}$$
 <p>核心思想：<strong>沿梯度反方向走固定步长</strong>——最直接的"下山"方式，哪里陡往哪走。</p>
 $$\theta_{t+1} = \theta_t - \eta \cdot g_t$$
 <p>其中 $\eta$ 是学习率（全局统一），$g_t$ 是当前梯度。</p>
+<p><strong>"随机"体现在哪</strong>。这里的"随机"（stochastic）不是"随机瞎走"，而是指——每一步的梯度 $g_t$ 不是用<strong>全部数据</strong>算出的精确梯度，而是用<strong>随机抽出来的一个小批量（或单个样本）</strong>算出的<strong>带噪声的梯度估计</strong>。三者的区别：</p>
+<table>
+<thead><tr><th>方法</th><th>每次用多少数据</th><th>梯度</th><th>特点</th></tr></thead>
+<tbody>
+<tr><td>批量梯度下降（BGD / GD）</td><td>全量数据</td><td>精确</td><td>每步太慢</td></tr>
+<tr><td>随机梯度下降（SGD）</td><td>1 个样本</td><td>噪声极大</td><td>快但抖得厉害</td></tr>
+<tr><td>小批量 SGD（Mini-batch SGD）</td><td>一小批（如 32）</td><td>有噪声</td><td>实际主流，平衡速度与稳定</td></tr>
+</tbody>
+</table>
+<p>所以"随机"有两层含义：① 样本是<strong>随机抽取</strong>的（每步的 batch 内容不同）；② 梯度是<strong>随机估计</strong>（不等于全量梯度，而是围绕真实梯度波动的无偏估计）。这带来的好处是算得快、且噪声有助于跳出局部极小值/鞍点；代价是收敛路径更"抖"（损失曲线有噪声）。</p>
+<p>在 MiniMind 里，这个"随机"就是：每个 epoch 由 <code>DistributedSampler</code> 把数据 <code>shuffle</code> 随机打乱，且 <code>set_epoch</code> 让每个 epoch 用不同的洗牌种子，保证每轮看到的样本顺序都不同。</p>
 <table>
 <thead><tr><th>优点</th><th>缺点</th></tr></thead>
 <tbody>
