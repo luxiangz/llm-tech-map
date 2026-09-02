@@ -1496,7 +1496,11 @@ kl_token = logp_theta - logp_ref               # (B, S) 逐 token 的 log(π_θ/
 # 一条回答的 KL ≈ 在模型采到的 token 上求平均（mask 只统计 assistant 段）
 kl_seq = (kl_token * mask).sum(-1) / mask.sum(-1)            # (B,)
 loss = policy_loss + beta * kl_seq.mean()      # 策略梯度损失 + β·KL 惩罚</code></pre>
-<p><strong>"平均"平均在哪</strong>：严格定义要对<strong>所有可能回答</strong>按 $\pi_\theta$ 加权求和，语言模型根本列不完；训练里做的是<strong>蒙特卡洛估计</strong>——模型采到哪几条 y，就在哪几条上算 log 差再平均，样本多了估计就准。工程上为降方差还常用 k3 估计器 $\widehat{\mathrm{KL}}=\exp(d)-d-1$（$d=\log\pi_{ref}-\log\pi_\theta$，代码见 10.3），本质同样是逐 token 比较两个 log 概率，只是换了一种加权方式，恒非负且低方差。</p>
+<p><strong>最后一个坎：KL 定义里的"求和"要对所有回答做，可根本算不完</strong>。回看定义 $\mathrm{KL}=\sum_i P(i)\log\frac{P(i)}{Q(i)}$，那个 $\sum_i$ 要遍历"所有可能的回答"——语言模型能生成的话几乎是无穷多，没法一条条列出来。换个写法，KL 其实就是个<strong>期望（长期平均）</strong>：</p>
+$$\mathrm{KL}(\pi_\theta\,\|\,\pi_{ref}) = \mathbb{E}_{y\sim\pi_\theta(\cdot\mid x)}\Big[\log\frac{\pi_\theta(y\mid x)}{\pi_{ref}(y\mid x)}\Big]$$
+<p>读作："从策略模型里随机抽一条回答 $y$，算一下 $\log(\pi_\theta/\pi_{ref})$ 这个值，长期抽下去的平均值就是 KL"。既然抽不完所有，那就<strong>抽几条算几条、取平均</strong>去逼近真值——抽得越多越准，这就是<strong>蒙特卡洛估计</strong>：用"样本平均"代替"全量求和"。</p>
+<p>落地到代码：策略采到哪几条 $y$，就对哪几条分别算 $\log\pi_\theta(y\mid x)$ 和 $\log\pi_{ref}(y\mid x)$，相减再平均，就是 KL 的估计（也就是前面代码里的 <code>kl_seq.mean()</code>）。</p>
+<p>工程上还有个"更稳"的版本叫 <strong>k3</strong>：用 $\widehat{\mathrm{KL}}=\exp(d)-d-1$（其中 $d=\log\pi_{ref}-\log\pi_\theta$）代替直接相减。好处是<strong>恒 ≥0</strong>（因为 $e^d\ge d+1$ 永远成立）、方差更低，训练更平稳；本质仍是"比较两个模型的 log 概率"，只是换了个打分函数。代码见 10.3。</p>
 <p><strong>回到文档里出现过 KL 的三个位置</strong>：DPO 的 <code>dpo_loss</code> 里"减去 ref_logratios"就是<strong>隐式 KL 锚</strong>（被吸收进二分类损失，不单独出现）；PPO/GRPO 目标里的 $-\beta\,\mathrm{KL}$ 是上面代码的<strong>显式惩罚项</strong>（对应 <code>--beta</code>）；而 $\beta$ 越大 = 缰绳越紧。理解这个计算过程后，9.3 的梯度公式、9.4 的 KL 惩罚、10.3 的 k3 代码就都能串起来了。</p>
 <h3>9.3 策略梯度定理</h3>
 <p><strong>先问：为什么 SFT 那套"对损失直接求导"在 RL 里行不通？</strong>两个原因：① 奖励 $r(x,y)$ 常常<strong>不可导</strong>——对答案、调工具、规则分都是"程序/字典查表"式的，没有梯度可言；② 就算奖励是神经网络（RM），样本 $y$ 是从离散分布里<strong>随机抽样</strong>得到的，梯度穿不过"抽样"这一步。所以必须绕道：对<strong>我们自己网络的 log 概率</strong>求导，因为那个一定能求。</p>
