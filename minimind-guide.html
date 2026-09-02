@@ -1438,10 +1438,10 @@ $$\max_{\pi}\ \mathbb{E}_{x\sim D,\,y\sim\pi(\cdot\mid x)}\big[r(x,y)\big] - \be
   <line x1="450" y1="156" x2="145" y2="196" stroke="#57606a" stroke-width="1.5" marker-end="url(#m9a)"/>
   <line x1="450" y1="156" x2="450" y2="196" stroke="#57606a" stroke-width="1.5" marker-end="url(#m9a)"/>
   <line x1="450" y1="156" x2="755" y2="196" stroke="#57606a" stroke-width="1.5" marker-end="url(#m9a)"/>
-  <text x="452" y="180" font-size="11" fill="#57606a">采到的 y</text>
+  <text x="452" y="180" font-size="11" fill="#57606a">完整序列 x + y</text>
   <rect x="20" y="200" width="250" height="82" rx="6" fill="#fff8c5" stroke="#d4a72c"/>
   <text x="145" y="226" text-anchor="middle" font-size="13" fill="#1f2328">Reference π_ref（冻结）</text>
-  <text x="145" y="246" text-anchor="middle" font-size="11" fill="#5c4400">对采到的 y 算 ref_logp</text>
+  <text x="145" y="246" text-anchor="middle" font-size="11" fill="#5c4400">对完整序列 [x;y] 算 log π_ref(y|x)</text>
   <text x="145" y="266" text-anchor="middle" font-size="11" fill="#5c4400">GRPO / PPO 都用（KL 锚）</text>
   <rect x="315" y="200" width="270" height="82" rx="6" fill="#eef6ff" stroke="#0969da"/>
   <text x="450" y="226" text-anchor="middle" font-size="13" fill="#1f2328">Reward r（RM / 规则 / 验证）</text>
@@ -1469,8 +1469,9 @@ $$\max_{\pi}\ \mathbb{E}_{x\sim D,\,y\sim\pi(\cdot\mid x)}\big[r(x,y)\big] - \be
   <polyline points="450,534 450,565 8,565 8,128 258,128" fill="none" stroke="#0969da" stroke-width="2" marker-end="url(#m9a)"/>
   <text x="230" y="557" text-anchor="middle" font-size="12" fill="#0969da">optimizer.step：沿 −∇loss 更新 Policy，再回到采样（循环）</text>
 </svg>
-<figcaption>在线 RL 完整循环：prompt → Policy 采样 y（记 old_logp）→ y 同时交给 Reference（算 ref_logp）、Reward（打分 r）；PPO 另有 Critic（虚线，逐前缀估 V）→ 优势 A = r − 基线（PPO 用 V(s)，GRPO 用组内 z-score）→ loss = clip(ratio)·A − β·KL（ref_logp 提供 KL 基线）→ optimizer 更新 Policy → 回到采样。虚线含义：Critic 是仅 PPO 的可选项、A 是中间计算结果、ref_logp 与 V(s) 是辅助信号。</figcaption>
+<figcaption>在线 RL 完整循环：prompt → Policy 采样 y（记 old_logp）→ 把完整序列 x+y 同时交给 Reference（算 log π_ref(y|x)，即 ref_logp）、Reward（打分 r）；PPO 另有 Critic（虚线，逐前缀估 V）→ 优势 A = r − 基线（PPO 用 V(s)，GRPO 用组内 z-score）→ loss = clip(ratio)·A − β·KL（ref_logp 提供 KL 基线）→ optimizer 更新 Policy → 回到采样。虚线含义：Critic 是仅 PPO 的可选项、A 是中间计算结果、ref_logp 与 V(s) 是辅助信号。</figcaption>
 </figure>
+<p><strong>Reference 到底"吃"什么进去？</strong>它不止看 prompt，而是把<strong>完整序列（prompt x + 模型生成的回答 y）</strong>一起喂进去，前向一遍后只取"回答位置"上的对数概率，得到 $\log\pi_{ref}(y\mid x)$。prompt 是条件，回答 y 是被评估的对象，两者缺一不可——因为我们要问的是"冻结的 SFT 模型觉得这段回答有多合理"。Policy 自己也算同样一份 $\log\pi_\theta(y\mid x)$，两者相减就是 KL。所以图里那个箭头要理解成：prompt 从上面流进 Policy，回答 y 由 Policy 产出，二者拼成完整序列后才交给 Reference / Reward / Critic。</p>
 <p><strong>Reference 的职责 = 提供 ref_logp 来算 KL 惩罚。KL 具体怎么算？</strong>定义就一句话：按 P 的概率，对 P/Q 的对数求加权平均：</p>
 $$\mathrm{KL}(P\,\|\,Q)=\sum_i P(i)\log\frac{P(i)}{Q(i)}$$
 <p>$P$ 是被平均的对象（乘在外面），$Q$ 是分母（比的是 $P/Q$），所以 KL <strong>不对称</strong>：$\mathrm{KL}(P\|Q)\neq\mathrm{KL}(Q\|P)$。用具体数字走一遍（某题答案分布，P 是策略、Q 是参考模型）：</p>
