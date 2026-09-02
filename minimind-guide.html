@@ -502,6 +502,58 @@ torch.save({k: v.half().cpu() for k, v in state_dict.items()}, ckp)
 lm_checkpoint(lm_config, weight=args.save_weight, model=model, optimizer=optimizer,
               scaler=scaler, epoch=epoch, step=step, wandb=wandb, save_dir='../checkpoints')</code></pre>
 <p>第一份只有模型参数，体积小、用于后续推理或下一阶段加载；第二份把优化器状态、scaler 缩放因子、当前 epoch/step 一起存下来，断点续训时能无缝恢复训练进度与学习率调度。</p>
+<h3>4.4 训练日志与显存解读</h3>
+<p><strong>loss 怎么读</strong>。预训练 loss 应该从高位（如 7 以上）逐步下降到稳定区间（如 1.5~1.9），这是收敛的标志；尾部单步 loss 在小区间内来回跳（1.5~1.9 之间抖动）是正常的每步噪声。看趋势要看几十步的滑动平均，而不是盯着单步值。</p>
+<figure>
+<svg viewBox="0 0 820 420" xmlns="http://www.w3.org/2000/svg" style="max-width:100%;height:auto;" role="img" aria-label="MoE 预训练 loss 曲线">
+<line x1="70" y1="360.0" x2="780" y2="360.0" stroke="#e8e8e8" stroke-width="1"/>
+<text x="60" y="364.0" font-size="12" text-anchor="end" fill="#57606a">0</text>
+<line x1="70" y1="271.5" x2="780" y2="271.5" stroke="#e8e8e8" stroke-width="1"/>
+<text x="60" y="275.5" font-size="12" text-anchor="end" fill="#57606a">2</text>
+<line x1="70" y1="183.0" x2="780" y2="183.0" stroke="#e8e8e8" stroke-width="1"/>
+<text x="60" y="187.0" font-size="12" text-anchor="end" fill="#57606a">4</text>
+<line x1="70" y1="94.6" x2="780" y2="94.6" stroke="#e8e8e8" stroke-width="1"/>
+<text x="60" y="98.6" font-size="12" text-anchor="end" fill="#57606a">6</text>
+<line x1="70" y1="6.1" x2="780" y2="6.1" stroke="#e8e8e8" stroke-width="1"/>
+<text x="60" y="10.1" font-size="12" text-anchor="end" fill="#57606a">8</text>
+<line x1="69.5" y1="360" x2="69.5" y2="40" stroke="#e8e8e8" stroke-width="1"/>
+<text x="69.5" y="378" font-size="12" text-anchor="middle" fill="#57606a">0k</text>
+<line x1="247.2" y1="360" x2="247.2" y2="40" stroke="#e8e8e8" stroke-width="1"/>
+<text x="247.2" y="378" font-size="12" text-anchor="middle" fill="#57606a">33k</text>
+<line x1="424.7" y1="360" x2="424.7" y2="40" stroke="#e8e8e8" stroke-width="1"/>
+<text x="424.7" y="378" font-size="12" text-anchor="middle" fill="#57606a">66k</text>
+<line x1="602.7" y1="360" x2="602.7" y2="40" stroke="#e8e8e8" stroke-width="1"/>
+<text x="602.7" y="378" font-size="12" text-anchor="middle" fill="#57606a">99k</text>
+<line x1="780.0" y1="360" x2="780.0" y2="40" stroke="#e8e8e8" stroke-width="1"/>
+<text x="780.0" y="378" font-size="12" text-anchor="middle" fill="#57606a">132k</text>
+<line x1="70" y1="360" x2="780" y2="360" stroke="#999" stroke-width="1.5"/>
+<line x1="70" y1="40" x2="70" y2="360" stroke="#999" stroke-width="1.5"/>
+<path d="M 70.0,40.0 L 72.7,105.0 L 75.4,166.7 L 78.1,196.8 L 80.7,220.4 L 83.4,232.7 L 86.1,242.3 L 88.8,240.4 L 91.5,236.5 L 94.2,245.3 L 97.4,250.3 L 100.1,254.7 L 102.8,244.2 L 105.4,264.8 L 108.1,268.3 L 110.8,258.5 L 113.5,261.4 L 116.2,263.6 L 118.9,259.3 L 122.1,254.3 L 124.8,268.4 L 127.5,264.0 L 130.1,269.8 L 132.8,255.3 L 135.5,263.7 L 138.2,257.9 L 140.9,266.8 L 143.6,264.0 L 146.8,269.2 L 149.5,266.1 L 152.2,266.6 L 154.8,258.6 L 157.5,267.9 L 160.2,273.9 L 162.9,269.5 L 165.6,266.2 L 168.3,262.6 L 171.5,259.5 L 174.2,274.7 L 176.9,267.1 L 179.5,264.6 L 182.2,270.3 L 184.9,267.5 L 187.6,266.0 L 190.3,268.3 L 193.0,266.3 L 195.6,269.3 L 198.9,260.9 L 201.6,267.6 L 204.2,273.4 L 206.9,270.4 L 209.6,267.0 L 212.3,272.3 L 215.0,268.1 L 217.7,268.4 L 220.3,262.6 L 223.6,264.0 L 226.3,277.5 L 228.9,283.6 L 231.6,275.2 L 234.3,276.1 L 237.0,258.9 L 239.7,269.1 L 242.4,270.3 L 245.0,276.5 L 248.3,273.8 L 251.0,268.8 L 253.6,274.9 L 256.3,282.8 L 259.0,279.2 L 261.7,272.8 L 264.4,269.1 L 267.1,278.1 L 269.7,282.9 L 273.0,271.8 L 275.7,278.8 L 278.3,276.3 L 281.0,275.9 L 283.7,277.7 L 286.4,269.7 L 289.1,283.5 L 291.8,269.4 L 294.4,279.4 L 297.1,266.9 L 300.4,276.5 L 303.0,274.2 L 305.7,281.4 L 308.4,278.6 L 311.1,279.4 L 313.8,284.8 L 316.5,278.4 L 319.1,272.3 L 321.8,269.3 L 325.1,276.3 L 327.7,273.3 L 330.4,277.9 L 333.1,283.2 L 335.8,271.4 L 338.5,276.9 L 341.2,271.5 L 343.8,275.1 L 346.5,275.2 L 349.8,285.4 L 352.4,279.3 L 355.1,278.7 L 357.8,277.6 L 360.5,281.9 L 363.2,285.6 L 365.9,283.7 L 368.5,279.8 L 371.2,278.2 L 374.5,274.7 L 377.1,278.7 L 379.8,281.1 L 382.5,284.6 L 385.2,270.1 L 387.9,274.6 L 390.6,279.2 L 393.2,273.7 L 395.9,282.2 L 398.6,274.8 L 401.8,280.3 L 404.5,269.2 L 407.2,282.3 L 409.9,269.9 L 412.6,270.4 L 415.3,282.8 L 417.9,278.3 L 420.6,288.0 L 423.3,275.3 L 426.3,276.5 L 429.0,285.6 L 431.7,286.4 L 434.4,280.7 L 437.1,286.9 L 439.8,281.1 L 442.5,288.9 L 445.1,278.4 L 447.8,277.3 L 451.0,281.0 L 453.7,284.5 L 456.4,273.2 L 459.1,279.4 L 461.8,283.5 L 464.5,280.8 L 467.2,280.9 L 469.8,280.7 L 472.5,280.8 L 475.7,277.4 L 478.4,284.5 L 481.1,281.9 L 483.8,285.7 L 486.5,282.7 L 489.2,284.8 L 491.9,281.4 L 494.5,283.0 L 497.2,284.7 L 499.9,281.5 L 503.1,279.7 L 505.8,281.3 L 508.5,282.4 L 511.2,281.6 L 513.9,280.5 L 516.6,277.4 L 519.2,276.3 L 521.9,292.4 L 524.6,286.1 L 527.8,273.8 L 530.5,279.5 L 533.2,281.6 L 535.9,286.2 L 538.6,282.4 L 541.3,274.3 L 543.9,286.6 L 546.6,287.7 L 549.3,278.5 L 552.5,276.8 L 555.2,290.6 L 557.9,283.0 L 560.6,275.0 L 563.3,286.4 L 566.0,281.8 L 568.6,278.1 L 571.3,279.9 L 574.0,272.9 L 577.2,284.2 L 579.9,285.5 L 582.6,284.2 L 585.3,296.6 L 588.0,288.2 L 590.7,283.8 L 593.3,287.6 L 596.0,287.8 L 598.7,287.9 L 601.4,284.6 L 604.6,280.1 L 607.3,288.7 L 610.0,278.6 L 612.7,285.4 L 615.4,276.1 L 618.0,280.5 L 620.7,284.1 L 623.4,283.7 L 626.1,278.7 L 629.3,290.1 L 632.0,274.0 L 634.7,290.3 L 637.4,288.0 L 640.1,279.2 L 642.7,289.2 L 645.4,293.6 L 648.1,290.6 L 650.8,278.8 L 654.0,285.8 L 656.7,289.0 L 659.4,289.2 L 662.1,284.0 L 664.8,281.9 L 667.4,284.6 L 670.1,286.2 L 672.8,290.1 L 675.5,286.8 L 678.7,286.9 L 681.4,284.6 L 684.1,286.5 L 686.8,282.9 L 689.5,283.6 L 692.1,281.5 L 694.8,287.0 L 697.5,284.9 L 700.2,284.6 L 702.9,286.5 L 706.1,287.2 L 708.8,289.4 L 711.5,290.1 L 714.2,283.6 L 716.8,294.0 L 719.5,289.3 L 722.2,287.2 L 724.9,292.5 L 727.6,286.1 L 730.8,285.9 L 733.5,292.5 L 736.2,286.3 L 738.9,285.7 L 741.5,288.3 L 744.2,278.3 L 746.9,283.6 L 749.6,290.6 L 752.3,277.3 L 755.5,286.0 L 758.2,283.4 L 760.9,277.4 L 763.6,276.1 L 766.2,281.1 L 768.9,290.8 L 771.6,285.8 L 774.3,284.0 L 777.0,290.4 L 780.0,289.8" fill="none" stroke="#0969da" stroke-width="2"/>
+<circle cx="70.0" cy="40.0" r="4" fill="#d1242f"/>
+<text x="78.0" y="34.0" font-size="13" fill="#d1242f">起 7.23</text>
+<circle cx="780.0" cy="289.8" r="4" fill="#1a7f37"/>
+<text x="740.0" y="279.8" font-size="13" fill="#1a7f37"> 1.59</text>
+<text x="410.0" y="22" font-size="16" text-anchor="middle" fill="#1f2328">MoE 预训练 loss 曲线（全量数据，8.47M 样本 × 2 epoch）</text>
+<text x="780" y="400" font-size="12" text-anchor="end" fill="#57606a">x: step</text>
+<text x="70" y="26" font-size="12" fill="#57606a">y: loss</text>
+</svg>
+<figcaption>MoE 预训练 loss 曲线（实际训练数据）：从 7.23 收敛到约 1.59，尾部在 1.5~1.9 之间抖动是正常的每步噪声。</figcaption>
+</figure>
+<p><strong>aux_loss 怎么读（仅 MoE）</strong>。aux_loss 是 4 个专家的负载均衡损失。当路由门把 token 均匀分给 4 个专家时，单层 aux_loss $=0.25\times4\times5\times10^{-4}=5\times10^{-4}$，8 个 MoE 层加起来就是 $0.004$。所以日志里 <code>aux_loss = 0.0040</code> 恒定不变是<strong>好事</strong>——说明专家负载均衡、没有"专家坍塌"；若 aux_loss 突然变大，才说明某个专家被挤死了。</p>
+<p><strong>显存怎么读</strong>。训练时的显存主要不是模型权重，而是"训练开销"。以 198M MoE、bf16、AdamW 为例，单卡约 12.9GB 的构成大致是：</p>
+<table>
+<thead><tr><th>占用项</th><th>大小估算</th><th>说明</th></tr></thead>
+<tbody>
+<tr><td>模型权重（bf16）</td><td>~0.4GB</td><td>198M 参数 × 2 字节</td></tr>
+<tr><td>fp32 主权重</td><td>~0.8GB</td><td>权重以 fp32 维护</td></tr>
+<tr><td>AdamW 一阶矩 m</td><td>~0.8GB</td><td>每参数一份</td></tr>
+<tr><td>AdamW 二阶矩 v</td><td>~0.8GB</td><td>每参数一份</td></tr>
+<tr><td>梯度</td><td>~0.4GB</td><td>反向传播</td></tr>
+<tr><td>激活值</td><td>~3GB</td><td>反向传播需保存前向中间结果</td></tr>
+<tr><td>CUDA 上下文 / 算子库 / 碎片</td><td>~2–4GB</td><td>框架与 cuBLAS 开销</td></tr>
+</tbody>
+</table>
+<p>关键点：AdamW 要存「m、v、fp32 主权重」三个和参数同规模的东西，光优化器状态就是模型权重的约 6 倍。所以"模型才 198M、显存却用 12.9GB"是正常的。要省显存可减小 <code>batch_size</code> / <code>max_seq_len</code>、改用 <code>--dtype float16</code>，或用 8-bit 优化器（AdamW-8bit）。</p>
 </section>
 
 <section id="ch5">
@@ -820,6 +872,17 @@ $$\theta_{t+1} = \theta_t - \text{更新量}$$
 <p>核心思想：<strong>沿梯度反方向走固定步长</strong>——最直接的"下山"方式，哪里陡往哪走。</p>
 $$\theta_{t+1} = \theta_t - \eta \cdot g_t$$
 <p>其中 $\eta$ 是学习率（全局统一），$g_t$ 是当前梯度。</p>
+<p><strong>"随机"体现在哪</strong>。这里的"随机"（stochastic）不是"随机瞎走"，而是指——每一步的梯度 $g_t$ 不是用<strong>全部数据</strong>算出的精确梯度，而是用<strong>随机抽出来的一个小批量（或单个样本）</strong>算出的<strong>带噪声的梯度估计</strong>。三者的区别：</p>
+<table>
+<thead><tr><th>方法</th><th>每次用多少数据</th><th>梯度</th><th>特点</th></tr></thead>
+<tbody>
+<tr><td>批量梯度下降（BGD / GD）</td><td>全量数据</td><td>精确</td><td>每步太慢</td></tr>
+<tr><td>随机梯度下降（SGD）</td><td>1 个样本</td><td>噪声极大</td><td>快但抖得厉害</td></tr>
+<tr><td>小批量 SGD（Mini-batch SGD）</td><td>一小批（如 32）</td><td>有噪声</td><td>实际主流，平衡速度与稳定</td></tr>
+</tbody>
+</table>
+<p>所以"随机"有两层含义：① 样本是<strong>随机抽取</strong>的（每步的 batch 内容不同）；② 梯度是<strong>随机估计</strong>（不等于全量梯度，而是围绕真实梯度波动的无偏估计）。这带来的好处是算得快、且噪声有助于跳出局部极小值/鞍点；代价是收敛路径更"抖"（损失曲线有噪声）。</p>
+<p>在 MiniMind 里，这个"随机"就是：每个 epoch 由 <code>DistributedSampler</code> 把数据 <code>shuffle</code> 随机打乱，且 <code>set_epoch</code> 让每个 epoch 用不同的洗牌种子，保证每轮看到的样本顺序都不同。</p>
 <table>
 <thead><tr><th>优点</th><th>缺点</th></tr></thead>
 <tbody>
@@ -883,6 +946,10 @@ $$\hat{m}_t = \frac{m_t}{1-\beta_1^t}, \quad \hat{v}_t = \frac{v_t}{1-\beta_2^t}
 <h3>6.6 AdamW——LLM 的标准答案（MiniMind 用这个）</h3>
 <p>Adam 把 weight decay 加进梯度里（<code>g_t + λθ_t</code>），与自适应 lr 纠缠；AdamW 把权重衰减单独减：</p>
 $$\theta_{t+1} = \theta_t - \frac{\eta}{\sqrt{\hat{v}_t} + \epsilon} \hat{m}_t - \eta \lambda \theta_t$$
+<p>其中 Adam 部分先算三个量——一阶矩、二阶矩和它们的偏差校正：</p>
+$$m_t = \beta_1 m_{t-1} + (1-\beta_1) g_t \qquad \text{一阶矩：梯度的动量（方向）}$$
+$$v_t = \beta_2 v_{t-1} + (1-\beta_2) g_t^2 \qquad \text{二阶矩：梯度平方的指数滑动平均（大小）}$$
+$$\hat{m}_t = \frac{m_t}{1-\beta_1^t}, \qquad \hat{v}_t = \frac{v_t}{1-\beta_2^t} \qquad \text{偏差校正：修正 m/v 从 0 起步导致的初期偏小}$$
 <table>
 <thead><tr><th></th><th>Adam</th><th>AdamW</th></tr></thead>
 <tbody>
@@ -891,6 +958,33 @@ $$\theta_{t+1} = \theta_t - \frac{\eta}{\sqrt{\hat{v}_t} + \epsilon} \hat{m}_t -
 <tr><td>效果</td><td>正则不够干净</td><td>正则干净，泛化更好</td></tr>
 </tbody>
 </table>
+<p><strong>优化器状态到底保存什么</strong>。AdamW 对<strong>每一个参数</strong>都额外保存两个和参数同样形状的 fp32 张量：</p>
+<ul>
+<li><strong>m（一阶矩）</strong>：梯度的指数滑动平均，相当于动量，记录"最近梯度朝哪个方向走"；</li>
+<li><strong>v（二阶矩）</strong>：梯度平方的指数滑动平均，记录"最近梯度有多大"，用来做自适应步长——梯度大的参数步长小、梯度小的参数步长大。</li>
+</ul>
+<p>混合精度训练时，PyTorch 还会另存一份 <strong>fp32 主权重</strong>（前向/反向用 bf16，参数更新用 fp32 保证精度）。所以对 P 个参数的模型，参数相关的显存占用是：</p>
+<table>
+<thead><tr><th>内容</th><th>dtype</th><th>字节数</th><th>198M 参数示例</th></tr></thead>
+<tbody>
+<tr><td>模型权重（前向用）</td><td>bf16</td><td>2P</td><td>~0.4GB</td></tr>
+<tr><td>fp32 主权重</td><td>fp32</td><td>4P</td><td>~0.8GB</td></tr>
+<tr><td>一阶矩 m</td><td>fp32</td><td>4P</td><td>~0.8GB</td></tr>
+<tr><td>二阶矩 v</td><td>fp32</td><td>4P</td><td>~0.8GB</td></tr>
+</tbody>
+</table>
+<p>即优化器状态（主权重 + m + v）合计 12P 字节，是 bf16 模型权重（2P）的 6 倍——这就是"198M 的模型、显存却要 12.9GB"的最大头。</p>
+<p><strong>举例：一个参数走一步</strong>。设 $\theta_0=0.5$、$\eta=0.001$、$\beta_1=0.9$、$\beta_2=0.999$、$\epsilon=10^{-8}$、$\lambda=0.01$，当前梯度 $g_1=0.4$：</p>
+<ol>
+<li>一阶矩：$m_1 = 0.9\times0 + 0.1\times0.4 = 0.04$（注意不是 0.4，只取了 10% 的新梯度）；</li>
+<li>二阶矩：$v_1 = 0.999\times0 + 0.001\times0.4^2 = 0.00016$；</li>
+<li>偏差校正：$\hat{m}_1 = 0.04/(1-0.9) = 0.4$，$\hat{v}_1 = 0.00016/(1-0.999) = 0.16$；</li>
+<li>自适应步长：$\eta/\sqrt{\hat{v}_1} = 0.001/0.4 = 0.0025$；</li>
+<li>更新量：$\hat{m}_1 \times \eta/\sqrt{\hat{v}_1} = 0.4 \times 0.0025 = 0.001$；</li>
+<li>权重衰减：$\eta\lambda\theta_0 = 0.001\times0.01\times0.5 = 0.000005$；</li>
+<li>新参数：$\theta_1 = 0.5 - 0.001 - 0.000005 \approx 0.499$。</li>
+</ol>
+<p>三个关键观察：① <strong>m 是"平滑后的梯度"</strong>，初期被 $\beta_1$ 压得很小（0.04 vs 原始 0.4），靠偏差校正拉回正常尺度（0.4）；② <strong>$\sqrt{\hat{v}}$ 负责"自适应"</strong>——梯度平方越大，分母越大，步长越小；③ <strong>AdamW 的权重衰减 $-\eta\lambda\theta$ 是单独减的</strong>，不经过 $\hat{v}$，所以衰减更干净。</p>
 <p><strong>为什么 LLM 都用 AdamW</strong>：权重衰减的目的（防过拟合）不被自适应 lr 干扰；LLaMA、Qwen、MiniMind 全部使用；配合 lr 调度（动态覆盖 <code>param_groups['lr']</code>）实现余弦衰减。</p>
 <pre><code class="language-python">optimizer = optim.AdamW(model.parameters(), lr=args.learning_rate)   # 创建 AdamW 优化器
 lr = get_lr(...)                                                      # 计算当前 step 的余弦衰减 lr
@@ -965,7 +1059,13 @@ python train_full_sft.py \
 <tr><td><code>max_seq_len</code></td><td>340</td><td><strong>768</strong>（对话更长）</td></tr>
 </tbody>
 </table>
-<p>lr 为什么这么低：SFT 在已训练好的权重上做精修，过大 lr 会破坏预训练知识（灾难性遗忘）。</p>
+<p>这些差异的根源是一条主线：<strong>预训练是"从零学语言"，要大步快学；SFT 是"精修对话能力"，要小步微调、防遗忘。</strong>逐个说明：</p>
+<ul>
+<li><strong>learning_rate：5e-4 → 1e-5（低 100 倍）</strong>。预训练从随机初始化的权重开始，模型是一张"白纸"，需要大步快速把语言规律压进参数；SFT 在已经训练好的权重上做精修，lr 太大会破坏预训练学到的知识（灾难性遗忘），所以只做"温柔调整"。</li>
+<li><strong>max_seq_len：340 → 768</strong>。预训练数据是纯文本流，mini 文本较短，340 token 足够（全量 pretrain 推荐 380）；SFT 是多轮对话（system/user/assistant 可能多轮），天然更长，768 才能容纳完整对话，否则 assistant 回答会被截断、学到残缺样本。</li>
+<li><strong>batch_size 32→16 与 accumulation_steps 8→1（要配套看）</strong>。两者的乘积是"有效 batch"：预训练 $32\times8=256$，SFT $16\times1=16$。预训练需要大的有效 batch——梯度估计更稳定，才能扛住 5e-4 的大学习率；SFT 序列更长（768）单条更占显存、且本身是精修收敛快，不需要那么大的有效 batch。</li>
+</ul>
+<p>一句话：预训练"大步 + 大有效 batch + 短序列"，SFT"小步 + 小有效 batch + 长序列"——本质是"学新知识"和"改已有知识"的区别。</p>
 <p>常见问题：过拟合（epochs 默认 2，减少 epochs 或加 dropout）；指令截断（长对话控制在 max_seq_len 内）；混合数据（主线 sft_t2t 已混入工具调用与思考链样本）。</p>
 <h3>7.5 LoRA：只训低秩增量</h3>
 <p>LoRA 冻结原模型，挂一条低秩分支 <code>BA</code>，只训这条分支：</p>
@@ -984,16 +1084,117 @@ $$y = Wx + BAx = (W + BA)x$$
 
 <section id="ch8">
 <h2>第 8 章 偏好对齐（RM / DPO）</h2>
+<p><strong>"RM 还是 DPO"只是两个端点</strong>，完整的地图比这大。真正要看懂偏好对齐，得先分清两个正交的维度，再看它们组成的四个格子。</p>
+<p><strong>维度一：奖励信号从哪来？</strong></p>
+<pre><code>信号来源
+├─ 显式奖励（要"打分器"）
+│  ├─ 人类标注 → 训练 RM（Reward Model）       ← 经典 RLHF
+│  ├─ AI 评委打分（RLAIF）                     ← MiniMind 用 internlm2-1_8b-reward 就是 AI 打分
+│  ├─ 规则分（格式/长度/GT 匹配）               ← 推理/数学任务常用
+│  └─ 工具执行结果                             ← Agentic RL
+└─ 隐式奖励（不要打分器，奖励被吸收进损失）
+   └─ DPO 家族：用"偏好对"直接算损失</code></pre>
+<p><strong>维度二：要不要在线采样（rollout）？</strong></p>
+<pre><code>├─ 在线（RL 式）：需要 rollout —— PPO / GRPO / REINFORCE++
+└─ 离线（损失式）：不需要 rollout —— DPO / IPO / KTO / ORPO ...</code></pre>
+<p>所以不是"RM 或 DPO"二选一，而是四个组合格：</p>
+<table>
+<thead><tr><th></th><th>显式奖励（RM / 规则）</th><th>隐式奖励（无 RM）</th></tr></thead>
+<tbody>
+<tr><td><strong>在线（要 rollout）</strong></td><td><strong>RLHF / PPO / GRPO</strong>（MiniMind <code>train_ppo</code> / <code>train_grpo</code>，RM 或规则打分）</td><td>（一般不这么做）</td></tr>
+<tr><td><strong>离线（不要 rollout）</strong></td><td>蒸馏式 / 奖励回归（少见）</td><td><strong>DPO 家族</strong>（MiniMind <code>train_dpo</code>）</td></tr>
+</tbody>
+</table>
+<blockquote class="warn">之前纠结的"同步 / 异步 RL"只属于<strong>左上角</strong>（在线显式奖励那格）——因为有采样环节，才有"采样和训练怎么组织"的问题。DPO 那格根本没有 rollout，所以同步/异步对 DPO 无意义。</blockquote>
+<p><strong>A. RM / 规则驱动的在线 RL（需要 rollout）</strong></p>
+<table>
+<thead><tr><th>方法</th><th>特点</th><th>谁的实现</th></tr></thead>
+<tbody>
+<tr><td><strong>PPO</strong></td><td>四模型（Actor/Critic/Ref/Reward）+ GAE</td><td><code>train_ppo.py</code></td></tr>
+<tr><td><strong>GRPO</strong></td><td>去掉 Critic，组内 z-score（DeepSeek-R1 路线）</td><td><code>train_grpo.py</code></td></tr>
+<tr><td>REINFORCE++ / RLOO / ReMax</td><td>更简单的策略梯度变体</td><td>大模型时代常用</td></tr>
+<tr><td>DAPO / GSPO</td><td>GRPO 的改进版（解耦 clip 等）</td><td>VeRL 里可选</td></tr>
+</tbody>
+</table>
+<blockquote>这一格的奖励可以是 <strong>RM</strong>（学出来的），也可以是 <strong>规则</strong>（写死的）——MiniMind 的 GRPO 规则分（长度/思考/GT 匹配）在奖励模型缺失时就退化成纯规则版。</blockquote>
+<p><strong>B. DPO 家族（离线，无 RM、无 rollout）</strong></p>
+<table>
+<thead><tr><th>方法</th><th>一句话</th><th>与 DPO 的区别</th></tr></thead>
+<tbody>
+<tr><td><strong>DPO</strong></td><td>$-\log\sigma(\beta\cdot(r_w - r_l))$</td><td>原始版（<code>train_dpo.py</code>）</td></tr>
+<tr><td><strong>IPO</strong></td><td>换成 MSE 目标</td><td>修 DPO 过拟合、不依赖偏好强度</td></tr>
+<tr><td><strong>KTO</strong></td><td>只需"好/坏"二元标签，不需要配对</td><td>数据更便宜</td></tr>
+<tr><td><strong>ORPO</strong></td><td>SFT 时顺便做偏好（无需参考模型）</td><td>省一次前向</td></tr>
+<tr><td>SimPO / RSO / cDPO</td><td>各种工程改进</td><td>—</td></tr>
+</tbody>
+</table>
+<p><strong>C. 别忘了还有"信号不是人类"的</strong>：RLAIF（评委是 AI，MiniMind 的 RM 就是 internlm2 奖励模型打分）、规则奖励（推理对答案、工具对 GT，根本不用训 RM）、Constitutional AI（模型自我批评生成约束）。</p>
+<p><strong>决策树（代码库里怎么选）</strong></p>
+<pre><code>要做偏好对齐？
+├─ 只有"好/坏回答对"，想最便宜 → DPO（train_dpo.py，lr 4e-8）
+├─ 有大量 prompt，能负担 rollout → PPO/GRPO（train_grpo / train_ppo）
+│    ├─ 有 RM（internlm2）→ RM 打分
+│    └─ 没有 RM → 规则分（降级补丁）
+├─ 要教"用工具 / 推理" → Agentic RL（规则 / GT 奖励）
+└─ 小模型快速试 → DPO 起步，GRPO 打磨</code></pre>
+<blockquote class="warn"><strong>一句话总结</strong>："RM 还是 DPO"是"显式奖励在线 RL vs 隐式奖励离线损失"两个极端的缩写。真实选择有四个格子，再加上"信号是人工 / AI / 规则 / 工具"的细分——MiniMind 代码库恰好把主要格子都覆盖了：<code>train_dpo.py</code>（离线隐式）、<code>train_ppo / train_grpo</code>（在线显式 RM / 规则）、<code>train_agent.py</code>（在线显式规则 + 工具）。同步 / 异步只影响在线那一格；DPO 是另一个世界（无采样、无 RL 循环、闭式损失），学习路径和 GRPO 完全不同。</blockquote>
 <h3>8.1 Bradley-Terry 偏好模型</h3>
 <p>假设对同一个 prompt $x$，人类偏好 $y_w$（win）胜过 $y_l$（lose）。BT 模型把偏好建模为：</p>
 $$P(y_w \succ y_l \mid x) = \sigma\big(r(x,y_w) - r(x,y_l)\big), \qquad \sigma(z)=\frac{1}{1+e^{-z}}$$
 <p>分数差越大，"好回答更被偏好"的概率越接近 1。这把成对偏好数据变成二分类问题。</p>
+<p><strong>先认识 sigmoid（数学直觉版）</strong>：$\sigma(z)$ 是一个"压缩器"，把任意实数 $z$ 压到 0~1 之间。它在这里的职责很单纯——把"两个回答的分数差"翻译成"好回答获胜的概率"：差得越多越接近 1，差为 0 就是五五开，差为负就是好回答反而劣势。</p>
+<table>
+<thead><tr><th>好回答分数 $r_w$</th><th>坏回答分数 $r_l$</th><th>分差 $z$</th><th>$\sigma(z)$</th><th>含义</th></tr></thead>
+<tbody>
+<tr><td>1</td><td>1</td><td>0</td><td>0.5</td><td>一样好，五五开</td></tr>
+<tr><td>2</td><td>1</td><td>1</td><td>≈0.73</td><td>好回答约 73% 胜率</td></tr>
+<tr><td>5</td><td>1</td><td>4</td><td>≈0.98</td><td>明显更好，几乎稳赢</td></tr>
+<tr><td>10</td><td>1</td><td>9</td><td>≈0.9999</td><td>碾压级差距</td></tr>
+</tbody>
+</table>
+<p><strong>直觉锚点：这就是棋类的 Elo 积分</strong>。国际象棋 / 围棋的 Elo 算法与 BT 模型同源：两个棋手积分差 200，胜率约 76%；差 400，胜率约 91%——上面"分差越大胜率越高"的曲线就是同一件事。人类很难标出"这条回答 8.5 分"，但很容易说出"这条比那条好"，BT 模型恰好只需要后一种信号。</p>
+<blockquote><strong>本节关键洞察</strong>：公式里只有<strong>分数差</strong>起作用——两个回答同时 +100，分差不变，胜率也不变。所以偏好数据只能确定回答之间的<strong>相对好坏</strong>，绝对分数本身是不可识别的；这也解释了为什么第 9 章 GRPO 用"组内相对奖励"而不是绝对分数。</blockquote>
 <h3>8.2 显式 RM 损失</h3>
 $$\mathcal{L}_{\mathrm{RM}}(\phi) = -\mathbb{E}_{(x,y_w,y_l)\sim D}\Big[\log\sigma\big(r_\phi(x,y_w)-r_\phi(x,y_l)\big)\Big]$$
 <p>训练一个打分器 $r_\phi$（基座 Transformer + 标量 head），最大化偏好对的 BT 似然。</p>
+<p><strong>逐符号拆解</strong>：</p>
+<table>
+<thead><tr><th>符号</th><th>含义</th></tr></thead>
+<tbody>
+<tr><td>$\mathbb{E}_{(x,y_w,y_l)\sim D}$</td><td>在偏好数据集 $D$ 上对样本求平均（期望）</td></tr>
+<tr><td>$r_\phi(x, y_w)$ / $r_\phi(x, y_l)$</td><td>打分器对"好回答 / 坏回答"打出的分数（$\phi$ 是打分器参数）</td></tr>
+<tr><td>$\sigma(\text{分差})$</td><td>按 8.1，这就是"模型认为好回答赢"的概率</td></tr>
+<tr><td>$-\log(\cdot)$</td><td>概率越接近 1，损失越接近 0；越接近 0，损失越大</td></tr>
+</tbody>
+</table>
+<p><strong>为什么损失长这样（三步推理）</strong>：① 单条数据上，"模型猜对"的概率就是 $\sigma(r_w-r_l)$（8.1 的定义）；② 想让所有样本的猜对概率都大，即最大化它们的乘积——但几十条 0~1 的小数连乘会下溢成 0，于是取 $\log$，把连乘变成连加；③ 训练惯例是"损失越小越好"，所以再加负号。$\log$ 是单调递增函数，最大化原概率与最大化 $\log$ 概率是同一件事。</p>
+<p><strong>直觉类比：这就是逻辑回归（二分类交叉熵）</strong>。每条偏好数据相当于一道判断题："好回答是不是比坏回答好？"标准答案是"是"，模型要用"分数差"给出答案——答得越离谱，扣分越狠。分数差为 0（答"五五开"）时损失为 $\log 2 \approx 0.693$，是"完全没把握"的基准线。</p>
+<p><strong>这个 RM 从哪来、到哪去</strong>：$r_\phi$ 通常是一个基座 Transformer 再接一层"打分头"（输出标量，如 <code>768→1</code>），对"prompt + 回答"整体编码后输出一个分数。训好后它不再参与 DPO，而是交给第 9 章的 PPO / GRPO 当"裁判"——MiniMind 里的 <code>internlm2-1_8b-reward</code> 就是这种现成裁判（RLAIF，AI 打分的 RLHF）。</p>
 <h3>8.3 DPO：跳过显式 RM 的闭式解</h3>
 <p>带 KL 约束的 RLHF 目标有解析最优解：</p>
 $$\pi^{*}(y \mid x) \propto \pi_{\mathrm{ref}}(y \mid x)\exp\!\big(r(x,y)/\beta\big)$$
+<p><strong>这一步的大白话</strong>：最优回答分布 = 参考模型原来的分布，再乘一个按分数加权的放大因子。某个回答分数高 → $\exp(r/\beta)$ 大 → 它被生成的概率被"放大"；分数低 → 被"缩小"；$\beta$ 越大，指数增长越平缓，模型越不敢偏离参考模型（越保守）。这个式子说明：<strong>"最优策略长什么样"和"分数"之间存在固定换算关系，中间没有需要逐步学习的环节</strong>——这是 DPO 能省掉 RL 循环的根源。</p>
+<p><strong>为什么这个解能"直接写出来"（解析解的来源）</strong>：先看清这是一道什么题——对每个问题 $x$，在"所有可能的回答分布 $\pi$"里挑一个，使下面的目标最大（把期望和 KL 逐项展开写）：</p>
+$$J(\pi) = \sum_y \pi(y\mid x)\,r(x,y) - \beta\sum_y \pi(y\mid x)\log\frac{\pi(y\mid x)}{\pi_{\mathrm{ref}}(y\mid x)}$$
+<p>注意我们是在"概率分布空间"里做优化，约束只有一条（所有回答概率之和为 1），没有"走一步、局面变化、还要递归想后面"的结构——这是有解析解的前提。接着做一个关键的代数整理：把奖励项和 KL 项合并成一个整体。</p>
+$$J(\pi) = -\beta \sum_y \pi(y\mid x)\log\frac{\pi(y\mid x)}{\pi_{\mathrm{ref}}(y\mid x)\,e^{r(x,y)/\beta}}$$
+<p>令 $Q(y)=\pi_{\mathrm{ref}}(y\mid x)\,e^{r(x,y)/\beta}$，$Z(x)=\sum_y Q(y)$（对所有回答求和），再往式子里"加减一个 $\log Z(x)$"，凑成标准 KL 的形状：</p>
+$$J(\pi) = \beta\log Z(x) - \beta\,\mathrm{KL}\Big(\pi(\cdot\mid x)\ \Big\|\ \frac{Q(\cdot)}{Z(x)}\Big)$$
+<p>目标被整理成"一个常数 $\beta\log Z(x)$ 减去 $\pi$ 与目标分布 $Q/Z(x)$ 之间的 KL 距离"。而 KL 有一个著名性质（Gibbs 不等式）：<strong>任何两个分布的 KL ≥ 0，且只有当两个分布完全相等时 KL = 0</strong>。所以：要让 $J$ 最大 → 让 KL 最小 → KL 的最小值 0 是可以"取到"的（把 $\pi$ 设成 $Q/Z(x)$ 就正好为 0）→ 最优解就是 $\pi^{*}(y\mid x)=Q(y)/Z(x)=\pi_{\mathrm{ref}}(y\mid x)\,e^{r(x,y)/\beta}/Z(x)$。整个推导不需要迭代、不需要梯度下降——这就是"解析最优解"。</p>
+<p><strong>用 3 个回答感受加权效果</strong>：假设参考模型给 3 个候选回答各 $\frac13$ 概率，真实奖励 $r=1,2,3$，$\beta=1$：</p>
+<table>
+<thead><tr><th>候选回答</th><th>$\pi_{\mathrm{ref}}$</th><th>奖励 $r$</th><th>权重 $e^{r/\beta}$</th><th>最优概率 $\pi^{*}$</th></tr></thead>
+<tbody>
+<tr><td>回答 1（最差）</td><td>≈0.333</td><td>1</td><td>2.72</td><td>≈0.09</td></tr>
+<tr><td>回答 2（中等）</td><td>≈0.333</td><td>2</td><td>7.39</td><td>≈0.245</td></tr>
+<tr><td>回答 3（最好）</td><td>≈0.333</td><td>3</td><td>20.09</td><td>≈0.665</td></tr>
+</tbody>
+</table>
+<p>分数最高的回答概率被放大到约 67%，最低的缩到约 9%。如果硬把低分回答抬到 50%：奖励确实多一点，但偏离 $\pi_{\mathrm{ref}}$ 的 KL 惩罚会把这部分收益全部吃掉，净效果反而更差——<strong>KL 惩罚就是那个"锚"，保证模型不会为了冲高分而彻底放飞</strong>。</p>
+<p><strong>那 PPO 为什么还要一步步学？</strong>这个公式虽然写出来了，但有两个"理论上很美、工程上不可用"的坑：① 奖励 $r(x,y)$ 是<strong>未知的</strong>——真实偏好藏在人类标注或另一个模型（RM）里，我们只能采样估计它的期望；② $Z(x)$ 要对<strong>所有可能的回答求和</strong>，语言模型的回答空间是天文数字，根本列不完。所以这个解析解不能当"计算器"直接代入使用，它的真正价值是当<strong>推导工具</strong>：DPO 正是拿它反解出 $r$，再代入 8.1 的 BT 消掉 $Z(x)$。另外注意，这套推导把"生成一整段回答"当成<strong>一次动作</strong>（contextual bandit，一次押注整段话）；若改成逐 token 的强化学习，中途奖励与状态转移会引入 Bellman 式的递归依赖，就没有这么干净的闭式解了——这也是逐 token PPO 需要价值网络或采样估计的原因。</p>
+<p><strong>反解 reward</strong>：对上面的式子两边取对数并整理，把藏在 $\exp$ 里的 $r(x,y)$ 单独"钓"出来：</p>
+$$r(x,y) = \beta\log\frac{\pi_\theta(y\mid x)}{\pi_{\mathrm{ref}}(y\mid x)} + \beta\log Z(x)$$
+<p>多出来的 $Z(x)$ 是归一化常数（把右侧变成真正的概率分布所需的"总和"），它<strong>只依赖问题 $x$，不依赖具体回答 $y$</strong>——这个性质马上就会派上用场。</p>
 <p>反解出 reward 并代入 BT，$Z(x)$ 抵消，得到 DPO 损失（不训 RM、不做 RL 循环）：</p>
 $$\begin{aligned}
 \mathcal{L}_{\mathrm{DPO}}(\theta) = -\mathbb{E}_{(x,y_w,y_l)\sim D}\Big[\log\sigma\Big(
@@ -1002,28 +1203,174 @@ $$\begin{aligned}
 \Big)\Big]
 \end{aligned}$$
 <p>DPO 是 RLHF 目标在 BT 假设下的等价重参数化。优点是稳定、无需采样；缺点是训练在静态离策略数据上，不能利用可验证奖励。</p>
-<h3>8.4 DPO 实现要点</h3>
-<p>策略模型可训练、参考模型冻结（都从 <code>full_sft</code> 加载）。一次前向算两个模型的 log-prob：</p>
-<pre><code class="language-python">def logits_to_log_probs(logits, labels):
-    # logits: (B, S, vocab)，labels: (B, S)
-    log_probs = F.log_softmax(logits, dim=2)  # (B, S, vocab) 对词表维取对数概率
-    return log_probs.gather(dim=2, index=labels.unsqueeze(2)).squeeze(-1)  # (B, S) 取真实 token 的 logp
-
-with torch.no_grad():                        # 参考模型前向不求梯度（冻结）
-    ref_logits = ref_model(x)
-ref_log_probs = logits_to_log_probs(ref_logits, y)            # 参考模型的 log 概率
-outputs = model(x)                                            # 策略模型前向（可训练）
-policy_log_probs = logits_to_log_probs(outputs.logits, y)     # 策略模型的 log 概率
-loss = dpo_loss(ref_log_probs, policy_log_probs, mask, beta=beta)  # -F.logsigmoid(beta * logratio)</code></pre>
-<p>关键超参与坑：<code>lr=4e-8</code>（极低，防遗忘）、<code>beta=0.15</code>（控制偏离参考模型的强度）、数据质量决定上限、chosen/rejected 的 mask 必须只覆盖 assistant 段。</p>
+<p><strong>$Z(x)$ 为什么能抵消</strong>：把反解出的 $r$ 分别代入好回答和坏回答，两者各带一个 $\beta\log Z(x)$；8.1 的分差 $r_w - r_l$ 做减法时，这两个一模一样的项正好对消。所以最终损失里只剩 $\beta\log(\pi_\theta/\pi_{ref})$ 的概率比——<strong>模型用"自己的概率相对参考模型的变化"冒充裁判分数</strong>。</p>
 <table>
-<thead><tr><th></th><th>DPO</th><th>PPO</th></tr></thead>
+<thead><tr><th>三节递进</th><th>回答的问题</th><th>产物</th></tr></thead>
 <tbody>
-<tr><td>奖励模型</td><td>不需要（用对数据）</td><td>需要（或规则/模型评分）</td></tr>
-<tr><td>数据</td><td>静态 chosen/rejected 对</td><td>策略自己采样（在线）</td></tr>
-<tr><td>工程复杂度</td><td>低（双模型前向）</td><td>高（Actor/Critic/Ref/Reward）</td></tr>
+<tr><td>8.1 BT</td><td>有了分数，怎么算"谁更好"的概率？</td><td>$\sigma(r_w-r_l)$ 偏好模型</td></tr>
+<tr><td>8.2 RM</td><td>分数从哪来？</td><td>训好的打分器 $r_\phi$</td></tr>
+<tr><td>8.3 DPO</td><td>能不能不训打分器、不跑 RL？</td><td>概率比代替分数，一步闭式损失</td></tr>
 </tbody>
 </table>
+<blockquote><strong>一句话对比</strong>：8.2 是"先训裁判，再让模型讨好裁判"（两步、两套系统）；8.3 是"数学证明裁判评分 ≈ 概率比换算，所以直接用概率比当分数"（一步、闭式、离线）。省掉裁判的代价是：模型无法现场生成新回答让裁判打分，也就没有探索与可验证奖励——这正是第 9 章 PPO / GRPO 重新引入 rollout 的原因。</blockquote>
+<h3>8.4 数据格式：chosen / rejected 偏好对</h3>
+<p>DPO 的训练数据不是"问题 + 标准答案"，而是<strong>同一问题下的两个回答</strong>：chosen（被偏好的好回答，chosen = 被选中的）与 rejected（不被偏好的差回答，rejected = 被拒绝的）。一条真实样本长这样（默认数据路径 <code>../dataset/dpo.jsonl</code>，中文箭头只是教学注释、不是 JSON 语法）：</p>
+<pre><code class="language-json">{"chosen": [
+    {"role": "user", "content": "什么是机器学习？"},
+    {"role": "assistant", "content": "机器学习是让计算机从数据中自动学习规律、并用来做预测或决策的技术……"}  ← 好回答
+  ],
+ "rejected": [
+    {"role": "user", "content": "什么是机器学习？"},
+    {"role": "assistant", "content": "就是人工智能。"}                                                   ← 差回答
+  ]}</code></pre>
+<blockquote class="warn"><strong>最容易写错的一点</strong>：两个字段各自是<strong>一段完整对话</strong>，不是把好/坏回答塞进同一条 <code>conversations</code>。代码里 <code>DPODataset</code> 只认两个 key：<code>chosen</code> 和 <code>rejected</code>，并各自独立套一遍 chat 模板（<code>apply_chat_template(..., add_generation_prompt=False)</code>）、各自截断/补零到 <code>max_seq_len=1024</code>。两份对话的 <strong>user（及 system）段必须逐字一致、只有 assistant 回答不同</strong>——否则后面"好减坏"的 logratio 里混入了 prompt 的差异，数值就没有意义。</blockquote>
+<p>每条样本产出<strong>六个张量</strong>（chosen / rejected 各一套，每套都是输入、标签、掩码三件套）：</p>
+<pre><code class="language-python">chosen_input_ids = tokenizer(chosen_prompt, truncation=True,
+                             max_length=1024, padding='max_length')['input_ids']
+# 长度 = 1024（右侧补 pad）
+
+x_chosen = torch.tensor(chosen_input_ids[:-1])    # (S,) 输入：去掉最后一个 token
+y_chosen = torch.tensor(chosen_input_ids[1:])     # (S,) 标签：每个位置要预测的"下一个 token" y_t
+mask_chosen = torch.tensor(chosen_loss_mask[1:])  # (S,) 1 = 该标签落在 assistant 段，0 = 不参与损失
+# x / y / mask 三者的长度都是 S = max_seq_len - 1（平移一位后少了尾巴）
+# rejected 一套完全相同：x_rejected / y_rejected / mask_rejected</code></pre>
+<p><strong>掩码怎么来的</strong>：<code>generate_loss_mask</code> 与 SFT 复用同一套思路——先编码"assistant 起始标记"和"结束标记"两个锚点串，然后线性扫描整条输入：一旦命中 assistant 起始标记，就把其后到结束标记为止的位置全部标 1。于是 <strong>user / system 段是 0（不参与偏好损失），assistant 段是 1，右侧 pad 区天然是 0</strong>。</p>
+
+<h3>8.5 逐 token 对数概率：logits_to_log_probs</h3>
+<p>DPO 的第一步是拿到"模型认为这个 token 有多可能"。语言模型输出的是词表打分 logits，要转成对数概率：</p>
+<pre><code class="language-python">def logits_to_log_probs(logits, labels):
+    # logits: (B, S, V) —— batch、序列位置、词表 V 三者的打分
+    # labels: (B, S)    —— 每个位置"真实该出现的下一个 token"（即 y_t）
+    log_probs = F.log_softmax(logits, dim=2)          # (B, S, V) 沿词表维归一化
+    # 在词表维上按 labels 做 gather：只取"真实 token"那一格的对数概率
+    log_probs_per_token = torch.gather(log_probs, dim=2,
+                                       index=labels.unsqueeze(2)).squeeze(-1)  # (B, S)
+    return log_probs_per_token</code></pre>
+<p>等价写法就是逐位置取条件对数概率：</p>
+$$p_t = \log\pi_\theta(y_t \mid x,\, y_{&lt;t}) = \Big[\operatorname{logsoftmax}\big(\mathrm{logits}\big)\Big]_{t,\,y_t}$$
+<p><code>log_softmax</code> 先把每个位置对全词表的打分归一化成合法概率分布，<code>gather</code> 再按 <code>labels</code> 给出的"真实 token 编号"取出对应那一格——<strong>模型给这个正确 token 分配的概率越大，这一格越接近 0；分配得越离谱（自信地给错），越接近负无穷</strong>。这与 GRPO 里 <code>compute_per_token_logps</code> 是同一招。</p>
+
+<h3>8.6 闭式损失：dpo_loss 逐段拆解</h3>
+<p>DPO 的全部秘密是 8.3 推出的那条<strong>隐式奖励恒等式</strong>——不需要训练打分器，把"策略相对参考模型的偏离程度"直接当作奖励：</p>
+$$r(x,y) = \beta\log\frac{\pi_\theta(y\mid x)}{\pi_{\mathrm{ref}}(y\mid x)}$$
+<p>把好/坏两个回答的 $r$ 之差塞进 Bradley-Terry 的二分类似然，就是 <code>dpo_loss</code>（<code>train_dpo.py</code>）：</p>
+<pre><code class="language-python">def dpo_loss(ref_log_probs, policy_log_probs, mask, beta):
+    # 三个入参 shape 都是 (2B, S)；mask 把非 assistant 段清零
+    ref_log_probs    = (ref_log_probs * mask).sum(dim=1)     # (2B,) 每条序列的总 log 概率
+    policy_log_probs = (policy_log_probs * mask).sum(dim=1)  # (2B,)（位置求和 = 概率连乘取 log）
+
+    batch_size = ref_log_probs.shape[0]          # = 2B（chosen + rejected 拼出来的行数）
+    chosen_ref_log_probs    = ref_log_probs[:batch_size // 2]     # 前半 = chosen（布局约定！）
+    reject_ref_log_probs    = ref_log_probs[batch_size // 2:]     # 后半 = rejected
+    chosen_policy_log_probs = policy_log_probs[:batch_size // 2]
+    reject_policy_log_probs = policy_log_probs[batch_size // 2:]
+
+    pi_logratios  = chosen_policy_log_probs - reject_policy_log_probs  # 策略模型：好 − 坏
+    ref_logratios = chosen_ref_log_probs    - reject_ref_log_probs     # 参考模型：好 − 坏
+    logits = pi_logratios - ref_logratios    # 相对参考模型的"偏好增量"
+    loss = -F.logsigmoid(beta * logits)      # 二分类损失，再对 batch 求平均
+    return loss.mean()</code></pre>
+<p>写成数学式就是：</p>
+$$\mathcal{L}_{\mathrm{DPO}} = -\log\sigma\Big(\underbrace{\beta\log\frac{\pi_\theta(y_w\mid x)}{\pi_{\mathrm{ref}}(y_w\mid x)}}_{r(x,y_w)} - \underbrace{\beta\log\frac{\pi_\theta(y_l\mid x)}{\pi_{\mathrm{ref}}(y_l\mid x)}}_{r(x,y_l)}\Big)$$
+<p>四步拆开看设计意图：</p>
+<table>
+<thead><tr><th>代码片段</th><th>含义</th><th>训练想要的方向</th></tr></thead>
+<tbody>
+<tr><td>按 mask 求和</td><td>把整段 assistant 回答的逐 token log 概率累加 = 整段回答的总 log 概率</td><td>只比较"回答整体"，不掺 prompt / pad</td></tr>
+<tr><td>前后两半拆分</td><td>约定 batch 前半是 chosen、后半是 rejected（见 8.7 的 cat 拼接）</td><td>一一配对才能"好减坏"</td></tr>
+<tr><td><code>pi_logratios</code></td><td>策略模型认为"好回答比坏回答好多少"</td><td>不断增大（这就是被优化的量）</td></tr>
+<tr><td><code>ref_logratios</code></td><td>参考模型（SFT 冻结版）同样的差值，是"先验基线"</td><td>固定不动</td></tr>
+<tr><td>减去 <code>ref_logratios</code></td><td>内置 KL 正则：只学"相对 SFT 的改进"，防止策略漂太远</td><td>对应 PPO 里的 KL 惩罚，但这里免费获得</td></tr>
+<tr><td><code>-log&#963;(&#946;&#183;)</code></td><td>二分类损失：最大化"chosen 胜过 rejected"的 sigmoid 概率</td><td>概率趋近 1</td></tr>
+</tbody>
+</table>
+<p><strong>理解锚点</strong>：DPO 从头到尾没有奖励模型打分、也没有 rollout 采样——<strong>奖励被吸收进了损失函数</strong>（用 log 比当奖励），所以它是一条"离线、闭式"的优化路径。这正好呼应用户最初的问题：DPO 不需要"同步 / 异步 RL"那一整套采样组织架构，因为根本没有采样环节。</p>
+
+<h3>8.7 训练循环：一次前向算好 / 坏两边</h3>
+<pre><code class="language-python"># ① 取 batch：chosen / rejected 各自带 x、y、mask 六个张量，先搬到 GPU
+
+# ② 【关键技巧】沿 batch 维拼接：一个 batch 里好回答在前、坏回答在后
+x    = torch.cat([x_chosen, x_rejected], dim=0)        # (2B, S)
+y    = torch.cat([y_chosen, y_rejected], dim=0)        # (2B, S)
+mask = torch.cat([mask_chosen, mask_rejected], dim=0)  # (2B, S)
+
+# ③ 参考模型前向（冻结、不求梯度、不缓存计算图）
+with torch.no_grad():
+    ref_log_probs = logits_to_log_probs(ref_model(x).logits, y)  # (2B, S)
+
+# ④ 策略模型前向（可训练，同一份 x）
+outputs = model(x)                                        # (2B, S, V) → logits
+policy_log_probs = logits_to_log_probs(outputs.logits, y) # (2B, S)
+
+# ⑤ DPO 损失 + MoE 辅助损失 + 梯度累积步数归一
+dpo_loss_val = dpo_loss(ref_log_probs, policy_log_probs, mask, beta=beta)
+loss = (dpo_loss_val + outputs.aux_loss) / args.accumulation_steps
+scaler.scale(loss).backward()</code></pre>
+<p><strong>为什么拼接一个 batch</strong>：两条回答的 prompt 相同、补齐后长度也相同，拼在一起<strong>一次前向同时算出好 / 坏两边的 log 概率，省掉一次前向</strong>。这也解释了 8.6 里 <code>batch_size // 2</code> 的拆分为什么安全——布局是训练循环与损失函数之间心照不宣的约定，改任何一边都会错位。</p>
+<p>训练循环其余部分与 SFT / GRPO 同构：</p>
+<ul>
+<li><strong>双模型分工</strong>：策略模型 <code>model</code> 可训练；参考模型 <code>ref_model</code> 是<strong>同一份 <code>full_sft</code> 权重的冻结副本</strong>（<code>ref_model.eval(); ref_model.requires_grad_(False)</code>）——一个当"选手"被更新，一个当"锚"不许动。</li>
+<li><strong>MoE 辅助损失</strong>：<code>outputs.aux_loss</code> 只在 <code>use_moe=1</code> 时有非零值（负载均衡项），与主损失相加一起反向。</li>
+<li><strong>混合精度</strong>：默认 <code>bfloat16</code> + <code>GradScaler</code>（fp16 时才真正启用 scaler）。</li>
+<li><strong>余弦学习率</strong>：<code>lr = get_lr(epoch * iters + step, epochs * iters, learning_rate)</code>，与全链路一致。</li>
+<li><strong>双份保存</strong>：fp16 纯权重（CPU，供推理）+ <code>lm_checkpoint</code> 完整训练状态（模型 / 优化器 / scaler / epoch / step，供断点续训），与 SFT 完全相同。</li>
+</ul>
+
+<h3>8.8 main 流程与断点续训</h3>
+<ol>
+<li><code>init_distributed_mode()</code> + <code>setup_seed()</code>——标准开头（DDP 时每个进程按 rank 加种子）。</li>
+<li><code>MiniMindConfig</code> + 检查 checkpoint（<code>--from_resume 1</code> 时读取 <code>../checkpoints</code>）。</li>
+<li>设置混合精度上下文 <code>autocast(dtype=bfloat16)</code>（CPU 上退化为 <code>nullcontext</code>）。</li>
+<li>（可选）初始化 swanlab / wandb。</li>
+<li><strong>加载两份模型</strong>：<code>model, _ = init_model(lm_config, from_weight)</code> 与 <code>ref_model, _ = init_model(...)</code>——都从 <code>full_sft</code> 出发，随后冻结 ref。</li>
+<li>构建 <code>DPODataset</code> + <code>DistributedSampler</code>（多卡时）+ <code>AdamW</code> 优化器。</li>
+<li>可选 <code>torch.compile</code>；DDP 时包 <code>DistributedDataParallel</code>。</li>
+<li>逐 epoch：<code>set_epoch</code> → 重新洗牌（<code>torch.randperm</code>）→ <code>SkipBatchSampler</code> 跳过已训 step（断点续训核心）→ <code>train_epoch</code>。</li>
+<li>训练完 <code>dist.barrier()</code> + <code>destroy_process_group()</code>。</li>
+</ol>
+<p>对比 SFT / GRPO 会发现 main 骨架几乎一样，<strong>DPO 独特的只有三处</strong>：数据集换成偏好对、模型初始化两遍（策略 + 参考）、损失函数换成 <code>dpo_loss</code>。其余分布式、混合精度、断点续训、保存策略全是复用。</p>
+
+<h3>8.9 关键超参：为什么 lr 要低到 4e-8</h3>
+<table>
+<thead><tr><th>参数</th><th>默认值</th><th>为什么这么设</th></tr></thead>
+<tbody>
+<tr><td><code>learning_rate</code></td><td><strong>4e-8</strong></td><td>比 SFT（1e-5）低约 2.5 个数量级。DPO 只做"微调里的微调"：模型的语言能力是 SFT 给的，DPO 学的只是<strong>相对量</strong>（好/坏概率差）。lr 一大，策略会整体漂离参考模型，把 SFT 学到的流畅度、知识一起冲掉（灾难性遗忘）；代码注释也明确"建议 &lt;=5e-8 避免遗忘"。</td></tr>
+<tr><td><code>beta</code></td><td>0.15</td><td>温度 / 缩放系数，控制"多用力推向偏好"：越大越激进地拉开好/坏差距（也更冒险），越小越贴着参考模型保守更新。</td></tr>
+<tr><td><code>from_weight</code></td><td>full_sft</td><td>先让模型"会说话"（SFT），再教它"说得好"（偏好）——两个模型都从这份权重初始化。</td></tr>
+<tr><td><code>epochs</code></td><td>1</td><td>偏好数据是静态的，一轮足够；反复碾压只会让模型死记这几对回答。</td></tr>
+<tr><td><code>batch_size</code></td><td>4</td><td>拼接后每步实际喂 8 条（4 chosen + 4 rejected）；偏好对齐数据量通常不大，小 batch 足够。</td></tr>
+<tr><td><code>max_seq_len</code></td><td>1024</td><td>chosen / rejected 各自是"完整对话"（含 prompt），中文约 1 token ≈ 1.5~1.7 字符；超长会被截断，注意别把回答尾巴截掉。</td></tr>
+<tr><td><code>accumulation_steps</code> / <code>grad_clip</code></td><td>1 / 1.0</td><td>与全链路一致的梯度累积与裁剪配置。</td></tr>
+</tbody>
+</table>
+<p>深层原因再看一眼损失：目标里的 <code>log(&#960;&#952;/&#960;ref)</code> 比值项把梯度同时耦合到"提升好回答概率"与"压低坏回答概率"上。压低的诱惑很大（概率可无限趋近 0），而 chosen 的概率本来已接近 1、提升空间有限——<strong>不对称的梯度会让大 lr 倾向把整个词表概率分布压扁，语言质量随之崩塌</strong>，这正是 DPO 必须用小 lr 的数学直觉。</p>
+
+<h3>8.10 DPO vs PPO vs GRPO：三方法一张表</h3>
+<table>
+<thead><tr><th>维度</th><th>DPO（train_dpo.py）</th><th>PPO（train_ppo.py）</th><th>GRPO（train_grpo.py）</th></tr></thead>
+<tbody>
+<tr><td>回答从哪来</td><td>静态数据集里的现成对</td><td>策略自己现场采样（rollout）</td><td>策略自己现场采样（rollout）</td></tr>
+<tr><td>需要 rollout 吗</td><td>❌ 不需要</td><td>✅ 需要</td><td>✅ 需要</td></tr>
+<tr><td>奖励信号</td><td>隐式奖励 <code>&#946;log(&#960;&#952;/&#960;ref)</code>（无打分器）</td><td>显式 RM / 规则分 / 可验证结果</td><td>显式 RM / 规则分（RLAIF 或规则）</td></tr>
+<tr><td>参考模型</td><td>✅ 冻结，算 KL 先验</td><td>✅ 算 KL 惩罚</td><td>✅ 算 KL 惩罚</td></tr>
+<tr><td>Critic / 价值网络</td><td>无</td><td>有（估计价值、GAE 优势）</td><td>无（组内 z-score 代替）</td></tr>
+<tr><td>核心损失</td><td><code>-log&#963;(&#946;&#183;logratio)</code></td><td><code>-min(ratio&#183;A, clip(ratio)A) + &#946;KL</code></td><td>组内 z-score 优势 <code>(r_i - r_mean) / r_std</code> + clip</td></tr>
+<tr><td>同步 / 异步架构</td><td><strong>不适用</strong>（无采样环节）</td><td>适用（采样决定架构）</td><td>适用（采样决定架构）</td></tr>
+<tr><td>工程复杂度 / 显存</td><td>低（双模型前向）</td><td>最高（Actor/Critic/Ref/Reward 四模型）</td><td>中高（采样 + 双模型）</td></tr>
+<tr><td>主要学习内容</td><td>偏好：哪个回答"更好"</td><td>能力：高分回答长什么样</td><td>能力：高分回答长什么样</td></tr>
+<tr><td>成本 / 稳定性</td><td>便宜、稳定</td><td>最贵、调参难</td><td>贵、相对稳</td></tr>
+</tbody>
+</table>
+<p>一句话概括：<strong>DPO = 拿"已批改好的卷子"直接学（离线、便宜、稳定）；PPO / GRPO = 让模型"现做题现批改"（在线、贵、能力上限更高）</strong>。这也是偏好对齐链路的常见安排：DPO 做轻量第一步把风格 / 偏好摆正，再上 GRPO / PPO 打磨推理等硬能力。</p>
+
+<h3>8.11 常见坑与小结</h3>
+<ol>
+<li><strong>lr 必须极低</strong>：4e-8 量级（官方建议不超过 5e-8）。观察指标：不只盯 dpo_loss，还要周期性评测 SFT 能力是否回退。</li>
+<li><strong>数据质量决定上限</strong>：DPO 不学新知识，只重排偏好。chosen / rejected 必须真实反映"更好 / 更差"，且<strong>user / system 段逐字一致、模板一致</strong>，否则 logratio 无意义；也别把"只是更长"或"只是格式花哨"当偏好。</li>
+<li><strong>mask 与平移要对齐</strong>：x 是 <code>input_ids[:-1]</code>、y 是 <code>[1:]</code>，loss mask 也必须同步平移一位，且只覆盖 assistant 段。自造数据时保证 assistant 起始 / 结束锚点完整，否则掩码会漏标或错标。</li>
+<li><strong>别拿 DPO 当能力训练</strong>：没有探索、没有可验证奖励，天花板是"把数据里的偏好学到位"；真正的能力提升要交给第 9 章起的在线 RL。</li>
+</ol>
+<blockquote><strong>本章小结</strong>：DPO 把 RLHF 的"奖励建模 + 策略优化"两步解析消去成一条闭式分类损失 <code>-log&#963;(&#946;&#183;logratio)</code>，代价是只能离线学静态偏好、无法利用可验证奖励。<code>logits_to_log_probs</code> 负责逐 token 取真实 token 的对数概率；<code>dpo_loss</code> 靠"batch 前半 chosen、后半 rejected"的布局约定做配对；训练循环用 cat 拼接一次前向算两边、参考模型冻结当锚。它是从 SFT 走向在线 RL（GRPO / PPO）之间最便宜的过渡站——理解它，正好为第 9 章"为什么在线 RL 要 rollout、要同步 / 异步架构"铺好对比基线。</blockquote>
 </section>
 
 <section id="ch9">
@@ -1032,6 +1379,36 @@ loss = dpo_loss(ref_log_probs, policy_log_probs, mask, beta=beta)  # -F.logsigmo
 <p>RL 的目标是：在不偏离参考策略太远的前提下，最大化期望奖励。</p>
 $$\max_{\pi}\ \mathbb{E}_{x\sim D,\,y\sim\pi(\cdot\mid x)}\big[r(x,y)\big] - \beta\,\mathrm{KL}\big(\pi(\cdot\mid x)\,\|\,\pi_{\mathrm{ref}}(\cdot\mid x)\big)$$
 <p>奖励项让模型"变好"，KL 项防止"跑偏"。$\beta$ 控制平衡（<code>train_grpo.py</code> 的 <code>--beta</code>）。</p>
+<p><strong>先拆记号</strong>：$\mathbb{E}_{x\sim D,\,y\sim\pi(\cdot\mid x)}[\cdot]$ 表示"从数据集里抽一个问题 $x$，再让当前策略 $\pi$ 自己采样一个回答 $y$，取平均"。关键在 $y\sim\pi$：<strong>采样的分布就是正在被训练的模型本身</strong>——模型每更新一次，用来训练它的数据分布就跟着变一次（"移动靶"）。这和 SFT 本质不同：SFT 的标准答案是固定文件里的，RL 的回答是模型现场生成的。</p>
+<p><strong>与第 8 章的关系</strong>：这个目标与 8.3 开头是同一个 RLHF 目标，但第 8 章把它当<strong>推导工具</strong>——解出解析最优后立刻反代 BT、消掉 RM，得到离线 DPO；第 9 章则保留它<strong>直接优化</strong>。为什么不直接用 8.3 的解析解？因为那个解里的奖励 $r(x,y)$ 是未知的（藏在人类 / RM 里），归一化常数 $Z(x)$ 要对所有可能回答求和、根本算不完（8.3 已展开讲）。所以只能走"采样 → 打分 → 更新"的在线路线。</p>
+<p>三项各自的角色：$\mathbb{E}[r]$ 是<strong>油门</strong>（把高分回答变得更可能），$-\beta\,\mathrm{KL}(\pi\|\pi_{ref})$ 是<strong>缰绳</strong>（不许偏离 SFT 太远），$\beta$ 是缰绳松紧。9.3~9.6 的全部花样，本质上都是在"怎么更稳、更省地踩这脚油门"上做文章。</p>
+<h4>9.1 补：KL 项具体是怎么算的？</h4>
+<p>定义就一句话：<strong>按 P 的概率，对 P/Q 的对数求加权平均</strong>。</p>
+$$\mathrm{KL}(P\,\|\,Q)=\sum_i P(i)\log\frac{P(i)}{Q(i)}$$
+<p>$P$ 是被平均的对象（乘在外面），$Q$ 是分母（比的是 $P/Q$），所以 KL <strong>不对称</strong>：$\mathrm{KL}(P\|Q)\neq\mathrm{KL}(Q\|P)$。用具体数字走一遍（某题答案分布，P 是策略、Q 是参考模型）：</p>
+<table>
+<thead><tr><th>答案</th><th>$P(i)$（策略 $\pi_\theta$）</th><th>$Q(i)$（参考 $\pi_{ref}$）</th><th>$\log(P/Q)$</th><th>$P(i)\cdot\log(P/Q)$</th></tr></thead>
+<tbody>
+<tr><td>A</td><td>0.40</td><td>0.60</td><td>−0.405</td><td>−0.162</td></tr>
+<tr><td>B</td><td>0.35</td><td>0.25</td><td>+0.336</td><td>+0.118</td></tr>
+<tr><td>C</td><td>0.25</td><td>0.15</td><td>+0.511</td><td>+0.128</td></tr>
+</tbody>
+</table>
+<p>三项相加：$\mathrm{KL}\approx 0.083$（nat）。两个细节：P 比 Q 大的项贡献正（"新模型更看好它"算偏离），P 比 Q 小的项虽为负，但乘的 P 本身就小，拉不低总和——数学上保证 <strong>KL ≥ 0，且 P=Q 时恰为 0</strong>。</p>
+<p><strong>为什么代码里全是"log 概率相减"</strong>：整段回答的概率小到会下溢，但在 log 空间里，除法变减法、连乘变连加：</p>
+$$\log\frac{\pi_\theta(y\mid x)}{\pi_{ref}(y\mid x)}=\log\pi_\theta(y\mid x)-\log\pi_{ref}(y\mid x)=\sum_t\Big(\log\pi_\theta(y_t\mid x,y_{&lt;t})-\log\pi_{ref}(y_t\mid x,y_{&lt;t})\Big)$$
+<p>等号右边每一项正是 8.5 的 <code>logits_to_log_probs</code>（或 GRPO 的 <code>compute_per_token_logps</code>）输出的逐 token 对数概率。所以训练代码里 KL 项通常长这样：</p>
+<pre><code class="language-python"># 两次前向，拿到每条回答每个 token 的 log 概率（参考模型冻结）
+logp_theta = logits_to_log_probs(model(x).logits, y)         # (B, S) 新策略
+with torch.no_grad():
+    logp_ref  = logits_to_log_probs(ref_model(x).logits, y)  # (B, S) 参考模型
+
+kl_token = logp_theta - logp_ref               # (B, S) 逐 token 的 log(π_θ/π_ref)
+# 一条回答的 KL ≈ 在模型采到的 token 上求平均（mask 只统计 assistant 段）
+kl_seq = (kl_token * mask).sum(-1) / mask.sum(-1)            # (B,)
+loss = policy_loss + beta * kl_seq.mean()      # 策略梯度损失 + β·KL 惩罚</code></pre>
+<p><strong>"平均"平均在哪</strong>：严格定义要对<strong>所有可能回答</strong>按 $\pi_\theta$ 加权求和，语言模型根本列不完；训练里做的是<strong>蒙特卡洛估计</strong>——模型采到哪几条 y，就在哪几条上算 log 差再平均，样本多了估计就准。工程上为降方差还常用 k3 估计器 $\widehat{\mathrm{KL}}=\exp(d)-d-1$（$d=\log\pi_{ref}-\log\pi_\theta$，代码见 10.3），本质同样是逐 token 比较两个 log 概率，只是换了一种加权方式，恒非负且低方差。</p>
+<p><strong>回到文档里出现过 KL 的三个位置</strong>：DPO 的 <code>dpo_loss</code> 里"减去 ref_logratios"就是<strong>隐式 KL 锚</strong>（被吸收进二分类损失，不单独出现）；PPO/GRPO 目标里的 $-\beta\,\mathrm{KL}$ 是上面代码的<strong>显式惩罚项</strong>（对应 <code>--beta</code>）；而 $\beta$ 越大 = 缰绳越紧。理解这个计算过程后，9.3 的梯度公式、9.4 的 KL 惩罚、10.3 的 k3 代码就都能串起来了。</p>
 <h3>9.2 四类模型角色</h3>
 <table>
 <thead><tr><th>角色</th><th>作用</th><th>是否训练</th></tr></thead>
@@ -1043,19 +1420,188 @@ $$\max_{\pi}\ \mathbb{E}_{x\sim D,\,y\sim\pi(\cdot\mid x)}\big[r(x,y)\big] - \be
 </tbody>
 </table>
 <p>GRPO 用前三者（省掉 critic）；PPO 需要 critic。</p>
+<p><strong>四角色 ↔ 目标函数对照</strong>：Policy 就是被优化的 $\pi$；Reference 是 KL 里的锚 $\pi_{ref}$；Reward 是目标里的 $r$（RM / 规则 / 可验证结果，只打分不训练）；Critic 是 PPO 为了估计"从当前前缀继续还能得多少分"而额外引入的 $V$，GRPO 用组内采样统计代替它，所以只需要前三者。在线 RL 的完整循环如下图：</p>
+<figure>
+<svg viewBox="0 0 880 400" style="max-width:860px; width:100%; height:auto;" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="在线 RL 四模型角色数据流图">
+  <defs>
+    <marker id="m9a" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 z" fill="#57606a"/></marker>
+  </defs>
+  <rect x="310" y="12" width="260" height="46" rx="6" fill="#eef6ff" stroke="#0969da"/>
+  <text x="440" y="32" text-anchor="middle" font-size="14" fill="#1f2328">prompt x</text>
+  <text x="440" y="49" text-anchor="middle" font-size="11" fill="#57606a">来自数据集 D</text>
+  <line x1="440" y1="58" x2="440" y2="86" stroke="#57606a" stroke-width="1.5" marker-end="url(#m9a)"/>
+  <rect x="250" y="90" width="380" height="58" rx="6" fill="#eef6ff" stroke="#0969da"/>
+  <text x="440" y="112" text-anchor="middle" font-size="14" fill="#1f2328">策略 Policy π_θ（Actor，可训练）</text>
+  <text x="440" y="132" text-anchor="middle" font-size="12" fill="#57606a">采样回答 y ~ π_θ(·|x)，每个 prompt 采 G 条</text>
+  <line x1="440" y1="148" x2="440" y2="176" stroke="#57606a" stroke-width="1.5" marker-end="url(#m9a)"/>
+  <text x="452" y="168" font-size="11" fill="#57606a">回答 y</text>
+  <line x1="440" y1="176" x2="160" y2="182" stroke="#57606a" stroke-width="1.5" marker-end="url(#m9a)"/>
+  <line x1="440" y1="176" x2="440" y2="182" stroke="#57606a" stroke-width="1.5" marker-end="url(#m9a)"/>
+  <line x1="440" y1="176" x2="720" y2="182" stroke="#57606a" stroke-width="1.5" marker-end="url(#m9a)"/>
+  <rect x="30" y="184" width="260" height="74" rx="6" fill="#fff8c5" stroke="#d4a72c"/>
+  <text x="160" y="206" text-anchor="middle" font-size="13" fill="#1f2328">Reference π_ref（冻结）</text>
+  <text x="160" y="224" text-anchor="middle" font-size="11" fill="#5c4400">KL 锚点：不许策略漂太远</text>
+  <text x="160" y="242" text-anchor="middle" font-size="11" fill="#5c4400">GRPO / PPO 都用</text>
+  <rect x="310" y="184" width="260" height="74" rx="6" fill="#eef6ff" stroke="#0969da"/>
+  <text x="440" y="206" text-anchor="middle" font-size="13" fill="#1f2328">Reward r（RM / 规则 / 验证）</text>
+  <text x="440" y="224" text-anchor="middle" font-size="11" fill="#57606a">冻结：给每条回答打分</text>
+  <text x="440" y="242" text-anchor="middle" font-size="11" fill="#57606a">绝对分无意义，只看相对</text>
+  <rect x="590" y="184" width="270" height="74" rx="6" fill="#f6f8fa" stroke="#57606a" stroke-dasharray="5 3"/>
+  <text x="725" y="206" text-anchor="middle" font-size="13" fill="#1f2328">Critic V（仅 PPO，可训练）</text>
+  <text x="725" y="224" text-anchor="middle" font-size="11" fill="#57606a">预测前缀的期望总奖励</text>
+  <text x="725" y="242" text-anchor="middle" font-size="11" fill="#57606a">GRPO 用组内均值替代</text>
+  <rect x="250" y="318" width="380" height="56" rx="6" fill="#eef6ff" stroke="#0969da" stroke-dasharray="5 3"/>
+  <text x="440" y="340" text-anchor="middle" font-size="14" fill="#1f2328">优势 A = r − 基线</text>
+  <text x="440" y="359" text-anchor="middle" font-size="12" fill="#57606a">基线 = V(s)（PPO）或组内均值 r̄（GRPO）</text>
+  <polyline points="250,346 16,346 16,119 250,119" fill="none" stroke="#57606a" stroke-width="1.5" stroke-dasharray="5 3" marker-end="url(#m9a)"/>
+  <text x="70" y="338" font-size="11" fill="#57606a">按 ∇log π_θ · A 更新策略</text>
+</svg>
+<figcaption>在线 RL 循环：Policy 采样回答 → Reward 打分、Reference 拉住 KL（PPO 另有 Critic 估基线）→ 算优势 A → 沿 ∇logπ_θ·A 更新策略，再回到采样。虚线框表示"计算出来的量 / 可选项"。</figcaption>
+</figure>
 <h3>9.3 策略梯度定理</h3>
+<p><strong>先问：为什么 SFT 那套"对损失直接求导"在 RL 里行不通？</strong>两个原因：① 奖励 $r(x,y)$ 常常<strong>不可导</strong>——对答案、调工具、规则分都是"程序/字典查表"式的，没有梯度可言；② 就算奖励是神经网络（RM），样本 $y$ 是从离散分布里<strong>随机抽样</strong>得到的，梯度穿不过"抽样"这一步。所以必须绕道：对<strong>我们自己网络的 log 概率</strong>求导，因为那个一定能求。</p>
 $$\nabla_\theta J(\theta) = \mathbb{E}_{y\sim \pi_\theta(\cdot\mid x)}\Big[\nabla_\theta \log \pi_\theta(y \mid x)\cdot A(x,y)\Big]$$
 <p>所有 RL 算法的差异几乎都归结为：<strong>如何估计优势 $A$</strong> 和 <strong>如何限制更新幅度</strong>。</p>
+<p><strong>这条公式怎么来的（log 导数技巧，数学小白可跟）</strong>：期望就是"概率 × 分数"求和：</p>
+$$J(\theta)=\sum_y \pi_\theta(y\mid x)\,r(x,y)$$
+<p>对 $\theta$ 求导时，$r(x,y)$ 不依赖 $\theta$，只需要导 $\pi_\theta$：</p>
+$$\nabla_\theta J(\theta)=\sum_y \nabla_\theta \pi_\theta(y\mid x)\cdot r(x,y)$$
+<p>再用对数求导恒等式 $\nabla_\theta \log\pi_\theta = \nabla_\theta\pi_\theta\,/\,\pi_\theta$，即 $\nabla_\theta\pi_\theta=\pi_\theta\,\nabla_\theta\log\pi_\theta$，代回去：</p>
+$$\nabla_\theta J(\theta)=\sum_y \pi_\theta(y\mid x)\,\nabla_\theta\log\pi_\theta(y\mid x)\cdot r(x,y)=\mathbb{E}_{y\sim\pi_\theta}\Big[\nabla_\theta\log\pi_\theta(y\mid x)\cdot r(x,y)\Big]$$
+<p>最后一步就是定理的公式（把 $r$ 换成优势 $A$，原因见下）。<strong>直觉翻译</strong>：采样若干条回答，谁分高就把谁的生成概率往上推，谁分低就往下压；$\nabla\log\pi_\theta$ 提供"往哪个方向推最有效"，$A$ 提供"推多狠、往哪边推"。下图示意：</p>
+<figure>
+<svg viewBox="0 0 860 320" style="max-width:840px; width:100%; height:auto;" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="策略梯度推高压低示意图">
+  <defs>
+    <marker id="m9up" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#1a7f37"/></marker>
+    <marker id="m9dn" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#cf222e"/></marker>
+  </defs>
+  <rect x="330" y="10" width="200" height="42" rx="6" fill="#eef6ff" stroke="#0969da"/>
+  <text x="430" y="29" text-anchor="middle" font-size="14" fill="#1f2328">prompt x</text>
+  <text x="430" y="45" text-anchor="middle" font-size="11" fill="#57606a">同一问题采 3 条回答并打分</text>
+  <line x1="430" y1="52" x2="430" y2="70" stroke="#57606a" stroke-width="1.5" marker-end="url(#m9a)"/>
+  <rect x="40" y="72" width="300" height="40" rx="6" fill="#eef6ff" stroke="#0969da"/>
+  <text x="190" y="97" text-anchor="middle" font-size="13" fill="#1f2328">回答 1　r = +0.9（高分）</text>
+  <line x1="345" y1="92" x2="560" y2="62" stroke="#1a7f37" stroke-width="2.5" marker-end="url(#m9up)"/>
+  <text x="572" y="58" font-size="12" fill="#1a7f37">概率 ↑（推得猛）</text>
+  <rect x="40" y="152" width="300" height="40" rx="6" fill="#eef6ff" stroke="#0969da"/>
+  <text x="190" y="177" text-anchor="middle" font-size="13" fill="#1f2328">回答 2　r = +0.2（普通）</text>
+  <line x1="345" y1="172" x2="470" y2="150" stroke="#1a7f37" stroke-width="2.5" marker-end="url(#m9up)"/>
+  <text x="482" y="154" font-size="12" fill="#1a7f37">概率 ↑（推得轻）</text>
+  <rect x="40" y="232" width="300" height="40" rx="6" fill="#fff5f5" stroke="#cf222e"/>
+  <text x="190" y="257" text-anchor="middle" font-size="13" fill="#1f2328">回答 3　r = −0.5（低分）</text>
+  <line x1="345" y1="252" x2="560" y2="284" stroke="#cf222e" stroke-width="2.5" marker-end="url(#m9dn)"/>
+  <text x="572" y="292" font-size="12" fill="#cf222e">概率 ↓（压低）</text>
+</svg>
+<figcaption>策略梯度直觉：分数越高，那条回答的生成概率被推得越高（绿色↑）；分数为负则被压低（红色↓）。方向由 ∇logπ_θ 给出，幅度由优势 A 决定。</figcaption>
+</figure>
+<p><strong>为什么用 A 而不是直接用 r（基线的意义）</strong>：把 $r(x,y)$ 换成 $r(x,y)-b$（$b$ 是与 $y$ 无关的基线），期望梯度<strong>数学上不变</strong>：多出来的项是 $-b\sum_y\nabla_\theta\pi_\theta(y)=-b\,\nabla_\theta\!\left(\sum_y\pi_\theta(y)\right)=-b\,\nabla_\theta 1=0$（概率之和恒为 1，导数为 0）。也就是说<strong>任何与 y 无关的基线都不改变梯度的期望方向，只影响方差</strong>。直觉：判断一个人高不高，与其报"180cm"，不如报"比全班平均高 12cm"——信息一样，但方差小得多、更稳定。PPO 的基线来自 Critic，GRPO 的基线来自组内平均，ReMax / RLOO 也用各自的基线——9.6 的变体差异本质上就在"基线从哪来"。</p>
 <h3>9.4 PPO：critic + GAE</h3>
+<p><strong>PPO 要解决 9.3 留下的两个工程问题</strong>：</p>
+<ul>
+<li><strong>问题一：一步更新太猛会崩</strong>。9.3 的梯度是用"旧策略"采的数据算的；如果一步把策略推太远，新旧分布错位，下一次的估计就不可信（相当于拿昨天的问卷去指导今天大幅改版的自己）。经典做法 TRPO 要解带 KL 约束的复杂子问题，PPO 的贡献是把它简化成一行"裁剪"。</li>
+<li><strong>问题二：奖励只在结尾给一次，功劳怎么分摊到每个 token？</strong>这需要价值网络 V 与 GAE 把"结局的成败"沿前缀往回归因。</li>
+</ul>
 <p>TD 残差与 GAE 优势：</p>
 $$\delta_t = r_t + \gamma V(s_{t+1}) - V(s_t), \qquad A_t = \sum_{l\ge 0}(\gamma\lambda)^l \delta_{t+l}$$
 <p>重要性采样比与 PPO 裁剪损失：</p>
 $$\rho = \frac{\pi_\theta(y \mid x)}{\pi_{\mathrm{old}}(y \mid x)}, \qquad \mathcal{L} = \mathbb{E}\Big[\min\big(\rho A,\ \operatorname{clip}(\rho,1-\varepsilon,1+\varepsilon)A\big) - \beta\,\mathrm{KL}\Big]$$
 <p>Critic 是"会打分的语言模型"——用训练好的权重初始化，把输出头换成 <code>768→1</code> 线性层，为每个 token 输出价值 $V(s)$。$\rho$ 修正分布偏移，clip 是 trust region 的近似。</p>
+<p><strong>ρ 的大白话</strong>：$\rho=\pi_\theta/\pi_{old}$ 表示"新策略觉得这条（旧策略采的）回答有多好"。$\rho&gt;1$ 说明新策略比旧策略更喜欢它；$\rho&lt;1$ 说明新策略开始嫌弃它。如果完全不设防，模型可能因为一条侥幸好回答，一步就把它的概率翻好几倍——于是用 <code>clip(ρ, 1−ε, 1+ε)</code> 把它按在 $[0.8, 1.2]$（ε=0.2）里，越界部分不参与本轮更新，这就是"刹车"。</p>
+<p><strong>min 的取舍</strong>：$A&gt;0$（该抬）时若 $\rho$ 想超过 $1+\varepsilon$，就按 $1+\varepsilon$ 计——一次最多"爱"到 120%，防止赌上全部身家；$A&lt;0$（该压）时若 $\rho$ 已经跌到 $1-\varepsilon$ 以下，也不再追加惩罚——不往已经失宠的回答上继续踩。反过来，如果新策略居然更喜欢一条坏回答（$A&lt;0$ 而 $\rho&gt;1+\varepsilon$），则按完整幅度惩罚，把它压回去。clip 造成的"单步最多约 20% 偏移"就是 trust region（置信域）的廉价近似。</p>
+<p><strong>GAE 的大白话</strong>：Critic 的价值 $V(s_t)$ 是对每个前缀的"估分"：<em>从第 t 个 token 往后，最终平均能得多少分</em>。于是 TD 残差 $\delta_t$ = 实际发生的（$r_t+\gamma V(s_{t+1})$）− 原先预期的 $V(s_t)$，即这一步带来的<strong>惊喜</strong>。GAE 再把相邻几步的惊喜按 $(\gamma\lambda)^l$ 衰减后累加成 $A_t$：</p>
+<table>
+<thead><tr><th>系数</th><th>作用</th><th>语言模型里的直觉</th></tr></thead>
+<tbody>
+<tr><td>$\gamma$（折扣）</td><td>远期奖励打几折</td><td>$\gamma$ 大 → 看重整段结局；$\gamma$ 小 → 只看近期</td></tr>
+<tr><td>$\lambda$（GAE 衰减）</td><td>往未来看多远来归因</td><td>$\lambda\!\to\!0$ 只看一步惊喜（方差小、偏差大）；$\lambda\!\to\!1$ 看完整序列（偏差小、方差大）</td></tr>
+<tr><td>$l$（滞后步数）</td><td>第 $l$ 步后的惊喜打折 $(\gamma\lambda)^l$</td><td>越早的前缀，分到的功劳越小</td></tr>
+</tbody>
+</table>
+<p><strong>token 级功劳分摊</strong>：语言模型里通常只有最后一个 token 有非零奖励 $r_T$（其余 $r_t=0$）。Critic 的作用就是"预支未来"——每个前缀都有一个 $V(s_t)$ 预测结局，最后实际奖励一出来，GAE 把"实际 − 预期"顺着前缀往回分摊，哪个前缀让模型开始走向高分回答，那个前缀的优势就为正。示意如下（数值仅为示意）：</p>
+<figure>
+<svg viewBox="0 0 880 330" style="max-width:860px; width:100%; height:auto;" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="GAE 逐 token 功劳分摊示意图">
+  <defs>
+    <marker id="m9c" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 z" fill="#57606a"/></marker>
+  </defs>
+  <g font-size="12" text-anchor="middle" fill="#1f2328">
+    <rect x="20" y="14" width="90" height="42" rx="5" fill="#eef6ff" stroke="#0969da"/><text x="65" y="39">token t₁</text>
+    <rect x="140" y="14" width="90" height="42" rx="5" fill="#eef6ff" stroke="#0969da"/><text x="185" y="39">token t₂</text>
+    <rect x="260" y="14" width="90" height="42" rx="5" fill="#eef6ff" stroke="#0969da"/><text x="305" y="39">token t₃</text>
+    <rect x="380" y="14" width="90" height="42" rx="5" fill="#eef6ff" stroke="#0969da"/><text x="425" y="39">token t₄</text>
+    <rect x="500" y="14" width="90" height="42" rx="5" fill="#eef6ff" stroke="#0969da"/><text x="545" y="39">token t₅</text>
+  </g>
+  <line x1="110" y1="35" x2="140" y2="35" stroke="#57606a" stroke-width="1.5" marker-end="url(#m9c)"/>
+  <line x1="230" y1="35" x2="260" y2="35" stroke="#57606a" stroke-width="1.5" marker-end="url(#m9c)"/>
+  <line x1="350" y1="35" x2="380" y2="35" stroke="#57606a" stroke-width="1.5" marker-end="url(#m9c)"/>
+  <line x1="470" y1="35" x2="500" y2="35" stroke="#57606a" stroke-width="1.5" marker-end="url(#m9c)"/>
+  <line x1="590" y1="35" x2="640" y2="35" stroke="#57606a" stroke-width="1.5" marker-end="url(#m9c)"/>
+  <rect x="645" y="14" width="220" height="42" rx="6" fill="#fff8c5" stroke="#d4a72c"/>
+  <text x="755" y="33" text-anchor="middle" font-size="12" fill="#1f2328">奖励 r_T（最后一步给分）</text>
+  <text x="755" y="49" text-anchor="middle" font-size="11" fill="#5c4400">前面的 r_t 都是 0</text>
+  <rect x="20" y="88" width="590" height="34" rx="5" fill="#f6f8fa" stroke="#57606a"/>
+  <text x="315" y="110" text-anchor="middle" font-size="12" fill="#1f2328">Critic V(s_t)：在每个前缀预测"从这里到结尾还能得多少分"</text>
+  <text x="440" y="162" text-anchor="middle" font-size="13" fill="#1f2328">δ_t = r_t + γ·V(s_{t+1}) − V(s_t)　＝　实际 − 预期　＝　"惊喜"</text>
+  <line x1="20" y1="240" x2="590" y2="240" stroke="#57606a" stroke-width="1.5"/>
+  <rect x="43" y="222" width="44" height="18" fill="#1a7f37"/><text x="65" y="258" text-anchor="middle" font-size="11" fill="#57606a">A₁</text>
+  <rect x="163" y="208" width="44" height="32" fill="#1a7f37"/><text x="185" y="258" text-anchor="middle" font-size="11" fill="#57606a">A₂</text>
+  <rect x="283" y="190" width="44" height="50" fill="#1a7f37"/><text x="305" y="258" text-anchor="middle" font-size="11" fill="#57606a">A₃</text>
+  <rect x="403" y="170" width="44" height="70" fill="#1a7f37"/><text x="425" y="258" text-anchor="middle" font-size="11" fill="#57606a">A₄</text>
+  <rect x="523" y="148" width="44" height="92" fill="#1a7f37"/><text x="545" y="258" text-anchor="middle" font-size="11" fill="#57606a">A₅</text>
+  <text x="650" y="205" font-size="12" fill="#1f2328">绿色柱 = 各前缀分到的优势</text>
+  <text x="650" y="225" font-size="12" fill="#1f2328">越靠结尾的前缀功劳越大</text>
+  <text x="650" y="245" font-size="11" fill="#57606a">（(γλ)^l 衰减，示意非真实数值）</text>
+</svg>
+<figcaption>GAE 的 token 级功劳分摊（示意）：奖励只在结尾出现；Critic 在每个前缀预测未来总分 V(s_t)；GAE 把"实际 − 预期"的惊喜按 (γλ)^l 往回分摊——越靠后的前缀优势越大，越早的 token 分到的功劳越小。</figcaption>
+</figure>
+<p><strong>Critic 怎么训</strong>：价值网络没有独立监督标签，它的"标准答案"就是采样后看到的实际回报——用回归损失 $\mathcal{L}_V=\mathbb{E}[(V(s_t)-G_t)^2]$（$G_t$ 是实际累计回报）让它学会预测。它不直接参与生成，只负责把 $A$ 估准，因此训练时与策略共享底层、输出头换成 <code>768→1</code>。</p>
 <h3>9.5 GRPO：组相对基线替代 critic</h3>
 <p>GRPO 丢掉价值网络，对同一 prompt 采 $G$ 条，用组内均值/标准差做优势：</p>
 $$A_i = \frac{r_i - \bar r}{\hat\sigma_r + \varepsilon}, \qquad \bar r = \frac1G\sum_j r_j, \qquad \hat\sigma_r = \sqrt{\frac1G\sum_j (r_j-\bar r)^2}$$
 <p>奖励的绝对值没意义，但"同一 prompt 下谁的几条回答更好"是可靠信号——这就是 GRPO 不需要 critic 的原因。</p>
+<p><strong>逐项拆解</strong>：① 减 $\bar r$ 是 9.3 说的"减基线"——只是基线从"学出来的 Critic 预测"换成了"实测的组内平均"，一个零成本的蒙特卡洛基线：比组内平均好 → $A_i&gt;0$（抬），差 → $A_i&lt;0$（压）。② 除以 $\hat\sigma_r$ 是<strong>标准化（z-score）</strong>：不同任务的打分尺度不同（格式分 0~2、数学对错 0/1），除以组内标准差后优势无量纲化，更新力度不会随打分尺度漂移。③ $+\varepsilon$（很小，如 $10^{-8}$）防止一组成绩全相同（$\hat\sigma_r=0$）时除零。</p>
+<p><strong>数字例子</strong>：同一 prompt 采 4 条回答，奖励 $r=[2,1,-1,0]$，则 $\bar r=0.5$、$\hat\sigma_r\approx1.12$：</p>
+<table>
+<thead><tr><th>回答</th><th>奖励 $r_i$</th><th>$r_i-\bar r$</th><th>优势 $A_i=(r_i-\bar r)/(\hat\sigma_r+\varepsilon)$</th><th>效果</th></tr></thead>
+<tbody>
+<tr><td>回答 1（最好）</td><td>2</td><td>+1.5</td><td>≈ +1.34</td><td>被推高最多</td></tr>
+<tr><td>回答 2</td><td>1</td><td>+0.5</td><td>≈ +0.45</td><td>小幅推高</td></tr>
+<tr><td>回答 3（最差）</td><td>−1</td><td>−1.5</td><td>≈ −1.34</td><td>被压得最狠</td></tr>
+<tr><td>回答 4</td><td>0</td><td>−0.5</td><td>≈ −0.45</td><td>小幅压低</td></tr>
+</tbody>
+</table>
+<figure>
+<svg viewBox="0 0 880 320" style="max-width:860px; width:100%; height:auto;" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="GRPO 组内 z-score 优势示意图">
+  <defs>
+    <marker id="m9d" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 z" fill="#57606a"/></marker>
+  </defs>
+  <rect x="330" y="10" width="220" height="42" rx="6" fill="#eef6ff" stroke="#0969da"/>
+  <text x="440" y="29" text-anchor="middle" font-size="14" fill="#1f2328">prompt x</text>
+  <text x="440" y="45" text-anchor="middle" font-size="11" fill="#57606a">同一 prompt 采 G=4 条</text>
+  <line x1="440" y1="52" x2="440" y2="76" stroke="#57606a" stroke-width="1.5" marker-end="url(#m9d)"/>
+  <rect x="40" y="78" width="280" height="36" rx="5" fill="#eef6ff" stroke="#0969da"/><text x="180" y="101" text-anchor="middle" font-size="12" fill="#1f2328">回答 1　r = 2</text>
+  <rect x="40" y="132" width="280" height="36" rx="5" fill="#eef6ff" stroke="#0969da"/><text x="180" y="155" text-anchor="middle" font-size="12" fill="#1f2328">回答 2　r = 1</text>
+  <rect x="40" y="186" width="280" height="36" rx="5" fill="#fff5f5" stroke="#cf222e"/><text x="180" y="209" text-anchor="middle" font-size="12" fill="#1f2328">回答 3　r = −1</text>
+  <rect x="40" y="240" width="280" height="36" rx="5" fill="#fff5f5" stroke="#cf222e"/><text x="180" y="263" text-anchor="middle" font-size="12" fill="#1f2328">回答 4　r = 0</text>
+  <line x1="470" y1="78" x2="470" y2="276" stroke="#57606a" stroke-width="1" stroke-dasharray="4 3"/>
+  <text x="470" y="72" text-anchor="middle" font-size="11" fill="#57606a">0（组平均线）</text>
+  <rect x="470" y="87" width="74" height="18" fill="#1a7f37"/><text x="552" y="101" font-size="11" fill="#1a7f37">A ≈ +1.34</text>
+  <rect x="470" y="141" width="25" height="18" fill="#1a7f37"/><text x="503" y="155" font-size="11" fill="#1a7f37">+0.45</text>
+  <rect x="396" y="195" width="74" height="18" fill="#cf222e"/><text x="384" y="209" text-anchor="end" font-size="11" fill="#cf222e">−1.34</text>
+  <rect x="445" y="249" width="25" height="18" fill="#cf222e"/><text x="437" y="263" text-anchor="end" font-size="11" fill="#cf222e">−0.45</text>
+  <rect x="612" y="78" width="254" height="170" rx="6" fill="#f6f8fa" stroke="#57606a"/>
+  <text x="624" y="102" font-size="12" fill="#1f2328">组内统计：</text>
+  <text x="624" y="122" font-size="12" fill="#1f2328">r̄ = (2+1−1+0)/4 = 0.5</text>
+  <text x="624" y="142" font-size="12" fill="#1f2328">σ̂ ≈ 1.12</text>
+  <text x="624" y="172" font-size="12" fill="#1f2328">A_i = (r_i − r̄)/(σ̂ + ε)</text>
+  <text x="624" y="202" font-size="12" fill="#1a7f37">A &gt; 0：高于组平均 → 推高</text>
+  <text x="624" y="222" font-size="12" fill="#cf222e">A &lt; 0：低于组平均 → 压低</text>
+  <text x="624" y="242" font-size="11" fill="#57606a">除以 σ̂：统一不同打分尺度</text>
+</svg>
+<figcaption>GRPO 组内 z-score：同一 prompt 采 4 条打分，用组内均值当基线、标准差当尺度；绿色条 = 高于平均（正优势，推高概率），红色条 = 低于平均（负优势，压低）。</figcaption>
+</figure>
+<p><strong>完整损失</strong>：GRPO 与 PPO 用同一个 clip 框架，只是优势换成组内 z-score、且没有价值网络项：</p>
+$$\mathcal{L}_{\mathrm{GRPO}} = \mathbb{E}\Big[\min\big(\rho_i A_i,\ \operatorname{clip}(\rho_i,1-\varepsilon,1+\varepsilon)\,A_i\big)\Big]$$
+<p>其中 $\rho_i=\pi_\theta(y_i\mid x)/\pi_{old}(y_i\mid x)$ 与 PPO 相同。还有一个极端情况值得注意：如果一组的 G 条回答全部同分（比如简单题全员满分），$A_i=0$，这一组不产生任何学习信号——这正是 9.6 里 DAPO"动态采样跳过简单组"要解决的问题。</p>
 <h3>9.6 PPO 家族变体</h3>
 <table>
 <thead><tr><th>算法</th><th>来源</th><th>有无 critic</th><th>核心差异</th></tr></thead>
@@ -1070,6 +1616,17 @@ $$A_i = \frac{r_i - \bar r}{\hat\sigma_r + \varepsilon}, \qquad \bar r = \frac1G
 </tbody>
 </table>
 <p>CISPO 是 MiniMind 的默认 loss_type：只裁上界（<code>epsilon_high=5.0</code>）防 ratio 爆炸，不裁下界让策略自由降低坏回答概率。</p>
+<p><strong>为什么有这么多变体（两个旋钮）</strong>：回到 9.3 的结论——所有 RL 算法差异只剩两处：<strong>旋钮一：优势 A 的基线从哪来</strong>（Critic 预测 / 贪心基线 / leave-one-out / 组内 z-score）；<strong>旋钮二：更新幅度怎么限</strong>（对称裁剪 / 只裁上界 / 序列级裁剪 / KL 惩罚）。逐行看：</p>
+<ul>
+<li><strong>PPO-clip</strong>：基线来自 Critic（GAE），ρ 上下对称裁剪 1±0.2。经典款，四模型最重。</li>
+<li><strong>ReMax</strong>：无 critic。用<strong>贪心解码</strong>（模型自己最可能生成的那条）的奖励当基线——贪心输出是确定性的，减掉它能去掉大部分方差，等于花一次贪心解码换掉整个价值网络。</li>
+<li><strong>RLOO</strong>：无 critic。采 G 条，算第 i 条的优势时用<strong>其余 G−1 条的平均</strong>做基线（leave-one-out，留一法），数学上无偏，方差比 GRPO 的自比更小。</li>
+<li><strong>GRPO</strong>：无 critic。用含自己在内的 G 条做 z-score $(r-\bar r)/\hat\sigma_r$，DeepSeekMath 提出，R1 沿用。</li>
+<li><strong>DAPO</strong>：GRPO 改进。只裁上界不裁下界（坏回答概率允许一步降到底，快速摆脱低分路线）+ <strong>动态采样</strong>：跳过全员满分 / 全员零分这类没有学习信号的组（9.5 末尾提过 $A_i=0$ 的极端情况）。</li>
+<li><strong>CISPO</strong>：MiniMind 默认。同样只裁上界防 ρ 爆炸，但把 ratio 当系数直接乘在 log 概率上，避免对称裁剪在某些区域把梯度"裁没"。</li>
+<li><strong>GSPO</strong>：把逐 token 裁剪改成<strong>序列级</strong> ratio——语言模型的奖励是整段回答给的，逐 token 各自裁剪会造成 token 之间更新不一致。</li>
+</ul>
+<p>落地时这些变体大多只是 <code>train_grpo.py</code> / <code>rollout_engine.py</code> 里一个 <code>loss_type</code> 参数的差别，第 10 章展开代码时会看到同一个训练循环如何切换它们。</p>
 </section>
 
 <section id="ch10">
@@ -1116,6 +1673,57 @@ per_token_loss = -(clamped_ratio * advantages * per_token_logps - beta * per_tok
 <p><strong>KL 的 k3 估计</strong>。令 $d_t = \log\pi_{\mathrm{ref}}(y_t\mid x,y_{&lt;t}) - \log\pi_\theta(y_t\mid x,y_{&lt;t})$，则每个 token 的 KL 惩罚用：</p>
 $$\widehat{\mathrm{KL}}_t = \exp(d_t) - d_t - 1$$
 <p>k3 估计恒非负（因为 $e^z \ge z+1$）且低方差，是 GRPO 里常用的稳定 KL 惩罚。当新旧 logprob 相等时 $d_t=0$、KL=0；偏离越远惩罚增长越快（指数项主导）。</p>
+<h4>10.3 补：同步 Rollout 闭环图</h4>
+<p>把 ①②③④ 四步流水线连起来看，就是一个"采样 → 打分 → 算优势 → 更新 → 同步权重"的闭环。因为每一步都等上一步彻底走完才继续，所以叫<strong>同步（on-policy 最严格）</strong>：</p>
+<figure>
+<svg viewBox="0 0 860 810" style="max-width:820px; width:100%; height:auto;" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="同步 Rollout 闭环示意图">
+  <defs>
+    <marker id="mS1a" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 z" fill="#57606a"/></marker>
+  </defs>
+  <rect x="320" y="14" width="260" height="48" rx="6" fill="#eef6ff" stroke="#0969da"/>
+  <text x="450" y="42" text-anchor="middle" font-size="14" fill="#1f2328">prompt 数据集（一批）</text>
+  <line x1="450" y1="62" x2="450" y2="86" stroke="#57606a" stroke-width="1.5" marker-end="url(#mS1a)"/>
+  <rect x="290" y="90" width="320" height="172" rx="8" fill="#f6f8fa" stroke="#57606a" stroke-dasharray="5 3"/>
+  <text x="450" y="112" text-anchor="middle" font-size="13" fill="#57606a">Rollout 引擎（可插拔）</text>
+  <rect x="308" y="120" width="284" height="58" rx="6" fill="#eef6ff" stroke="#0969da"/>
+  <text x="450" y="142" text-anchor="middle" font-size="13" fill="#1f2328">TorchRolloutEngine（同进程）</text>
+  <text x="450" y="161" text-anchor="middle" font-size="11" fill="#57606a">轻量：跟随训练进程内联采样</text>
+  <rect x="308" y="190" width="284" height="58" rx="6" fill="#eef6ff" stroke="#0969da"/>
+  <text x="450" y="212" text-anchor="middle" font-size="13" fill="#1f2328">SGLangRolloutEngine（HTTP 服务）</text>
+  <text x="450" y="231" text-anchor="middle" font-size="11" fill="#57606a">独立进程：高吞吐 continuous batching</text>
+  <line x1="450" y1="262" x2="450" y2="284" stroke="#57606a" stroke-width="1.5" marker-end="url(#mS1a)"/>
+  <rect x="310" y="288" width="280" height="58" rx="6" fill="#eef6ff" stroke="#0969da"/>
+  <text x="450" y="309" text-anchor="middle" font-size="13" fill="#1f2328">RolloutResult</text>
+  <text x="450" y="328" text-anchor="middle" font-size="11" fill="#57606a">completion / old_logp / mask</text>
+  <line x1="450" y1="346" x2="450" y2="372" stroke="#57606a" stroke-width="1.5" marker-end="url(#mS1a)"/>
+  <rect x="310" y="376" width="280" height="56" rx="6" fill="#eef6ff" stroke="#0969da"/>
+  <text x="450" y="399" text-anchor="middle" font-size="13" fill="#1f2328">Reward 打分</text>
+  <text x="450" y="418" text-anchor="middle" font-size="11" fill="#57606a">规则分（长度/思考/重复）+ RM 分</text>
+  <line x1="450" y1="432" x2="450" y2="456" stroke="#57606a" stroke-width="1.5" marker-end="url(#mS1a)"/>
+  <rect x="310" y="460" width="280" height="56" rx="6" fill="#eef6ff" stroke="#0969da"/>
+  <text x="450" y="483" text-anchor="middle" font-size="13" fill="#1f2328">advantage A_i（组内标准化）</text>
+  <text x="450" y="502" text-anchor="middle" font-size="11" fill="#57606a">同一 prompt 一组：(r_i − r̄) / σ̂</text>
+  <line x1="450" y1="516" x2="450" y2="540" stroke="#57606a" stroke-width="1.5" marker-end="url(#mS1a)"/>
+  <rect x="310" y="544" width="280" height="72" rx="6" fill="#fff8c5" stroke="#d4a72c"/>
+  <text x="450" y="566" text-anchor="middle" font-size="13" fill="#1f2328">loss = clip(ratio)·A − β·KL</text>
+  <text x="450" y="588" text-anchor="middle" font-size="11" fill="#5c4400">输入：A / old_logp / new_logp / ref_logp</text>
+  <text x="450" y="605" text-anchor="middle" font-size="11" fill="#5c4400">A 决定方向与力度，clip 踩刹车，KL 拉缰绳</text>
+  <line x1="450" y1="616" x2="450" y2="640" stroke="#57606a" stroke-width="1.5" marker-end="url(#mS1a)"/>
+  <rect x="310" y="644" width="280" height="54" rx="6" fill="#f6f8fa" stroke="#57606a"/>
+  <text x="450" y="675" text-anchor="middle" font-size="13" fill="#1f2328">optimizer.step（更新参数）</text>
+  <line x1="450" y1="698" x2="450" y2="722" stroke="#57606a" stroke-width="1.5" marker-end="url(#mS1a)"/>
+  <rect x="310" y="726" width="280" height="56" rx="6" fill="#eef6ff" stroke="#0969da"/>
+  <text x="450" y="749" text-anchor="middle" font-size="13" fill="#1f2328">Actor 策略 π_θ（唯一被训练）</text>
+  <text x="450" y="768" text-anchor="middle" font-size="11" fill="#57606a">更新后立即把新权重同步回引擎</text>
+  <rect x="30" y="460" width="240" height="56" rx="6" fill="#fff8c5" stroke="#d4a72c"/>
+  <text x="150" y="483" text-anchor="middle" font-size="13" fill="#1f2328">Reference π_ref（冻结）</text>
+  <text x="150" y="502" text-anchor="middle" font-size="11" fill="#5c4400">只算 ref_logp，永不更新</text>
+  <text x="150" y="540" text-anchor="middle" font-size="11" fill="#57606a">ref_logp → loss（KL 基线）</text>
+  <polyline points="590,754 730,754 730,220 614,220" fill="none" stroke="#0969da" stroke-width="2" stroke-dasharray="7 4" marker-end="url(#mS1a)"/>
+  <text x="744" y="500" transform="rotate(90 744 500)" text-anchor="middle" font-size="12" fill="#0969da">update_policy：同步新权重回引擎，再进入下一批（循环）</text>
+</svg>
+<figcaption>同步 Rollout 闭环：prompt → 引擎采样（Torch 同进程或 SGLang HTTP）→ RolloutResult → Reward 打分 → 组内 advantage → loss（clip·A − β·KL，输入含 old/new/ref 三份 logp）→ optimizer.step → Actor 更新，最后 update_policy 把新权重同步回引擎。Reference 冻结，只提供 ref_logp 当 KL 基线。</figcaption>
+</figure>
 <h3>10.4 PPO 与 GRPO 参数对比</h3>
 <table>
 <thead><tr><th>参数</th><th>PPO</th><th>GRPO</th></tr></thead>
@@ -1148,6 +1756,38 @@ $$\widehat{\mathrm{KL}}_t = \exp(d_t) - d_t - 1$$
 </tbody>
 </table>
 <p><strong>staleness（陈旧性）是异步的核心 tradeoff</strong>：服务器权重永远比训练进程"旧一点"，梯度方向滞后。同步间隔越大吞吐越高但越不稳。</p>
+<h4>10.6 补：异步 Rollout 架构图（verl 的做法）</h4>
+<p>把 10.6 的对照画成架构图，就是"三个 worker 组 + 一个解耦缓冲区"：采样端永不阻塞训练端，代价是训练吃到的样本可能是旧策略采的（off-policy）：</p>
+<figure>
+<svg viewBox="0 0 920 230" style="max-width:900px; width:100%; height:auto;" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="异步 Rollout 三 worker 架构图">
+  <defs>
+    <marker id="mS2a" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 z" fill="#57606a"/></marker>
+  </defs>
+  <polyline points="765,44 765,24 155,24 155,44" fill="none" stroke="#0969da" stroke-width="2" stroke-dasharray="7 4" marker-end="url(#mS2a)"/>
+  <text x="460" y="18" text-anchor="middle" font-size="11" fill="#0969da">异步推送新权重（滞后 ⇒ off-policy）</text>
+  <rect x="40" y="44" width="230" height="120" rx="8" fill="#f6f8fa" stroke="#57606a" stroke-dasharray="5 3"/>
+  <text x="155" y="66" text-anchor="middle" font-size="12" fill="#57606a">Rollout Workers（vLLM / SGLang）</text>
+  <rect x="58" y="80" width="194" height="60" rx="6" fill="#eef6ff" stroke="#0969da"/>
+  <text x="155" y="106" text-anchor="middle" font-size="13" fill="#1f2328">持续采样</text>
+  <text x="155" y="126" text-anchor="middle" font-size="11" fill="#57606a">一批接一批，不等训练</text>
+  <rect x="345" y="44" width="230" height="120" rx="8" fill="#fff8c5" stroke="#d4a72c" stroke-dasharray="5 3"/>
+  <text x="460" y="66" text-anchor="middle" font-size="12" fill="#5c4400">Rollout Buffer（解耦缓冲区）</text>
+  <rect x="363" y="80" width="194" height="60" rx="6" fill="#fff8c5" stroke="#d4a72c"/>
+  <text x="460" y="106" text-anchor="middle" font-size="13" fill="#1f2328">轨迹队列</text>
+  <text x="460" y="126" text-anchor="middle" font-size="11" fill="#5c4400">异步系统的枢纽</text>
+  <rect x="650" y="44" width="230" height="120" rx="8" fill="#f6f8fa" stroke="#57606a" stroke-dasharray="5 3"/>
+  <text x="765" y="66" text-anchor="middle" font-size="12" fill="#57606a">Trainer Workers</text>
+  <rect x="668" y="80" width="194" height="60" rx="6" fill="#eef6ff" stroke="#0969da"/>
+  <text x="765" y="106" text-anchor="middle" font-size="13" fill="#1f2328">持续更新 Actor</text>
+  <text x="765" y="126" text-anchor="middle" font-size="11" fill="#57606a">只吃缓冲区的样本</text>
+  <line x1="256" y1="110" x2="359" y2="110" stroke="#57606a" stroke-width="1.5" marker-end="url(#mS2a)"/>
+  <line x1="561" y1="110" x2="664" y2="110" stroke="#57606a" stroke-width="1.5" marker-end="url(#mS2a)"/>
+  <text x="155" y="190" text-anchor="middle" font-size="11" fill="#57606a">① 源源不断产出轨迹</text>
+  <text x="460" y="190" text-anchor="middle" font-size="11" fill="#57606a">② 取样本训练</text>
+  <text x="765" y="190" text-anchor="middle" font-size="11" fill="#57606a">③ 权重同步（异步、可能滞后）</text>
+</svg>
+<figcaption>异步 Rollout：Rollout Workers（vLLM / SGLang）持续采样 → 轨迹进 Rollout Buffer → Trainer Workers 取样本训练 → 新权重异步推回采样端。黄色 Buffer 是解耦枢纽；回传虚线表示权重总比训练"旧一点"，这就是 staleness。</figcaption>
+</figure>
 <p>vLLM 引擎通过 OpenAI 兼容 API（<code>/v1/completions</code>，<code>logprobs: 1</code>）返回回答文本 + 每 token 对数概率。与 sglang 的差异：vLLM 返回文本 <code>text</code> + <code>token_logprobs</code>，需自己 <code>tokenizer.encode</code> 回 ids；<code>token_logprobs[0]</code> 可能为 None。</p>
 <h3>10.7 生产级异步 RL：verl + vLLM</h3>
 <p>手写引擎用于理解机制，生产用 <strong>verl</strong>（Volcano Engine Reinforcement Learning，字节开源）。verl 把双进程架构工业化成 Ray actor 集群：actor worker（FSDP 训练）、rollout worker（vLLM 持续生成，异步核心）、ref worker（算 KL）、reward worker。权重同步由 checkpoint + 自动重载，你只写配置。</p>
@@ -1201,6 +1841,41 @@ $$\tau = (x, y), \quad r = r(x,y) \qquad\Longrightarrow\qquad \tau = (a_0, o_0, 
             messages.append({"role": "tool", "content": json.dumps(result)})  # ④ 回填结果
         # ⑤ 下一轮：带着工具结果继续生成</code></pre>
 <p>一条样本 = 多轮拼接序列，mask 只覆盖模型生成的 token（<code>tool_response</code> 注入段 mask=0 不参与 loss）。</p>
+<h4>11.2 补：Agentic 多轮 Rollout 循环图</h4>
+<p>上面 <code>rollout_single</code> 的循环抽象成图就是：模型生成 → 解析工具调用 → 执行工具 → 回填结果 → 再生成，直到不再调用工具才打分。工具执行器就是 Agentic RL 的"环境"：</p>
+<figure>
+<svg viewBox="0 0 940 200" style="max-width:920px; width:100%; height:auto;" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Agentic 多轮 Rollout 循环图">
+  <defs>
+    <marker id="mS3a" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 z" fill="#57606a"/></marker>
+  </defs>
+  <polyline points="570,70 570,24 405,24 405,66" fill="none" stroke="#0969da" stroke-width="2" stroke-dasharray="7 4" marker-end="url(#mS3a)"/>
+  <text x="487" y="18" text-anchor="middle" font-size="11" fill="#0969da">继续多轮（带工具结果再生成）</text>
+  <rect x="15" y="70" width="110" height="54" rx="6" fill="#eef6ff" stroke="#0969da"/>
+  <text x="70" y="97" text-anchor="middle" font-size="13" fill="#1f2328">prompt</text>
+  <text x="70" y="115" text-anchor="middle" font-size="11" fill="#57606a">（含 system + tools）</text>
+  <rect x="150" y="70" width="140" height="54" rx="6" fill="#eef6ff" stroke="#0969da"/>
+  <text x="220" y="97" text-anchor="middle" font-size="13" fill="#1f2328">policy 生成</text>
+  <text x="220" y="115" text-anchor="middle" font-size="11" fill="#57606a">turn k（文本 / think）</text>
+  <rect x="330" y="70" width="150" height="54" rx="6" fill="#fff8c5" stroke="#d4a72c"/>
+  <text x="405" y="97" text-anchor="middle" font-size="13" fill="#1f2328">执行工具</text>
+  <text x="405" y="115" text-anchor="middle" font-size="11" fill="#5c4400">沙盒环境（模拟数据表）</text>
+  <rect x="520" y="70" width="150" height="54" rx="6" fill="#eef6ff" stroke="#0969da"/>
+  <text x="595" y="97" text-anchor="middle" font-size="13" fill="#1f2328">policy 再生成</text>
+  <text x="595" y="115" text-anchor="middle" font-size="11" fill="#57606a">turn k+1（带上工具结果）</text>
+  <rect x="710" y="70" width="210" height="54" rx="6" fill="#eef6ff" stroke="#0969da"/>
+  <text x="815" y="97" text-anchor="middle" font-size="13" fill="#1f2328">打分（RM / RLVR）</text>
+  <text x="815" y="115" text-anchor="middle" font-size="11" fill="#57606a">无 tool_call 才终止，整条轨迹打分</text>
+  <line x1="125" y1="97" x2="148" y2="97" stroke="#57606a" stroke-width="1.5" marker-end="url(#mS3a)"/>
+  <line x1="290" y1="97" x2="328" y2="97" stroke="#57606a" stroke-width="1.5" marker-end="url(#mS3a)"/>
+  <line x1="480" y1="97" x2="518" y2="97" stroke="#57606a" stroke-width="1.5" marker-end="url(#mS3a)"/>
+  <line x1="670" y1="97" x2="708" y2="97" stroke="#57606a" stroke-width="1.5" marker-end="url(#mS3a)"/>
+  <text x="310" y="146" text-anchor="middle" font-size="11" fill="#57606a">解析 tool_call</text>
+  <text x="500" y="146" text-anchor="middle" font-size="11" fill="#57606a">tool_response 回填</text>
+  <text x="690" y="146" text-anchor="middle" font-size="11" fill="#57606a">终止</text>
+  <text x="70" y="175" text-anchor="middle" font-size="11" fill="#57606a">多轮拼接成一条 trajectory：模型消息 + 工具消息交替</text>
+</svg>
+<figcaption>Agentic 多轮 Rollout：policy 生成 → 解析 tool_call → 工具沙盒执行 → tool_response 回填 → policy 再生成（虚线循环），直到不再调用工具才走到打分（RM / RLVR）。一整条"模型消息 + 工具消息"交替的轨迹才是 RL 的一条样本。</figcaption>
+</figure>
 <h3>11.3 奖励函数：格式 &lt; 工具对齐 &lt; GT 答案</h3>
 <pre><code class="language-python">tool_gap = abs(valid_call_count - len(gt)) + max(0, len(tool_calls) - valid_call_count)
 reward += 0.5 if tool_gap == 0 else -0.5 * tool_gap    # 工具调用数量与 GT 对齐
@@ -1373,6 +2048,119 @@ ollama run jingyaogong/minimind-3</code></pre>
 <tr><td>RLVR</td><td>DeepSeek-R1 (Guo et al., 2025)</td><td>可验证奖励驱动 reasoning RL</td></tr>
 <tr><td>DAPO</td><td>ByteDance Seed (Yu et al., 2025)</td><td>GRPO 的 clip-higher / 动态采样修正</td></tr>
 <tr><td>YaRN</td><td>Peng et al., 2023</td><td>RoPE 的 NTK-by-parts 长度外推</td></tr>
+</tbody>
+</table>
+</section>
+
+<section id="datasets">
+<h2>附录：常见数据集地图</h2>
+<p>从 SFT 到 Agentic RL，把各训练阶段最常出现的数据集与评测基准按用途分组速查。教学可用度：<strong>⭐</strong> 64M 教学模型可直接跑；<strong>◍</strong> 抽小样使用或仅做评测；<strong>○</strong> 了解即可（规模大 / 面向大模型）。上手顺序：先用 MiniMind 自带数据跑通全链路（见 B.7），再引入外部数据做对照实验。</p>
+
+<h3>B.1 SFT 指令微调数据</h3>
+<p>格式本质：<code>{instruction, output}</code> 或 <code>{role, content}</code> 多轮对话，让模型学会"听指令"。数据来源分三类：人工撰写、ChatGPT/GPT-4 合成、真实对话。</p>
+<table>
+<thead><tr><th>数据集</th><th>内容与格式</th><th>典型用途</th><th>教学可用度</th></tr></thead>
+<tbody>
+<tr><td>Alpaca · Stanford 2023 · 52k</td><td>text-davinci-003 生成，<code>{instruction, input, output}</code></td><td>SFT 入门标准数据</td><td>⭐</td></tr>
+<tr><td>Alpaca-GPT4 · 2023 · 49k</td><td>GPT-4 生成，指令质量更高</td><td>SFT</td><td>⭐</td></tr>
+<tr><td>Dolly v2 · Databricks 2023 · 15k</td><td>纯人工撰写，覆盖 7 类任务</td><td>干净的人工对照数据</td><td>⭐</td></tr>
+<tr><td>ShareGPT · 2023 · 数万轮</td><td>真实用户-助手多轮对话</td><td>多轮对话模板学习</td><td>◍</td></tr>
+<tr><td>OASST1 · Open Assistant 2023 · 万级对话树</td><td>多语言人工对话 + 人类质量标注</td><td>SFT / RM 均可</td><td>◍</td></tr>
+<tr><td>WizardLM 70k · 2023 · 70k</td><td>Evol-Instruct 把指令自动演化变难</td><td>理解"指令演化"思想</td><td>◍</td></tr>
+<tr><td>OpenOrca · 2023 · 100k / 4.2M</td><td>FLAN 采样 + GPT-4/3.5 补解释轨迹</td><td>大规模 SFT（给大模型）</td><td>○</td></tr>
+<tr><td>Magpie · 2024 · ~1M</td><td>让 Qwen 自问自答得到的高质量对话</td><td>大规模中文 SFT 来源</td><td>◍</td></tr>
+<tr><td>FLAN · Google 2022 · 1.8k 任务</td><td>把各类 NLP 任务模板化</td><td>指令微调范式的起源</td><td>◍</td></tr>
+<tr><td>BELLE / Firefly / COIG · 中文</td><td>50 万 / 115 万 / 数十万条中文指令</td><td>中文 SFT 数据</td><td>◍</td></tr>
+</tbody>
+</table>
+
+<h3>B.2 偏好对齐（RM / DPO）数据</h3>
+<p>格式本质：同一 prompt 给两个回答——<code>chosen</code>（选中）和 <code>rejected</code>（拒绝），来源可以是人类标注或 AI 打分。</p>
+<table>
+<thead><tr><th>数据集</th><th>内容与格式</th><th>典型用途</th><th>教学可用度</th></tr></thead>
+<tbody>
+<tr><td>Anthropic HH-RLHF · 2022 · ~160k</td><td>helpful + harmless 两类偏好对</td><td>DPO / RM 的标准实验数据</td><td>⭐</td></tr>
+<tr><td>PKU-SafeRLHF · 北大 2023 · 30 万+</td><td>带安全元标签的对比数据，常用 SafeRLHF-10K 子集</td><td>安全对齐研究</td><td>◍</td></tr>
+<tr><td>UltraFeedback · 2024 · 64k×4=256k 回答</td><td>GPT-4 按四维打分；<code>ultrafeedback_binarized</code> 直接给 chosen/rejected</td><td>RLAIF 教学首选</td><td>⭐</td></tr>
+<tr><td>SHP · Stanford 2023 · 384k</td><td>Reddit 社区投票构造的有用性偏好</td><td>RM / DPO</td><td>◍</td></tr>
+<tr><td>Stack Exchange Preferences</td><td>社区 upvote 票差构造的偏好对，量大、噪声高</td><td>DPO 补充数据</td><td>◍</td></tr>
+<tr><td>Orca DPO Pairs / DPO-mixed</td><td>LLaMA-Factory 内置的现成偏好集</td><td>直接跑 minimind DPO</td><td>⭐</td></tr>
+<tr><td>RewardBench · AllenAI 2024 · ~4k</td><td>奖励模型评测题（不是训练数据）</td><td>评测自己训的 RM</td><td>◍</td></tr>
+</tbody>
+</table>
+
+<h3>B.3 数学推理 RL（RLVR）数据</h3>
+<p>这类题答案可自动比对，因此奖励用 rule-based verifier，不需要奖励模型——这就是 GRPO / DAPO 的 RLVR 训练主战场。</p>
+<table>
+<thead><tr><th>数据集</th><th>内容与格式</th><th>典型用途</th><th>教学可用度</th></tr></thead>
+<tbody>
+<tr><td>GSM8K · OpenAI 2021 · 7.5k / 1.3k</td><td>小学应用题，question + 分步 answer</td><td>RLVR 训练 + 评测入门</td><td>⭐</td></tr>
+<tr><td>MATH · Hendrycks 2021 · 12.5k</td><td>竞赛级数学，7 大科目；MATH500 为 500 题评测子集</td><td>抽小样训练 / 评测</td><td>◍</td></tr>
+<tr><td>AIME · 1983–2024 · 每年 30 题</td><td>美国数学邀请赛真题</td><td>高端推理 RL 训练与评测</td><td>◍</td></tr>
+<tr><td>AMC · 历年</td><td>美国数学竞赛真题，难度低于 AIME</td><td>推理评测</td><td>◍</td></tr>
+<tr><td>MetaMathQA · 2023 · 395k</td><td>对 GSM8K/MATH 做自验证、重写等增强</td><td>数学 SFT（先学解题格式）</td><td>◍</td></tr>
+<tr><td>NuminaMath-CoT · AI-MO 2024 · 860k</td><td>竞赛题 + 题解，目前最大开源数学数据</td><td>数学 SFT（抽子集）</td><td>○</td></tr>
+<tr><td>DAPO-Math-17k · 字节 2025 · ~17k</td><td>精选竞赛数学 prompt（open-r1 有 processed 镜像）</td><td>用真开源数据跑 DAPO / GRPO</td><td>⭐</td></tr>
+<tr><td>OlympiadBench / OMNI-MATH / Minerva</td><td>奥赛、分级竞赛、STEM 数学（千~万级）</td><td>补充评测集</td><td>◍</td></tr>
+<tr><td>TAL-SCQ · 学而思</td><td>中文数学竞赛题</td><td>中文数学评测</td><td>◍</td></tr>
+</tbody>
+</table>
+
+<h3>B.4 代码与真实工程数据</h3>
+<p>代码 RL 的奖励可以"测试用例执行通过"作为 rule-based 信号；SWE-bench 一类把难度推向"修真实 issue"。</p>
+<table>
+<thead><tr><th>数据集</th><th>内容与格式</th><th>典型用途</th><th>教学可用度</th></tr></thead>
+<tbody>
+<tr><td>HumanEval · OpenAI 2021 · 164</td><td>函数级代码生成，pass@k</td><td>代码生成评测</td><td>◍</td></tr>
+<tr><td>MBPP · 2021 · 974</td><td>基础编程题（python）</td><td>代码生成评测</td><td>◍</td></tr>
+<tr><td>LiveCodeBench · 2024</td><td>滚动发布新题防污染</td><td>代码评测</td><td>◍</td></tr>
+<tr><td>SWE-bench / Verified · 2023/2024 · 2,294 / 500</td><td>真实 GitHub issue → PR 修复任务</td><td>agent 真实工程能力评测</td><td>◍</td></tr>
+<tr><td>The Stack v2 / StarCoderData</td><td>600+ 语言、千亿级 token 代码语料</td><td>代码预训练（64M 用不上）</td><td>○</td></tr>
+</tbody>
+</table>
+
+<h3>B.5 Agentic / 工具调用数据</h3>
+<p>Agentic RL 的公开训练集很少，主流做法是"自造轨迹"：prompt → 工具调用 → 工具结果 → 最终回答，奖励来自工具返回或 ground truth。</p>
+<table>
+<thead><tr><th>数据集</th><th>内容与格式</th><th>典型用途</th><th>教学可用度</th></tr></thead>
+<tbody>
+<tr><td>ToolBench · ToolLLM 2023 · 16,464 个 API</td><td>49 类真实 REST API + 12,657 条指令</td><td>工具调用训练与评测</td><td>◍</td></tr>
+<tr><td>Gorilla APIBench · 2023 · ~1.6k</td><td>HuggingFace / TorchHub / TensorHub API 检索调用</td><td>工具调用入门</td><td>◍</td></tr>
+<tr><td>BFCL · 伯克利 2023–</td><td>函数调用评测（多语言/多轮/边界情况）</td><td>评测工具调用</td><td>◍</td></tr>
+<tr><td>tau-bench · Sierra 2024 · ~1,750 场景</td><td>零售/航空客服的 agent-用户-工具多轮对话</td><td>agent 可靠性评测</td><td>◍</td></tr>
+<tr><td>WebArena · 2023 · 812 任务</td><td>自建电商/论坛/新闻网页操作</td><td>网页 agent 评测</td><td>○</td></tr>
+<tr><td>OSWorld · 2024 · 369 任务</td><td>真实操作系统 GUI 自动化</td><td>GUI agent 评测</td><td>○</td></tr>
+<tr><td>AgentBench · 2023 · 8 环境</td><td>操作系统/数据库/游戏等综合 agent 任务</td><td>综合评测</td><td>○</td></tr>
+</tbody>
+</table>
+
+<h3>B.6 通用评测基准</h3>
+<p>这些是"考卷"而非训练数据。64M 模型刷不动大基准，主要用来理解评测协议，或在 TruthfulQA / IFEval 这类小集上做流程演示。</p>
+<table>
+<thead><tr><th>数据集</th><th>内容与格式</th><th>典型用途</th><th>教学可用度</th></tr></thead>
+<tbody>
+<tr><td>MMLU / MMLU-Pro</td><td>57 学科约 1.6 万题 / 1.2 万+ 推理题</td><td>知识广度 / 推理标杆</td><td>○</td></tr>
+<tr><td>C-Eval / CMMLU · 中文</td><td>13,948 题 52 科 / 11,528 题 67 科</td><td>中文知识评测</td><td>○</td></tr>
+<tr><td>AGIEval · 2023 · ~8k</td><td>司法/公务员等人类考试题</td><td>人类考试评测</td><td>○</td></tr>
+<tr><td>HellaSwag / WinoGrande / ARC / BBH</td><td>常识与推理题</td><td>基础能力评测</td><td>○</td></tr>
+<tr><td>TruthfulQA · 817</td><td>真实性对抗题</td><td>防幻觉基线</td><td>◍</td></tr>
+<tr><td>MT-Bench / AlpacaEval v2 / Arena-Hard</td><td>80 / 805 / 500 条，LLM 当裁判</td><td>对话质量评测</td><td>◍</td></tr>
+<tr><td>IFEval · 500</td><td>指令遵循，可自动判分</td><td>"格式 RL"的现成评测</td><td>◍</td></tr>
+<tr><td>LongBench / RULER</td><td>21 个中英长文本任务 / 13 类合成长上下文</td><td>长文本能力评测（对应第 15 章）</td><td>◍</td></tr>
+</tbody>
+</table>
+
+<h3>B.7 MiniMind 自带数据集</h3>
+<p>仓库 <code>dataset/</code> 下全部为 JSONL，无需联网即可跑通全链路，适合先跑通再对照外部数据。</p>
+<table>
+<thead><tr><th>文件</th><th>规模 / 格式</th><th>训练阶段</th><th>教学可用度</th></tr></thead>
+<tbody>
+<tr><td>pretrain_t2t_mini / pretrain_t2t.jsonl</td><td>1.2GB / 10GB，<code>{text}</code> 文本流</td><td>预训练</td><td>⭐</td></tr>
+<tr><td>sft_t2t_mini / sft_t2t.jsonl</td><td>1.6GB / 14GB，<code>{role, content}</code> 多轮</td><td>SFT</td><td>⭐</td></tr>
+<tr><td>lora_medical.jsonl</td><td>领域指令数据</td><td>LoRA 微调</td><td>⭐</td></tr>
+<tr><td>dpo.jsonl</td><td>53MB，<code>{chosen, rejected}</code></td><td>DPO</td><td>⭐</td></tr>
+<tr><td>rlaif.jsonl</td><td>24MB，只给 prompt，答案训练时生成</td><td>GRPO / RLAIF（配奖励模型）</td><td>⭐</td></tr>
+<tr><td>agent_rl / agent_rl_math.jsonl</td><td>86MB / 18MB，工具调用轨迹 + ground truth</td><td>Agentic RL</td><td>⭐</td></tr>
 </tbody>
 </table>
 </section>
