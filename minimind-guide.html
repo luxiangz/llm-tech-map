@@ -1174,6 +1174,24 @@ $$\mathcal{L}_{\mathrm{RM}}(\phi) = -\mathbb{E}_{(x,y_w,y_l)\sim D}\Big[\log\sig
 <p>带 KL 约束的 RLHF 目标有解析最优解：</p>
 $$\pi^{*}(y \mid x) \propto \pi_{\mathrm{ref}}(y \mid x)\exp\!\big(r(x,y)/\beta\big)$$
 <p><strong>这一步的大白话</strong>：最优回答分布 = 参考模型原来的分布，再乘一个按分数加权的放大因子。某个回答分数高 → $\exp(r/\beta)$ 大 → 它被生成的概率被"放大"；分数低 → 被"缩小"；$\beta$ 越大，指数增长越平缓，模型越不敢偏离参考模型（越保守）。这个式子说明：<strong>"最优策略长什么样"和"分数"之间存在固定换算关系，中间没有需要逐步学习的环节</strong>——这是 DPO 能省掉 RL 循环的根源。</p>
+<p><strong>为什么这个解能"直接写出来"（解析解的来源）</strong>：先看清这是一道什么题——对每个问题 $x$，在"所有可能的回答分布 $\pi$"里挑一个，使下面的目标最大（把期望和 KL 逐项展开写）：</p>
+$$J(\pi) = \sum_y \pi(y\mid x)\,r(x,y) - \beta\sum_y \pi(y\mid x)\log\frac{\pi(y\mid x)}{\pi_{\mathrm{ref}}(y\mid x)}$$
+<p>注意我们是在"概率分布空间"里做优化，约束只有一条（所有回答概率之和为 1），没有"走一步、局面变化、还要递归想后面"的结构——这是有解析解的前提。接着做一个关键的代数整理：把奖励项和 KL 项合并成一个整体。</p>
+$$J(\pi) = -\beta \sum_y \pi(y\mid x)\log\frac{\pi(y\mid x)}{\pi_{\mathrm{ref}}(y\mid x)\,e^{r(x,y)/\beta}}$$
+<p>令 $Q(y)=\pi_{\mathrm{ref}}(y\mid x)\,e^{r(x,y)/\beta}$，$Z(x)=\sum_y Q(y)$（对所有回答求和），再往式子里"加减一个 $\log Z(x)$"，凑成标准 KL 的形状：</p>
+$$J(\pi) = \beta\log Z(x) - \beta\,\mathrm{KL}\Big(\pi(\cdot\mid x)\ \Big\|\ \frac{Q(\cdot)}{Z(x)}\Big)$$
+<p>目标被整理成"一个常数 $\beta\log Z(x)$ 减去 $\pi$ 与目标分布 $Q/Z(x)$ 之间的 KL 距离"。而 KL 有一个著名性质（Gibbs 不等式）：<strong>任何两个分布的 KL ≥ 0，且只有当两个分布完全相等时 KL = 0</strong>。所以：要让 $J$ 最大 → 让 KL 最小 → KL 的最小值 0 是可以"取到"的（把 $\pi$ 设成 $Q/Z(x)$ 就正好为 0）→ 最优解就是 $\pi^{*}(y\mid x)=Q(y)/Z(x)=\pi_{\mathrm{ref}}(y\mid x)\,e^{r(x,y)/\beta}/Z(x)$。整个推导不需要迭代、不需要梯度下降——这就是"解析最优解"。</p>
+<p><strong>用 3 个回答感受加权效果</strong>：假设参考模型给 3 个候选回答各 $\frac13$ 概率，真实奖励 $r=1,2,3$，$\beta=1$：</p>
+<table>
+<thead><tr><th>候选回答</th><th>$\pi_{\mathrm{ref}}$</th><th>奖励 $r$</th><th>权重 $e^{r/\beta}$</th><th>最优概率 $\pi^{*}$</th></tr></thead>
+<tbody>
+<tr><td>回答 1（最差）</td><td>≈0.333</td><td>1</td><td>2.72</td><td>≈0.09</td></tr>
+<tr><td>回答 2（中等）</td><td>≈0.333</td><td>2</td><td>7.39</td><td>≈0.245</td></tr>
+<tr><td>回答 3（最好）</td><td>≈0.333</td><td>3</td><td>20.09</td><td>≈0.665</td></tr>
+</tbody>
+</table>
+<p>分数最高的回答概率被放大到约 67%，最低的缩到约 9%。如果硬把低分回答抬到 50%：奖励确实多一点，但偏离 $\pi_{\mathrm{ref}}$ 的 KL 惩罚会把这部分收益全部吃掉，净效果反而更差——<strong>KL 惩罚就是那个"锚"，保证模型不会为了冲高分而彻底放飞</strong>。</p>
+<p><strong>那 PPO 为什么还要一步步学？</strong>这个公式虽然写出来了，但有两个"理论上很美、工程上不可用"的坑：① 奖励 $r(x,y)$ 是<strong>未知的</strong>——真实偏好藏在人类标注或另一个模型（RM）里，我们只能采样估计它的期望；② $Z(x)$ 要对<strong>所有可能的回答求和</strong>，语言模型的回答空间是天文数字，根本列不完。所以这个解析解不能当"计算器"直接代入使用，它的真正价值是当<strong>推导工具</strong>：DPO 正是拿它反解出 $r$，再代入 8.1 的 BT 消掉 $Z(x)$。另外注意，这套推导把"生成一整段回答"当成<strong>一次动作</strong>（contextual bandit，一次押注整段话）；若改成逐 token 的强化学习，中途奖励与状态转移会引入 Bellman 式的递归依赖，就没有这么干净的闭式解了——这也是逐 token PPO 需要价值网络或采样估计的原因。</p>
 <p><strong>反解 reward</strong>：对上面的式子两边取对数并整理，把藏在 $\exp$ 里的 $r(x,y)$ 单独"钓"出来：</p>
 $$r(x,y) = \beta\log\frac{\pi_\theta(y\mid x)}{\pi_{\mathrm{ref}}(y\mid x)} + \beta\log Z(x)$$
 <p>多出来的 $Z(x)$ 是归一化常数（把右侧变成真正的概率分布所需的"总和"），它<strong>只依赖问题 $x$，不依赖具体回答 $y$</strong>——这个性质马上就会派上用场。</p>
