@@ -1375,6 +1375,16 @@ scaler.scale(loss).backward()</code></pre>
 
 <section id="ch9">
 <h2>第 9 章 强化学习：理论</h2>
+<p>这一章回答一个核心问题：<strong>SFT 之后没有标准答案了，怎么用"打分"继续把模型练得更好？</strong>答案是"让模型自己答、被打分、再按分数调整"（强化学习）。整章是一条主线上的六步，每步都在解决上一步留下的坑，照着顺序走就不会乱：</p>
+<ol>
+<li><strong>先定目标</strong>（9.1）：回答要拿高分，但别偏离 SFT 太远。</li>
+<li><strong>再落角色</strong>（9.2）：Policy 作答、Reference 记原样、Reward 判分，外加一个只在 PPO 里出现的 Critic。</li>
+<li><strong>然后解决"参数怎么改"</strong>（9.3）：策略梯度，一句话是"高分抬、低分压"。</li>
+<li><strong>怎么改得稳、怎么把功劳分到每个 token</strong>（9.4 PPO）：Critic 估"惊喜"，裁剪踩刹车。</li>
+<li><strong>能不能省掉 Critic</strong>（9.5 GRPO）：多答几条互相比较，用组内平均当基准。</li>
+<li><strong>变体一览</strong>（9.6），以及章末附录（9.7）把 KL 怎么算的细节补全。</li>
+</ol>
+<p>遇到 KL、优势、GAE、ratio 这类词先别慌，它们都会在首次出现的那一节用大白话拆开。想先建立整体印象，可以先扫一眼 9.2 那张循环大图，再回到 9.1 从头读。</p>
 <h3>9.1 目标：回答要拿高分，但不能"跑偏"</h3>
 <p>先忘掉公式，说人话。RL 阶段想做的事只有一句：<strong>让模型生成的回答尽量被奖励函数打高分，但同时不能离它 SFT 阶段的样子太远</strong>。写成目标函数是这样：</p>
 $$\max_{\pi}\ \mathbb{E}_{x\sim D,\,y\sim\pi(\cdot\mid x)}\big[r(x,y)\big] - \beta\,\mathrm{KL}\big(\pi(\cdot\mid x)\,\|\,\pi_{\mathrm{ref}}(\cdot\mid x)\big)$$
@@ -1472,36 +1482,8 @@ $$\max_{\pi}\ \mathbb{E}_{x\sim D,\,y\sim\pi(\cdot\mid x)}\big[r(x,y)\big] - \be
 <figcaption>在线 RL 完整循环：prompt → Policy 采样 y（记 old_logp）→ 把完整序列 x+y 同时交给 Reference（算 log π_ref(y|x)，即 ref_logp）、Reward（打分 r）；PPO 另有 Critic（虚线，逐前缀估 V）→ 优势 A = r − 基线（PPO 用 V(s)，GRPO 用组内 z-score）→ loss = clip(ratio)·A − β·KL（ref_logp 提供 KL 基线）→ optimizer 更新 Policy → 回到采样。虚线含义：Critic 是仅 PPO 的可选项、A 是中间计算结果、ref_logp 与 V(s) 是辅助信号。</figcaption>
 </figure>
 <p><strong>Reference 到底"吃"什么进去？</strong>它不止看 prompt，而是把<strong>完整序列（prompt x + 模型生成的回答 y）</strong>一起喂进去，前向一遍后只取"回答位置"上的对数概率，得到 $\log\pi_{ref}(y\mid x)$。prompt 是条件，回答 y 是被评估的对象，两者缺一不可——因为我们要问的是"冻结的 SFT 模型觉得这段回答有多合理"。Policy 自己也算同样一份 $\log\pi_\theta(y\mid x)$，两者相减就是 KL。所以图里那个箭头要理解成：prompt 从上面流进 Policy，回答 y 由 Policy 产出，二者拼成完整序列后才交给 Reference / Reward / Critic。</p>
-<p><strong>Reference 的职责 = 提供 ref_logp 来算 KL 惩罚。KL 具体怎么算？</strong>定义就一句话：按 P 的概率，对 P/Q 的对数求加权平均：</p>
-$$\mathrm{KL}(P\,\|\,Q)=\sum_i P(i)\log\frac{P(i)}{Q(i)}$$
-<p>$P$ 是被平均的对象（乘在外面），$Q$ 是分母（比的是 $P/Q$），所以 KL <strong>不对称</strong>：$\mathrm{KL}(P\|Q)\neq\mathrm{KL}(Q\|P)$。用具体数字走一遍（某题答案分布，P 是策略、Q 是参考模型）：</p>
-<table>
-<thead><tr><th>答案</th><th>$P(i)$（策略 $\pi_\theta$）</th><th>$Q(i)$（参考 $\pi_{ref}$）</th><th>$\log(P/Q)$</th><th>$P(i)\cdot\log(P/Q)$</th></tr></thead>
-<tbody>
-<tr><td>A</td><td>0.40</td><td>0.60</td><td>−0.405</td><td>−0.162</td></tr>
-<tr><td>B</td><td>0.35</td><td>0.25</td><td>+0.336</td><td>+0.118</td></tr>
-<tr><td>C</td><td>0.25</td><td>0.15</td><td>+0.511</td><td>+0.128</td></tr>
-</tbody>
-</table>
-<p>三项相加：$\mathrm{KL}\approx 0.083$（nat）。两个细节：P 比 Q 大的项贡献正（"新模型更看好它"算偏离），P 比 Q 小的项虽为负，但乘的 P 本身就小，拉不低总和——数学上保证 <strong>KL ≥ 0，且 P=Q 时恰为 0</strong>。</p>
-<p><strong>为什么代码里全是"log 概率相减"</strong>：整段回答的概率小到会下溢，但在 log 空间里，除法变减法、连乘变连加：</p>
-$$\log\frac{\pi_\theta(y\mid x)}{\pi_{ref}(y\mid x)}=\log\pi_\theta(y\mid x)-\log\pi_{ref}(y\mid x)=\sum_t\Big(\log\pi_\theta(y_t\mid x,y_{&lt;t})-\log\pi_{ref}(y_t\mid x,y_{&lt;t})\Big)$$
-<p>等号右边每一项正是 8.5 的 <code>logits_to_log_probs</code>（或 GRPO 的 <code>compute_per_token_logps</code>）输出的逐 token 对数概率。所以训练代码里 KL 项通常长这样：</p>
-<pre><code class="language-python"># 两次前向，拿到每条回答每个 token 的 log 概率（参考模型冻结）
-logp_theta = logits_to_log_probs(model(x).logits, y)         # (B, S) 新策略
-with torch.no_grad():
-    logp_ref  = logits_to_log_probs(ref_model(x).logits, y)  # (B, S) 参考模型
-
-kl_token = logp_theta - logp_ref               # (B, S) 逐 token 的 log(π_θ/π_ref)
-# 一条回答的 KL ≈ 在模型采到的 token 上求平均（mask 只统计 assistant 段）
-kl_seq = (kl_token * mask).sum(-1) / mask.sum(-1)            # (B,)
-loss = policy_loss + beta * kl_seq.mean()      # 策略梯度损失 + β·KL 惩罚</code></pre>
-<p><strong>最后一个坎：KL 定义里的"求和"要对所有回答做，可根本算不完</strong>。回看定义 $\mathrm{KL}=\sum_i P(i)\log\frac{P(i)}{Q(i)}$，那个 $\sum_i$ 要遍历"所有可能的回答"——语言模型能生成的话几乎是无穷多，没法一条条列出来。换个写法，KL 其实就是个<strong>期望（长期平均）</strong>：</p>
-$$\mathrm{KL}(\pi_\theta\,\|\,\pi_{ref}) = \mathbb{E}_{y\sim\pi_\theta(\cdot\mid x)}\Big[\log\frac{\pi_\theta(y\mid x)}{\pi_{ref}(y\mid x)}\Big]$$
-<p>读作："从策略模型里随机抽一条回答 $y$，算一下 $\log(\pi_\theta/\pi_{ref})$ 这个值，长期抽下去的平均值就是 KL"。既然抽不完所有，那就<strong>抽几条算几条、取平均</strong>去逼近真值——抽得越多越准，这就是<strong>蒙特卡洛估计</strong>：用"样本平均"代替"全量求和"。</p>
-<p>落地到代码：策略采到哪几条 $y$，就对哪几条分别算 $\log\pi_\theta(y\mid x)$ 和 $\log\pi_{ref}(y\mid x)$，相减再平均，就是 KL 的估计（也就是前面代码里的 <code>kl_seq.mean()</code>）。</p>
-<p>工程上还有个"更稳"的版本叫 <strong>k3</strong>：用 $\widehat{\mathrm{KL}}=\exp(d)-d-1$（其中 $d=\log\pi_{ref}-\log\pi_\theta$）代替直接相减。好处是<strong>恒 ≥0</strong>（因为 $e^d\ge d+1$ 永远成立）、方差更低，训练更平稳；本质仍是"比较两个模型的 log 概率"，只是换了个打分函数。代码见 10.3。</p>
-<p><strong>回到文档里出现过 KL 的三个位置</strong>：DPO 的 <code>dpo_loss</code> 里"减去 ref_logratios"就是<strong>隐式 KL 锚</strong>（被吸收进二分类损失，不单独出现）；PPO/GRPO 目标里的 $-\beta\,\mathrm{KL}$ 是上面代码的<strong>显式惩罚项</strong>（对应 <code>--beta</code>）；而 $\beta$ 越大 = 缰绳越紧。理解这个计算过程后，9.3 的梯度公式、9.4 的 KL 惩罚、10.3 的 k3 代码就都能串起来了。</p>
+<p>（Reference 算出的 ref_logp，会和 Policy 自己算的 logπ_θ 相减，构成 9.1 里"缰绳"的具体实现。KL 到底怎么算，整理到了章末 <a href="#ch9-kl">9.7 附录</a>，急着跟主线可先跳过。）</p>
+<p><strong>主线继续</strong>：目标定了、四个角色也摆好了，接下来是整章最关键的一步——<strong>Policy 的参数到底怎么改，分数才会变高？</strong>这正是 9.3。</p>
 <h3>9.3 怎么让分数变高：策略梯度</h3>
 <p>到这一节为止，我们已经知道<strong>目标</strong>（9.1：回答要拿高分、但别跑偏）和<strong>要用哪些模型</strong>（9.2：Policy / Reference / Reward / Critic）。现在只剩最后一个问题：<strong>Policy 的参数到底怎么改，分数才会往上走？</strong>这一节只回答这一件事。</p>
 <p><strong>先给直觉，别管公式</strong>：让模型"试错"——同一个问题多答几条，答得好的就把它的生成概率往上抬，答得差的就往下压。反复做很多次，模型就越来越会往高分方向答。整节就是把这句大白话写成数学。</p>
@@ -1672,6 +1654,39 @@ $$\mathcal{L}_{\mathrm{GRPO}} = \mathbb{E}\Big[\min\big(\rho_i A_i,\ \operatorna
 <li><strong>GSPO</strong>：把逐 token 裁剪改成<strong>序列级</strong> ratio——语言模型的奖励是整段回答给的，逐 token 各自裁剪会造成 token 之间更新不一致。</li>
 </ul>
 <p>落地时这些变体大多只是 <code>train_grpo.py</code> / <code>rollout_engine.py</code> 里一个 <code>loss_type</code> 参数的差别，第 10 章展开代码时会看到同一个训练循环如何切换它们。</p>
+<h3 id="ch9-kl">9.7 附录：KL 散度到底怎么算（实现细节，可先跳过）</h3>
+<p>前面 9.1 / 9.2 反复说"KL 是缰绳"，这里把计算过程补全。定义就一句话：<strong>按 P 的概率，对 P/Q 的对数求加权平均</strong>。</p>
+$$\mathrm{KL}(P\,\|\,Q)=\sum_i P(i)\log\frac{P(i)}{Q(i)}$$
+<p>$P$ 是被平均的对象（乘在外面），$Q$ 是分母（比的是 $P/Q$），所以 KL <strong>不对称</strong>：$\mathrm{KL}(P\|Q)\neq\mathrm{KL}(Q\|P)$。用具体数字走一遍（某题答案分布，P 是策略、Q 是参考模型）：</p>
+<table>
+<thead><tr><th>答案</th><th>$P(i)$（策略 $\pi_\theta$）</th><th>$Q(i)$（参考 $\pi_{ref}$）</th><th>$\log(P/Q)$</th><th>$P(i)\cdot\log(P/Q)$</th></tr></thead>
+<tbody>
+<tr><td>A</td><td>0.40</td><td>0.60</td><td>−0.405</td><td>−0.162</td></tr>
+<tr><td>B</td><td>0.35</td><td>0.25</td><td>+0.336</td><td>+0.118</td></tr>
+<tr><td>C</td><td>0.25</td><td>0.15</td><td>+0.511</td><td>+0.128</td></tr>
+</tbody>
+</table>
+<p>三项相加：$\mathrm{KL}\approx 0.083$（nat）。两个细节：P 比 Q 大的项贡献正（"新模型更看好它"算偏离），P 比 Q 小的项虽为负，但乘的 P 本身就小，拉不低总和——数学上保证 <strong>KL ≥ 0，且 P=Q 时恰为 0</strong>。</p>
+<p><strong>为什么代码里全是"log 概率相减"</strong>：整段回答的概率小到会下溢，但在 log 空间里，除法变减法、连乘变连加：</p>
+$$\log\frac{\pi_\theta(y\mid x)}{\pi_{ref}(y\mid x)}=\log\pi_\theta(y\mid x)-\log\pi_{ref}(y\mid x)=\sum_t\Big(\log\pi_\theta(y_t\mid x,y_{&lt;t})-\log\pi_{ref}(y_t\mid x,y_{&lt;t})\Big)$$
+<p>等号右边每一项正是 8.5 的 <code>logits_to_log_probs</code>（或 GRPO 的 <code>compute_per_token_logps</code>）输出的逐 token 对数概率。训练代码里 KL 项通常长这样：</p>
+<pre><code class="language-python"># 两次前向，拿到每条回答每个 token 的 log 概率（参考模型冻结）
+logp_theta = logits_to_log_probs(model(x).logits, y)         # (B, S) 新策略
+with torch.no_grad():
+    logp_ref  = logits_to_log_probs(ref_model(x).logits, y)  # (B, S) 参考模型
+
+kl_token = logp_theta - logp_ref               # (B, S) 逐 token 的 log(π_θ/π_ref)
+# 一条回答的 KL ≈ 在模型采到的 token 上求平均（mask 只统计 assistant 段）
+kl_seq = (kl_token * mask).sum(-1) / mask.sum(-1)            # (B,)
+loss = policy_loss + beta * kl_seq.mean()      # 策略梯度损失 + β·KL 惩罚</code></pre>
+<p><strong>最后一个坎：KL 定义里的"求和"要对所有回答做，可根本算不完</strong>。那个 $\sum_i$ 要遍历"所有可能的回答"——语言模型能生成的话几乎是无穷多，没法一条条列。换个写法，KL 其实就是个<strong>期望（长期平均）</strong>：</p>
+$$\mathrm{KL}(\pi_\theta\,\|\,\pi_{ref}) = \mathbb{E}_{y\sim\pi_\theta(\cdot\mid x)}\Big[\log\frac{\pi_\theta(y\mid x)}{\pi_{ref}(y\mid x)}\Big]$$
+<p>读作："从策略模型里随机抽一条回答 $y$，算一下 $\log(\pi_\theta/\pi_{ref})$ 这个值，长期抽下去的平均值就是 KL"。既然抽不完所有，那就<strong>抽几条算几条、取平均</strong>去逼近真值——抽得越多越准，这就是<strong>蒙特卡洛估计</strong>：用"样本平均"代替"全量求和"。</p>
+<p>落地到代码：策略采到哪几条 $y$，就对哪几条分别算 $\log\pi_\theta(y\mid x)$ 和 $\log\pi_{ref}(y\mid x)$，相减再平均，就是 KL 的估计（也就是前面代码里的 <code>kl_seq.mean()</code>）。</p>
+<p>工程上还有个"更稳"的版本叫 <strong>k3</strong>：用 $\widehat{\mathrm{KL}}=\exp(d)-d-1$（其中 $d=\log\pi_{ref}-\log\pi_\theta$）代替直接相减。好处是<strong>恒 ≥0</strong>（因为 $e^d\ge d+1$ 永远成立）、方差更低，训练更平稳；本质仍是"比较两个模型的 log 概率"，只是换了个打分函数。代码见 10.3。</p>
+<p><strong>KL 在本文档的三个位置</strong>：DPO 的 <code>dpo_loss</code> 里"减去 ref_logratios"是<strong>隐式 KL 锚</strong>（被吸收进二分类损失）；PPO / GRPO 目标里的 $-\beta\,\mathrm{KL}$ 是上面代码的<strong>显式惩罚项</strong>（对应 <code>--beta</code>）；$\beta$ 越大 = 缰绳越紧。</p>
+<h3>9.8 本章小结</h3>
+<p>串起来就一句话：<strong>RL = 让模型自己生成、按分数抬高高分回答的概率、用 KL 缰绳防止它跑偏</strong>。落到工程上：9.3 的策略梯度给出更新方向；9.4 用 Critic + GAE + 裁剪让它更稳、并把整段奖励的功劳分到每个 token；9.5 GRPO 用"多答几条互相比较"省掉 Critic；9.6 是沿着"基线从哪来、幅度怎么限"两个旋钮的变体。全章所有公式，本质上都在做同一件事：<strong>把不可导的"分数"翻译成可求导的"更新信号"</strong>。</p>
 </section>
 
 <section id="ch10">
