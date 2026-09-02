@@ -210,21 +210,26 @@ torchrun --nproc_per_node 4 train_pretrain.py   # 4 卡 DDP</code></pre>
 torchrun --nproc_per_node 4 train_full_sft.py</code></pre>
 <p>关键默认值：<code>from_weight=pretrain</code>（基于上一步权重）、<code>learning_rate=1e-5</code>、<code>max_seq_len=768</code>、<code>epochs=2</code>。</p>
 <p>预期产物：<code>out/full_sft_768.pth</code>。</p>
-<blockquote class="warn"><strong>SFT 常见报错：Not enough disk space。</strong>完整报错是 <code>OSError: Not enough disk space. Needed: Unknown size</code>，发生在 <code>SFTDataset</code> 里调 <code>load_dataset('json', data_files=jsonl_path, ...)</code> 这一行。原因是 HuggingFace <code>datasets</code> 不会直接读 JSONL，而是先把数据缓存成 Arrow 格式写到 <code>~/.cache/huggingface/datasets/</code>——1.6GB 的 sft 数据缓存后还要额外占一份空间，磁盘满了就报这个错。</blockquote>
-<p><strong>原因与解决</strong>：</p>
-<pre><code class="language-bash"># ① 先看哪个分区满了
+<blockquote class="warn"><strong>SFT 常见报错：Not enough disk space。</strong>完整报错是 <code>OSError: Not enough disk space. Needed: Unknown size</code>，发生在 <code>SFTDataset</code> 里调 <code>load_dataset('json', ...)</code>。根因通常是 <strong>home 目录所在分区配额满了</strong>：<code>load_dataset</code> 要先把 JSONL 缓存成 Arrow 格式写到 <code>~/.cache/huggingface/datasets/</code>，而这个缓存默认在 <code>/home</code> 上。</blockquote>
+<p><strong>排查</strong>：</p>
+<pre><code class="language-bash"># 看哪个分区满了
 df -h
 
-# ② 看 HF 数据集缓存占了多少
-du -sh ~/.cache/huggingface/datasets
+# 重点看 /home 一行：如果 Use%=100%、Avail=0，就是 home 配额满了
+# 此时本地盘 / 或 /tmp 通常还有大量空闲（如 2.8T），应把缓存/输出挪过去</code></pre>
+<p><strong>解决：把 HF 缓存和训练输出都重定向到本地盘 /tmp</strong>：</p>
+<pre><code class="language-bash"># ① HF 数据集缓存 → /tmp（本地盘，空间大）
+export HF_DATASETS_CACHE=/tmp/hf_cache
 
-# ③ 清理 HF 数据集缓存（只删缓存，不影响原始 jsonl；下次会自动重建）
-rm -rf ~/.cache/huggingface/datasets/*
+# ② 输出也放到 /tmp，避免 checkpoint 写到已满的 /home
+mkdir -p /tmp/out
+cp ~/luxiang/trainnew/minimind/out/pretrain_768.pth /tmp/out/
 
-# ④ 顺手清 pip 缓存
-pip cache purge</code></pre>
-<p>如果磁盘本身较小，还可以把 HF 缓存重定向到更大的分区，避免以后再满：</p>
-<pre><code class="language-bash">export HF_DATASETS_CACHE=/data/large_partition/hf_cache   # 换成你机器上的大分区路径</code></pre>
+# ③ 重新跑 SFT，--save_dir 指向 /tmp/out
+cd ~/luxiang/trainnew/minimind/trainer
+torchrun --nproc_per_node 4 train_full_sft.py --save_dir /tmp/out</code></pre>
+<p>训练完权重在 <code>/tmp/out/full_sft_768.pth</code>，测试时用 <code>python eval_llm.py --weight full_sft --save_dir /tmp/out</code>（或把权重拷回 <code>out/</code>）。</p>
+<p><strong>长期要释放 /home 配额</strong>：<code>pip cache purge</code>、<code>conda clean --all</code>、清理旧项目的 <code>out/*.pth</code> 权重和旧数据；大文件可迁到本地盘 <code>/tmp-tini</code>（2.8T）。</p>
 <h3>第 4 步：测试对话</h3>
 <pre><code class="language-bash">python eval_llm.py --weight full_sft</code></pre>
 <p>进去后选 <code>[1] 手动输入</code>，问"介绍一下你自己"，能通顺回答即 SFT 成功。</p>
