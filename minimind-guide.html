@@ -1381,9 +1381,8 @@ $$\max_{\pi}\ \mathbb{E}_{x\sim D,\,y\sim\pi(\cdot\mid x)}\big[r(x,y)\big] - \be
 <p>奖励项让模型"变好"，KL 项防止"跑偏"。$\beta$ 控制平衡（<code>train_grpo.py</code> 的 <code>--beta</code>）。</p>
 <p><strong>先拆记号</strong>：$\mathbb{E}_{x\sim D,\,y\sim\pi(\cdot\mid x)}[\cdot]$ 表示"从数据集里抽一个问题 $x$，再让当前策略 $\pi$ 自己采样一个回答 $y$，取平均"。关键在 $y\sim\pi$：<strong>采样的分布就是正在被训练的模型本身</strong>——模型每更新一次，用来训练它的数据分布就跟着变一次（"移动靶"）。这和 SFT 本质不同：SFT 的标准答案是固定文件里的，RL 的回答是模型现场生成的。</p>
 <p><strong>与第 8 章的关系</strong>：这个目标与 8.3 开头是同一个 RLHF 目标，但第 8 章把它当<strong>推导工具</strong>——解出解析最优后立刻反代 BT、消掉 RM，得到离线 DPO；第 9 章则保留它<strong>直接优化</strong>。为什么不直接用 8.3 的解析解？因为那个解里的奖励 $r(x,y)$ 是未知的（藏在人类 / RM 里），归一化常数 $Z(x)$ 要对所有可能回答求和、根本算不完（8.3 已展开讲）。所以只能走"采样 → 打分 → 更新"的在线路线。</p>
-<p>三项各自的角色：$\mathbb{E}[r]$ 是<strong>油门</strong>（把高分回答变得更可能），$-\beta\,\mathrm{KL}(\pi\|\pi_{ref})$ 是<strong>缰绳</strong>（不许偏离 SFT 太远），$\beta$ 是缰绳松紧。9.3~9.6 的全部花样，本质上都是在"怎么更稳、更省地踩这脚油门"上做文章。</p>
-<h4>9.1 补：KL 项具体是怎么算的？</h4>
-<p>定义就一句话：<strong>按 P 的概率，对 P/Q 的对数求加权平均</strong>。</p>
+<p>三项各自的角色：$\mathbb{E}[r]$ 是<strong>油门</strong>（把高分回答变得更可能），$-\beta\,\mathrm{KL}(\pi\|\pi_{ref})$ 是<strong>缰绳</strong>（不许偏离 SFT 太远），$\beta$ 是缰绳松紧。9.3~9.6 的全部花样，本质上都是在"怎么更稳、更省地踩这脚油门"上做文章。往下走之前，先把公式里最容易当黑盒的缰绳 KL 项拆开：</p>
+<p><strong>KL 项具体怎么算？</strong>定义就一句话：按 P 的概率，对 P/Q 的对数求加权平均：</p>
 $$\mathrm{KL}(P\,\|\,Q)=\sum_i P(i)\log\frac{P(i)}{Q(i)}$$
 <p>$P$ 是被平均的对象（乘在外面），$Q$ 是分母（比的是 $P/Q$），所以 KL <strong>不对称</strong>：$\mathrm{KL}(P\|Q)\neq\mathrm{KL}(Q\|P)$。用具体数字走一遍（某题答案分布，P 是策略、Q 是参考模型）：</p>
 <table>
