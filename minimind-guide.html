@@ -1379,6 +1379,9 @@ scaler.scale(loss).backward()</code></pre>
 <p>RL 的目标是：在不偏离参考策略太远的前提下，最大化期望奖励。</p>
 $$\max_{\pi}\ \mathbb{E}_{x\sim D,\,y\sim\pi(\cdot\mid x)}\big[r(x,y)\big] - \beta\,\mathrm{KL}\big(\pi(\cdot\mid x)\,\|\,\pi_{\mathrm{ref}}(\cdot\mid x)\big)$$
 <p>奖励项让模型"变好"，KL 项防止"跑偏"。$\beta$ 控制平衡（<code>train_grpo.py</code> 的 <code>--beta</code>）。</p>
+<p><strong>先拆记号</strong>：$\mathbb{E}_{x\sim D,\,y\sim\pi(\cdot\mid x)}[\cdot]$ 表示"从数据集里抽一个问题 $x$，再让当前策略 $\pi$ 自己采样一个回答 $y$，取平均"。关键在 $y\sim\pi$：<strong>采样的分布就是正在被训练的模型本身</strong>——模型每更新一次，用来训练它的数据分布就跟着变一次（"移动靶"）。这和 SFT 本质不同：SFT 的标准答案是固定文件里的，RL 的回答是模型现场生成的。</p>
+<p><strong>与第 8 章的关系</strong>：这个目标与 8.3 开头是同一个 RLHF 目标，但第 8 章把它当<strong>推导工具</strong>——解出解析最优后立刻反代 BT、消掉 RM，得到离线 DPO；第 9 章则保留它<strong>直接优化</strong>。为什么不直接用 8.3 的解析解？因为那个解里的奖励 $r(x,y)$ 是未知的（藏在人类 / RM 里），归一化常数 $Z(x)$ 要对所有可能回答求和、根本算不完（8.3 已展开讲）。所以只能走"采样 → 打分 → 更新"的在线路线。</p>
+<p>三项各自的角色：$\mathbb{E}[r]$ 是<strong>油门</strong>（把高分回答变得更可能），$-\beta\,\mathrm{KL}(\pi\|\pi_{ref})$ 是<strong>缰绳</strong>（不许偏离 SFT 太远），$\beta$ 是缰绳松紧。9.3~9.6 的全部花样，本质上都是在"怎么更稳、更省地踩这脚油门"上做文章。</p>
 <h3>9.2 四类模型角色</h3>
 <table>
 <thead><tr><th>角色</th><th>作用</th><th>是否训练</th></tr></thead>
@@ -1390,19 +1393,188 @@ $$\max_{\pi}\ \mathbb{E}_{x\sim D,\,y\sim\pi(\cdot\mid x)}\big[r(x,y)\big] - \be
 </tbody>
 </table>
 <p>GRPO 用前三者（省掉 critic）；PPO 需要 critic。</p>
+<p><strong>四角色 ↔ 目标函数对照</strong>：Policy 就是被优化的 $\pi$；Reference 是 KL 里的锚 $\pi_{ref}$；Reward 是目标里的 $r$（RM / 规则 / 可验证结果，只打分不训练）；Critic 是 PPO 为了估计"从当前前缀继续还能得多少分"而额外引入的 $V$，GRPO 用组内采样统计代替它，所以只需要前三者。在线 RL 的完整循环如下图：</p>
+<figure>
+<svg viewBox="0 0 880 400" style="max-width:860px; width:100%; height:auto;" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="在线 RL 四模型角色数据流图">
+  <defs>
+    <marker id="m9a" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 z" fill="#57606a"/></marker>
+  </defs>
+  <rect x="310" y="12" width="260" height="46" rx="6" fill="#eef6ff" stroke="#0969da"/>
+  <text x="440" y="32" text-anchor="middle" font-size="14" fill="#1f2328">prompt x</text>
+  <text x="440" y="49" text-anchor="middle" font-size="11" fill="#57606a">来自数据集 D</text>
+  <line x1="440" y1="58" x2="440" y2="86" stroke="#57606a" stroke-width="1.5" marker-end="url(#m9a)"/>
+  <rect x="250" y="90" width="380" height="58" rx="6" fill="#eef6ff" stroke="#0969da"/>
+  <text x="440" y="112" text-anchor="middle" font-size="14" fill="#1f2328">策略 Policy π_θ（Actor，可训练）</text>
+  <text x="440" y="132" text-anchor="middle" font-size="12" fill="#57606a">采样回答 y ~ π_θ(·|x)，每个 prompt 采 G 条</text>
+  <line x1="440" y1="148" x2="440" y2="176" stroke="#57606a" stroke-width="1.5" marker-end="url(#m9a)"/>
+  <text x="452" y="168" font-size="11" fill="#57606a">回答 y</text>
+  <line x1="440" y1="176" x2="160" y2="182" stroke="#57606a" stroke-width="1.5" marker-end="url(#m9a)"/>
+  <line x1="440" y1="176" x2="440" y2="182" stroke="#57606a" stroke-width="1.5" marker-end="url(#m9a)"/>
+  <line x1="440" y1="176" x2="720" y2="182" stroke="#57606a" stroke-width="1.5" marker-end="url(#m9a)"/>
+  <rect x="30" y="184" width="260" height="74" rx="6" fill="#fff8c5" stroke="#d4a72c"/>
+  <text x="160" y="206" text-anchor="middle" font-size="13" fill="#1f2328">Reference π_ref（冻结）</text>
+  <text x="160" y="224" text-anchor="middle" font-size="11" fill="#5c4400">KL 锚点：不许策略漂太远</text>
+  <text x="160" y="242" text-anchor="middle" font-size="11" fill="#5c4400">GRPO / PPO 都用</text>
+  <rect x="310" y="184" width="260" height="74" rx="6" fill="#eef6ff" stroke="#0969da"/>
+  <text x="440" y="206" text-anchor="middle" font-size="13" fill="#1f2328">Reward r（RM / 规则 / 验证）</text>
+  <text x="440" y="224" text-anchor="middle" font-size="11" fill="#57606a">冻结：给每条回答打分</text>
+  <text x="440" y="242" text-anchor="middle" font-size="11" fill="#57606a">绝对分无意义，只看相对</text>
+  <rect x="590" y="184" width="270" height="74" rx="6" fill="#f6f8fa" stroke="#57606a" stroke-dasharray="5 3"/>
+  <text x="725" y="206" text-anchor="middle" font-size="13" fill="#1f2328">Critic V（仅 PPO，可训练）</text>
+  <text x="725" y="224" text-anchor="middle" font-size="11" fill="#57606a">预测前缀的期望总奖励</text>
+  <text x="725" y="242" text-anchor="middle" font-size="11" fill="#57606a">GRPO 用组内均值替代</text>
+  <rect x="250" y="318" width="380" height="56" rx="6" fill="#eef6ff" stroke="#0969da" stroke-dasharray="5 3"/>
+  <text x="440" y="340" text-anchor="middle" font-size="14" fill="#1f2328">优势 A = r − 基线</text>
+  <text x="440" y="359" text-anchor="middle" font-size="12" fill="#57606a">基线 = V(s)（PPO）或组内均值 r̄（GRPO）</text>
+  <polyline points="250,346 16,346 16,119 250,119" fill="none" stroke="#57606a" stroke-width="1.5" stroke-dasharray="5 3" marker-end="url(#m9a)"/>
+  <text x="70" y="338" font-size="11" fill="#57606a">按 ∇log π_θ · A 更新策略</text>
+</svg>
+<figcaption>在线 RL 循环：Policy 采样回答 → Reward 打分、Reference 拉住 KL（PPO 另有 Critic 估基线）→ 算优势 A → 沿 ∇logπ_θ·A 更新策略，再回到采样。虚线框表示"计算出来的量 / 可选项"。</figcaption>
+</figure>
 <h3>9.3 策略梯度定理</h3>
+<p><strong>先问：为什么 SFT 那套"对损失直接求导"在 RL 里行不通？</strong>两个原因：① 奖励 $r(x,y)$ 常常<strong>不可导</strong>——对答案、调工具、规则分都是"程序/字典查表"式的，没有梯度可言；② 就算奖励是神经网络（RM），样本 $y$ 是从离散分布里<strong>随机抽样</strong>得到的，梯度穿不过"抽样"这一步。所以必须绕道：对<strong>我们自己网络的 log 概率</strong>求导，因为那个一定能求。</p>
 $$\nabla_\theta J(\theta) = \mathbb{E}_{y\sim \pi_\theta(\cdot\mid x)}\Big[\nabla_\theta \log \pi_\theta(y \mid x)\cdot A(x,y)\Big]$$
 <p>所有 RL 算法的差异几乎都归结为：<strong>如何估计优势 $A$</strong> 和 <strong>如何限制更新幅度</strong>。</p>
+<p><strong>这条公式怎么来的（log 导数技巧，数学小白可跟）</strong>：期望就是"概率 × 分数"求和：</p>
+$$J(\theta)=\sum_y \pi_\theta(y\mid x)\,r(x,y)$$
+<p>对 $\theta$ 求导时，$r(x,y)$ 不依赖 $\theta$，只需要导 $\pi_\theta$：</p>
+$$\nabla_\theta J(\theta)=\sum_y \nabla_\theta \pi_\theta(y\mid x)\cdot r(x,y)$$
+<p>再用对数求导恒等式 $\nabla_\theta \log\pi_\theta = \nabla_\theta\pi_\theta\,/\,\pi_\theta$，即 $\nabla_\theta\pi_\theta=\pi_\theta\,\nabla_\theta\log\pi_\theta$，代回去：</p>
+$$\nabla_\theta J(\theta)=\sum_y \pi_\theta(y\mid x)\,\nabla_\theta\log\pi_\theta(y\mid x)\cdot r(x,y)=\mathbb{E}_{y\sim\pi_\theta}\Big[\nabla_\theta\log\pi_\theta(y\mid x)\cdot r(x,y)\Big]$$
+<p>最后一步就是定理的公式（把 $r$ 换成优势 $A$，原因见下）。<strong>直觉翻译</strong>：采样若干条回答，谁分高就把谁的生成概率往上推，谁分低就往下压；$\nabla\log\pi_\theta$ 提供"往哪个方向推最有效"，$A$ 提供"推多狠、往哪边推"。下图示意：</p>
+<figure>
+<svg viewBox="0 0 860 320" style="max-width:840px; width:100%; height:auto;" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="策略梯度推高压低示意图">
+  <defs>
+    <marker id="m9up" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#1a7f37"/></marker>
+    <marker id="m9dn" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#cf222e"/></marker>
+  </defs>
+  <rect x="330" y="10" width="200" height="42" rx="6" fill="#eef6ff" stroke="#0969da"/>
+  <text x="430" y="29" text-anchor="middle" font-size="14" fill="#1f2328">prompt x</text>
+  <text x="430" y="45" text-anchor="middle" font-size="11" fill="#57606a">同一问题采 3 条回答并打分</text>
+  <line x1="430" y1="52" x2="430" y2="70" stroke="#57606a" stroke-width="1.5" marker-end="url(#m9a)"/>
+  <rect x="40" y="72" width="300" height="40" rx="6" fill="#eef6ff" stroke="#0969da"/>
+  <text x="190" y="97" text-anchor="middle" font-size="13" fill="#1f2328">回答 1　r = +0.9（高分）</text>
+  <line x1="345" y1="92" x2="560" y2="62" stroke="#1a7f37" stroke-width="2.5" marker-end="url(#m9up)"/>
+  <text x="572" y="58" font-size="12" fill="#1a7f37">概率 ↑（推得猛）</text>
+  <rect x="40" y="152" width="300" height="40" rx="6" fill="#eef6ff" stroke="#0969da"/>
+  <text x="190" y="177" text-anchor="middle" font-size="13" fill="#1f2328">回答 2　r = +0.2（普通）</text>
+  <line x1="345" y1="172" x2="470" y2="150" stroke="#1a7f37" stroke-width="2.5" marker-end="url(#m9up)"/>
+  <text x="482" y="154" font-size="12" fill="#1a7f37">概率 ↑（推得轻）</text>
+  <rect x="40" y="232" width="300" height="40" rx="6" fill="#fff5f5" stroke="#cf222e"/>
+  <text x="190" y="257" text-anchor="middle" font-size="13" fill="#1f2328">回答 3　r = −0.5（低分）</text>
+  <line x1="345" y1="252" x2="560" y2="284" stroke="#cf222e" stroke-width="2.5" marker-end="url(#m9dn)"/>
+  <text x="572" y="292" font-size="12" fill="#cf222e">概率 ↓（压低）</text>
+</svg>
+<figcaption>策略梯度直觉：分数越高，那条回答的生成概率被推得越高（绿色↑）；分数为负则被压低（红色↓）。方向由 ∇logπ_θ 给出，幅度由优势 A 决定。</figcaption>
+</figure>
+<p><strong>为什么用 A 而不是直接用 r（基线的意义）</strong>：把 $r(x,y)$ 换成 $r(x,y)-b$（$b$ 是与 $y$ 无关的基线），期望梯度<strong>数学上不变</strong>：多出来的项是 $-b\sum_y\nabla_\theta\pi_\theta(y)=-b\,\nabla_\theta\!\left(\sum_y\pi_\theta(y)\right)=-b\,\nabla_\theta 1=0$（概率之和恒为 1，导数为 0）。也就是说<strong>任何与 y 无关的基线都不改变梯度的期望方向，只影响方差</strong>。直觉：判断一个人高不高，与其报"180cm"，不如报"比全班平均高 12cm"——信息一样，但方差小得多、更稳定。PPO 的基线来自 Critic，GRPO 的基线来自组内平均，ReMax / RLOO 也用各自的基线——9.6 的变体差异本质上就在"基线从哪来"。</p>
 <h3>9.4 PPO：critic + GAE</h3>
+<p><strong>PPO 要解决 9.3 留下的两个工程问题</strong>：</p>
+<ul>
+<li><strong>问题一：一步更新太猛会崩</strong>。9.3 的梯度是用"旧策略"采的数据算的；如果一步把策略推太远，新旧分布错位，下一次的估计就不可信（相当于拿昨天的问卷去指导今天大幅改版的自己）。经典做法 TRPO 要解带 KL 约束的复杂子问题，PPO 的贡献是把它简化成一行"裁剪"。</li>
+<li><strong>问题二：奖励只在结尾给一次，功劳怎么分摊到每个 token？</strong>这需要价值网络 V 与 GAE 把"结局的成败"沿前缀往回归因。</li>
+</ul>
 <p>TD 残差与 GAE 优势：</p>
 $$\delta_t = r_t + \gamma V(s_{t+1}) - V(s_t), \qquad A_t = \sum_{l\ge 0}(\gamma\lambda)^l \delta_{t+l}$$
 <p>重要性采样比与 PPO 裁剪损失：</p>
 $$\rho = \frac{\pi_\theta(y \mid x)}{\pi_{\mathrm{old}}(y \mid x)}, \qquad \mathcal{L} = \mathbb{E}\Big[\min\big(\rho A,\ \operatorname{clip}(\rho,1-\varepsilon,1+\varepsilon)A\big) - \beta\,\mathrm{KL}\Big]$$
 <p>Critic 是"会打分的语言模型"——用训练好的权重初始化，把输出头换成 <code>768→1</code> 线性层，为每个 token 输出价值 $V(s)$。$\rho$ 修正分布偏移，clip 是 trust region 的近似。</p>
+<p><strong>ρ 的大白话</strong>：$\rho=\pi_\theta/\pi_{old}$ 表示"新策略觉得这条（旧策略采的）回答有多好"。$\rho&gt;1$ 说明新策略比旧策略更喜欢它；$\rho&lt;1$ 说明新策略开始嫌弃它。如果完全不设防，模型可能因为一条侥幸好回答，一步就把它的概率翻好几倍——于是用 <code>clip(ρ, 1−ε, 1+ε)</code> 把它按在 $[0.8, 1.2]$（ε=0.2）里，越界部分不参与本轮更新，这就是"刹车"。</p>
+<p><strong>min 的取舍</strong>：$A&gt;0$（该抬）时若 $\rho$ 想超过 $1+\varepsilon$，就按 $1+\varepsilon$ 计——一次最多"爱"到 120%，防止赌上全部身家；$A&lt;0$（该压）时若 $\rho$ 已经跌到 $1-\varepsilon$ 以下，也不再追加惩罚——不往已经失宠的回答上继续踩。反过来，如果新策略居然更喜欢一条坏回答（$A&lt;0$ 而 $\rho&gt;1+\varepsilon$），则按完整幅度惩罚，把它压回去。clip 造成的"单步最多约 20% 偏移"就是 trust region（置信域）的廉价近似。</p>
+<p><strong>GAE 的大白话</strong>：Critic 的价值 $V(s_t)$ 是对每个前缀的"估分"：<em>从第 t 个 token 往后，最终平均能得多少分</em>。于是 TD 残差 $\delta_t$ = 实际发生的（$r_t+\gamma V(s_{t+1})$）− 原先预期的 $V(s_t)$，即这一步带来的<strong>惊喜</strong>。GAE 再把相邻几步的惊喜按 $(\gamma\lambda)^l$ 衰减后累加成 $A_t$：</p>
+<table>
+<thead><tr><th>系数</th><th>作用</th><th>语言模型里的直觉</th></tr></thead>
+<tbody>
+<tr><td>$\gamma$（折扣）</td><td>远期奖励打几折</td><td>$\gamma$ 大 → 看重整段结局；$\gamma$ 小 → 只看近期</td></tr>
+<tr><td>$\lambda$（GAE 衰减）</td><td>往未来看多远来归因</td><td>$\lambda\!\to\!0$ 只看一步惊喜（方差小、偏差大）；$\lambda\!\to\!1$ 看完整序列（偏差小、方差大）</td></tr>
+<tr><td>$l$（滞后步数）</td><td>第 $l$ 步后的惊喜打折 $(\gamma\lambda)^l$</td><td>越早的前缀，分到的功劳越小</td></tr>
+</tbody>
+</table>
+<p><strong>token 级功劳分摊</strong>：语言模型里通常只有最后一个 token 有非零奖励 $r_T$（其余 $r_t=0$）。Critic 的作用就是"预支未来"——每个前缀都有一个 $V(s_t)$ 预测结局，最后实际奖励一出来，GAE 把"实际 − 预期"顺着前缀往回分摊，哪个前缀让模型开始走向高分回答，那个前缀的优势就为正。示意如下（数值仅为示意）：</p>
+<figure>
+<svg viewBox="0 0 880 330" style="max-width:860px; width:100%; height:auto;" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="GAE 逐 token 功劳分摊示意图">
+  <defs>
+    <marker id="m9c" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 z" fill="#57606a"/></marker>
+  </defs>
+  <g font-size="12" text-anchor="middle" fill="#1f2328">
+    <rect x="20" y="14" width="90" height="42" rx="5" fill="#eef6ff" stroke="#0969da"/><text x="65" y="39">token t₁</text>
+    <rect x="140" y="14" width="90" height="42" rx="5" fill="#eef6ff" stroke="#0969da"/><text x="185" y="39">token t₂</text>
+    <rect x="260" y="14" width="90" height="42" rx="5" fill="#eef6ff" stroke="#0969da"/><text x="305" y="39">token t₃</text>
+    <rect x="380" y="14" width="90" height="42" rx="5" fill="#eef6ff" stroke="#0969da"/><text x="425" y="39">token t₄</text>
+    <rect x="500" y="14" width="90" height="42" rx="5" fill="#eef6ff" stroke="#0969da"/><text x="545" y="39">token t₅</text>
+  </g>
+  <line x1="110" y1="35" x2="140" y2="35" stroke="#57606a" stroke-width="1.5" marker-end="url(#m9c)"/>
+  <line x1="230" y1="35" x2="260" y2="35" stroke="#57606a" stroke-width="1.5" marker-end="url(#m9c)"/>
+  <line x1="350" y1="35" x2="380" y2="35" stroke="#57606a" stroke-width="1.5" marker-end="url(#m9c)"/>
+  <line x1="470" y1="35" x2="500" y2="35" stroke="#57606a" stroke-width="1.5" marker-end="url(#m9c)"/>
+  <line x1="590" y1="35" x2="640" y2="35" stroke="#57606a" stroke-width="1.5" marker-end="url(#m9c)"/>
+  <rect x="645" y="14" width="220" height="42" rx="6" fill="#fff8c5" stroke="#d4a72c"/>
+  <text x="755" y="33" text-anchor="middle" font-size="12" fill="#1f2328">奖励 r_T（最后一步给分）</text>
+  <text x="755" y="49" text-anchor="middle" font-size="11" fill="#5c4400">前面的 r_t 都是 0</text>
+  <rect x="20" y="88" width="590" height="34" rx="5" fill="#f6f8fa" stroke="#57606a"/>
+  <text x="315" y="110" text-anchor="middle" font-size="12" fill="#1f2328">Critic V(s_t)：在每个前缀预测"从这里到结尾还能得多少分"</text>
+  <text x="440" y="162" text-anchor="middle" font-size="13" fill="#1f2328">δ_t = r_t + γ·V(s_{t+1}) − V(s_t)　＝　实际 − 预期　＝　"惊喜"</text>
+  <line x1="20" y1="240" x2="590" y2="240" stroke="#57606a" stroke-width="1.5"/>
+  <rect x="43" y="222" width="44" height="18" fill="#1a7f37"/><text x="65" y="258" text-anchor="middle" font-size="11" fill="#57606a">A₁</text>
+  <rect x="163" y="208" width="44" height="32" fill="#1a7f37"/><text x="185" y="258" text-anchor="middle" font-size="11" fill="#57606a">A₂</text>
+  <rect x="283" y="190" width="44" height="50" fill="#1a7f37"/><text x="305" y="258" text-anchor="middle" font-size="11" fill="#57606a">A₃</text>
+  <rect x="403" y="170" width="44" height="70" fill="#1a7f37"/><text x="425" y="258" text-anchor="middle" font-size="11" fill="#57606a">A₄</text>
+  <rect x="523" y="148" width="44" height="92" fill="#1a7f37"/><text x="545" y="258" text-anchor="middle" font-size="11" fill="#57606a">A₅</text>
+  <text x="650" y="205" font-size="12" fill="#1f2328">绿色柱 = 各前缀分到的优势</text>
+  <text x="650" y="225" font-size="12" fill="#1f2328">越靠结尾的前缀功劳越大</text>
+  <text x="650" y="245" font-size="11" fill="#57606a">（(γλ)^l 衰减，示意非真实数值）</text>
+</svg>
+<figcaption>GAE 的 token 级功劳分摊（示意）：奖励只在结尾出现；Critic 在每个前缀预测未来总分 V(s_t)；GAE 把"实际 − 预期"的惊喜按 (γλ)^l 往回分摊——越靠后的前缀优势越大，越早的 token 分到的功劳越小。</figcaption>
+</figure>
+<p><strong>Critic 怎么训</strong>：价值网络没有独立监督标签，它的"标准答案"就是采样后看到的实际回报——用回归损失 $\mathcal{L}_V=\mathbb{E}[(V(s_t)-G_t)^2]$（$G_t$ 是实际累计回报）让它学会预测。它不直接参与生成，只负责把 $A$ 估准，因此训练时与策略共享底层、输出头换成 <code>768→1</code>。</p>
 <h3>9.5 GRPO：组相对基线替代 critic</h3>
 <p>GRPO 丢掉价值网络，对同一 prompt 采 $G$ 条，用组内均值/标准差做优势：</p>
 $$A_i = \frac{r_i - \bar r}{\hat\sigma_r + \varepsilon}, \qquad \bar r = \frac1G\sum_j r_j, \qquad \hat\sigma_r = \sqrt{\frac1G\sum_j (r_j-\bar r)^2}$$
 <p>奖励的绝对值没意义，但"同一 prompt 下谁的几条回答更好"是可靠信号——这就是 GRPO 不需要 critic 的原因。</p>
+<p><strong>逐项拆解</strong>：① 减 $\bar r$ 是 9.3 说的"减基线"——只是基线从"学出来的 Critic 预测"换成了"实测的组内平均"，一个零成本的蒙特卡洛基线：比组内平均好 → $A_i&gt;0$（抬），差 → $A_i&lt;0$（压）。② 除以 $\hat\sigma_r$ 是<strong>标准化（z-score）</strong>：不同任务的打分尺度不同（格式分 0~2、数学对错 0/1），除以组内标准差后优势无量纲化，更新力度不会随打分尺度漂移。③ $+\varepsilon$（很小，如 $10^{-8}$）防止一组成绩全相同（$\hat\sigma_r=0$）时除零。</p>
+<p><strong>数字例子</strong>：同一 prompt 采 4 条回答，奖励 $r=[2,1,-1,0]$，则 $\bar r=0.5$、$\hat\sigma_r\approx1.12$：</p>
+<table>
+<thead><tr><th>回答</th><th>奖励 $r_i$</th><th>$r_i-\bar r$</th><th>优势 $A_i=(r_i-\bar r)/(\hat\sigma_r+\varepsilon)$</th><th>效果</th></tr></thead>
+<tbody>
+<tr><td>回答 1（最好）</td><td>2</td><td>+1.5</td><td>≈ +1.34</td><td>被推高最多</td></tr>
+<tr><td>回答 2</td><td>1</td><td>+0.5</td><td>≈ +0.45</td><td>小幅推高</td></tr>
+<tr><td>回答 3（最差）</td><td>−1</td><td>−1.5</td><td>≈ −1.34</td><td>被压得最狠</td></tr>
+<tr><td>回答 4</td><td>0</td><td>−0.5</td><td>≈ −0.45</td><td>小幅压低</td></tr>
+</tbody>
+</table>
+<figure>
+<svg viewBox="0 0 880 320" style="max-width:860px; width:100%; height:auto;" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="GRPO 组内 z-score 优势示意图">
+  <defs>
+    <marker id="m9d" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 z" fill="#57606a"/></marker>
+  </defs>
+  <rect x="330" y="10" width="220" height="42" rx="6" fill="#eef6ff" stroke="#0969da"/>
+  <text x="440" y="29" text-anchor="middle" font-size="14" fill="#1f2328">prompt x</text>
+  <text x="440" y="45" text-anchor="middle" font-size="11" fill="#57606a">同一 prompt 采 G=4 条</text>
+  <line x1="440" y1="52" x2="440" y2="76" stroke="#57606a" stroke-width="1.5" marker-end="url(#m9d)"/>
+  <rect x="40" y="78" width="280" height="36" rx="5" fill="#eef6ff" stroke="#0969da"/><text x="180" y="101" text-anchor="middle" font-size="12" fill="#1f2328">回答 1　r = 2</text>
+  <rect x="40" y="132" width="280" height="36" rx="5" fill="#eef6ff" stroke="#0969da"/><text x="180" y="155" text-anchor="middle" font-size="12" fill="#1f2328">回答 2　r = 1</text>
+  <rect x="40" y="186" width="280" height="36" rx="5" fill="#fff5f5" stroke="#cf222e"/><text x="180" y="209" text-anchor="middle" font-size="12" fill="#1f2328">回答 3　r = −1</text>
+  <rect x="40" y="240" width="280" height="36" rx="5" fill="#fff5f5" stroke="#cf222e"/><text x="180" y="263" text-anchor="middle" font-size="12" fill="#1f2328">回答 4　r = 0</text>
+  <line x1="470" y1="78" x2="470" y2="276" stroke="#57606a" stroke-width="1" stroke-dasharray="4 3"/>
+  <text x="470" y="72" text-anchor="middle" font-size="11" fill="#57606a">0（组平均线）</text>
+  <rect x="470" y="87" width="74" height="18" fill="#1a7f37"/><text x="552" y="101" font-size="11" fill="#1a7f37">A ≈ +1.34</text>
+  <rect x="470" y="141" width="25" height="18" fill="#1a7f37"/><text x="503" y="155" font-size="11" fill="#1a7f37">+0.45</text>
+  <rect x="396" y="195" width="74" height="18" fill="#cf222e"/><text x="384" y="209" text-anchor="end" font-size="11" fill="#cf222e">−1.34</text>
+  <rect x="445" y="249" width="25" height="18" fill="#cf222e"/><text x="437" y="263" text-anchor="end" font-size="11" fill="#cf222e">−0.45</text>
+  <rect x="612" y="78" width="254" height="170" rx="6" fill="#f6f8fa" stroke="#57606a"/>
+  <text x="624" y="102" font-size="12" fill="#1f2328">组内统计：</text>
+  <text x="624" y="122" font-size="12" fill="#1f2328">r̄ = (2+1−1+0)/4 = 0.5</text>
+  <text x="624" y="142" font-size="12" fill="#1f2328">σ̂ ≈ 1.12</text>
+  <text x="624" y="172" font-size="12" fill="#1f2328">A_i = (r_i − r̄)/(σ̂ + ε)</text>
+  <text x="624" y="202" font-size="12" fill="#1a7f37">A &gt; 0：高于组平均 → 推高</text>
+  <text x="624" y="222" font-size="12" fill="#cf222e">A &lt; 0：低于组平均 → 压低</text>
+  <text x="624" y="242" font-size="11" fill="#57606a">除以 σ̂：统一不同打分尺度</text>
+</svg>
+<figcaption>GRPO 组内 z-score：同一 prompt 采 4 条打分，用组内均值当基线、标准差当尺度；绿色条 = 高于平均（正优势，推高概率），红色条 = 低于平均（负优势，压低）。</figcaption>
+</figure>
+<p><strong>完整损失</strong>：GRPO 与 PPO 用同一个 clip 框架，只是优势换成组内 z-score、且没有价值网络项：</p>
+$$\mathcal{L}_{\mathrm{GRPO}} = \mathbb{E}\Big[\min\big(\rho_i A_i,\ \operatorname{clip}(\rho_i,1-\varepsilon,1+\varepsilon)\,A_i\big)\Big]$$
+<p>其中 $\rho_i=\pi_\theta(y_i\mid x)/\pi_{old}(y_i\mid x)$ 与 PPO 相同。还有一个极端情况值得注意：如果一组的 G 条回答全部同分（比如简单题全员满分），$A_i=0$，这一组不产生任何学习信号——这正是 9.6 里 DAPO"动态采样跳过简单组"要解决的问题。</p>
 <h3>9.6 PPO 家族变体</h3>
 <table>
 <thead><tr><th>算法</th><th>来源</th><th>有无 critic</th><th>核心差异</th></tr></thead>
@@ -1417,6 +1589,17 @@ $$A_i = \frac{r_i - \bar r}{\hat\sigma_r + \varepsilon}, \qquad \bar r = \frac1G
 </tbody>
 </table>
 <p>CISPO 是 MiniMind 的默认 loss_type：只裁上界（<code>epsilon_high=5.0</code>）防 ratio 爆炸，不裁下界让策略自由降低坏回答概率。</p>
+<p><strong>为什么有这么多变体（两个旋钮）</strong>：回到 9.3 的结论——所有 RL 算法差异只剩两处：<strong>旋钮一：优势 A 的基线从哪来</strong>（Critic 预测 / 贪心基线 / leave-one-out / 组内 z-score）；<strong>旋钮二：更新幅度怎么限</strong>（对称裁剪 / 只裁上界 / 序列级裁剪 / KL 惩罚）。逐行看：</p>
+<ul>
+<li><strong>PPO-clip</strong>：基线来自 Critic（GAE），ρ 上下对称裁剪 1±0.2。经典款，四模型最重。</li>
+<li><strong>ReMax</strong>：无 critic。用<strong>贪心解码</strong>（模型自己最可能生成的那条）的奖励当基线——贪心输出是确定性的，减掉它能去掉大部分方差，等于花一次贪心解码换掉整个价值网络。</li>
+<li><strong>RLOO</strong>：无 critic。采 G 条，算第 i 条的优势时用<strong>其余 G−1 条的平均</strong>做基线（leave-one-out，留一法），数学上无偏，方差比 GRPO 的自比更小。</li>
+<li><strong>GRPO</strong>：无 critic。用含自己在内的 G 条做 z-score $(r-\bar r)/\hat\sigma_r$，DeepSeekMath 提出，R1 沿用。</li>
+<li><strong>DAPO</strong>：GRPO 改进。只裁上界不裁下界（坏回答概率允许一步降到底，快速摆脱低分路线）+ <strong>动态采样</strong>：跳过全员满分 / 全员零分这类没有学习信号的组（9.5 末尾提过 $A_i=0$ 的极端情况）。</li>
+<li><strong>CISPO</strong>：MiniMind 默认。同样只裁上界防 ρ 爆炸，但把 ratio 当系数直接乘在 log 概率上，避免对称裁剪在某些区域把梯度"裁没"。</li>
+<li><strong>GSPO</strong>：把逐 token 裁剪改成<strong>序列级</strong> ratio——语言模型的奖励是整段回答给的，逐 token 各自裁剪会造成 token 之间更新不一致。</li>
+</ul>
+<p>落地时这些变体大多只是 <code>train_grpo.py</code> / <code>rollout_engine.py</code> 里一个 <code>loss_type</code> 参数的差别，第 10 章展开代码时会看到同一个训练循环如何切换它们。</p>
 </section>
 
 <section id="ch10">
