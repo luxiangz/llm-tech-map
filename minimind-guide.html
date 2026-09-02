@@ -1394,22 +1394,35 @@ $$\max_{\pi}\ \mathbb{E}_{x\sim D,\,y\sim\pi(\cdot\mid x)}\big[r(x,y)\big] - \be
 </tbody>
 </table>
 <p>如果只最大化分数，模型会一头扎进第二种"刷分"写法；有了 KL 约束，模型不能离 SFT 版的自己太远，于是只能在"尽量高分"和"别太离谱"之间取个平衡——这就是公式里两个力在较劲。</p>
+<p><strong>那"不能离 SFT 太远"为什么这么重要？</strong>三个现实原因：</p>
+<ul>
+<li><strong>奖励是个"不懂事、还能被钻空子"的裁判</strong>：它只看规则或一个奖励模型，并不真正理解语义。放任模型刷分，它就会找到"重复某个词凑长度""永远套同一套格式"这类奖励黑客（reward hacking）——分很高，回答却越来越没用。KL 每次偏离都扣分，把这些歪路子挡在门外。</li>
+<li><strong>SFT 阶段已经攒下了"会说话 + 有知识"的底座</strong>：流畅表达、指令理解、常识知识都藏在 SFT 权重里。RL 只追奖励时，很容易把这些能力挤丢（灾难性遗忘）。Reference 就是那个"记住原来的自己长什么样"的锚。</li>
+<li><strong>奖励是采样估计出来的，噪声大</strong>：一次只试了那么几条回答，分数本身很不稳定；不设 KL，模型会过拟合到这一小撮样本的偶然高分上。KL 相当于一个正则项，让每步都走得克制一点。</li>
+</ul>
 <p><strong>为什么这章叫"强化学习"、和 SFT 不一样？</strong>SFT 是照着标准答案抄；RL 没有标准答案，只有"这条打几分"，模型得<strong>自己先答、被打分、再按分数调整</strong>，而且它一边学、自己生成的回答就一边变成下一轮的训练数据（"移动靶"）。这更像训练宠物：做对了给奖励，做错了不奖，而不是给一张标准答卷去背。</p>
 <p><strong>和第 8 章 DPO 的关系一句话</strong>：DPO 是把"打高分 + 别跑偏"这件事<strong>离线一步算好</strong>（不需要裁判现场打分）；本章则要<strong>在线边试边学</strong>——因为奖励藏在裁判里、可能的回答太多，没法像 DPO 那样写成闭式解（详见 8.3）。</p>
 <p><strong>本章路线图</strong>：9.2 把公式里的量落到四个模型；9.3 讲"没有标准答案、分数还不可导"时怎么算更新方向；9.4 讲 PPO 怎么把功劳分到每个 token、又怎么稳住不翻车；9.5 讲 GRPO 怎么省掉 Critic；9.6 一览这条路线上的变体。</p>
 <h3>9.2 四类模型角色</h3>
-<p><strong>为什么突然要"四个模型"？</strong>因为目标不能只停在纸面上，还得真的被算出来。把 9.1 的公式拆开，每个符号都需要一个具体的"计算者"：$\pi$ 需要被训练（Policy）；$\pi_{ref}$ 需要一个冻结的副本（Reference）；$r(x,y)$ 需要一个打分器（Reward）；而到了 9.3 你会看到，更新还需要一个"基线"来降低方差——PPO 用一个可训练的价值网络（Critic）去估这个基线，GRPO 则用组内采样统计替代。四个角色不是凭空规定，而是<strong>从目标公式 + "怎么稳定地求梯度"这两个需求里长出来的</strong>。</p>
+<p><strong>为什么突然要"四个模型"？</strong>因为目标不能只停在纸面上，还得真的被算出来。把 9.1 的公式拆开，每个符号都需要一个具体的"计算者"：$\pi$ 需要被训练（Policy）；$\pi_{ref}$ 需要一个冻结的副本（Reference）；$r(x,y)$ 需要一个打分器（Reward）。至于第四个，等 9.3 会看到：要判断"这条回答比平均好多少"，PPO 会额外训一个"预言家" Critic，GRPO 则直接多写几条互相比较。四个角色不是凭空规定，而是<strong>从目标公式 + "怎么算更新"这两个需求里长出来的</strong>。</p>
 <table>
 <thead><tr><th>角色</th><th>作用</th><th>是否训练</th></tr></thead>
 <tbody>
 <tr><td>Policy（Actor）</td><td>被训练的策略，负责生成回答</td><td>是</td></tr>
 <tr><td>Reference</td><td>冻结的初始策略，约束 KL</td><td>否</td></tr>
 <tr><td>Reward</td><td>打分（规则/RM/可验证结果）</td><td>否</td></tr>
-<tr><td>Critic（仅 PPO/GAE）</td><td>估计状态价值，算优势</td><td>是</td></tr>
+<tr><td>Critic（仅 PPO/GAE）</td><td>预言家：预测"写到这里，最后大概能得多少分"，用于算优势</td><td>是</td></tr>
 </tbody>
 </table>
 <p>GRPO 用前三者（省掉 critic）；PPO 需要 critic。</p>
-<p><strong>四角色 ↔ 目标函数对照</strong>：Policy 就是被优化的 $\pi$；Reference 是 KL 里的锚 $\pi_{ref}$；Reward 是目标里的 $r$（RM / 规则 / 可验证结果，只打分不训练）；Critic 是 PPO 为了估计"从当前前缀继续还能得多少分"而额外引入的 $V$，GRPO 用组内采样统计代替它，所以只需要前三者。在线 RL 的完整循环如下图：</p>
+<p><strong>把公式里的每个量，对应到一句能记住的分工</strong>：</p>
+<ul>
+<li><strong>Policy（π，要被训练的模型）</strong>：负责"作答"——给问题生成回答，也是唯一要改参数的。</li>
+<li><strong>Reference（π_ref，冻结的 SFT 副本）</strong>：负责"记住原来的自己"，当 KL 的参照物，参数永远不动。</li>
+<li><strong>Reward（r，打分器）</strong>：负责"判分"——给回答打分，但只打分、不参与训练。</li>
+<li><strong>Critic（V，仅 PPO 要）</strong>：负责"预言"——站在回答写到一半的位置，猜"照这样写下去，最后大概能得多少分"。有了它，PPO 才能判断前面哪几步写得好（9.4 展开）。GRPO 不要它，而是同一题多写几条、看谁分高谁分低，用组内平均当基准。</li>
+</ul>
+<p>在线 RL 的完整循环如下图：</p>
 <figure>
 <svg viewBox="0 0 900 590" style="max-width:880px; width:100%; height:auto;" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="在线 RL 四模型角色数据流图">
   <defs>
