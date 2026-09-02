@@ -1382,6 +1382,33 @@ $$\max_{\pi}\ \mathbb{E}_{x\sim D,\,y\sim\pi(\cdot\mid x)}\big[r(x,y)\big] - \be
 <p><strong>先拆记号</strong>：$\mathbb{E}_{x\sim D,\,y\sim\pi(\cdot\mid x)}[\cdot]$ 表示"从数据集里抽一个问题 $x$，再让当前策略 $\pi$ 自己采样一个回答 $y$，取平均"。关键在 $y\sim\pi$：<strong>采样的分布就是正在被训练的模型本身</strong>——模型每更新一次，用来训练它的数据分布就跟着变一次（"移动靶"）。这和 SFT 本质不同：SFT 的标准答案是固定文件里的，RL 的回答是模型现场生成的。</p>
 <p><strong>与第 8 章的关系</strong>：这个目标与 8.3 开头是同一个 RLHF 目标，但第 8 章把它当<strong>推导工具</strong>——解出解析最优后立刻反代 BT、消掉 RM，得到离线 DPO；第 9 章则保留它<strong>直接优化</strong>。为什么不直接用 8.3 的解析解？因为那个解里的奖励 $r(x,y)$ 是未知的（藏在人类 / RM 里），归一化常数 $Z(x)$ 要对所有可能回答求和、根本算不完（8.3 已展开讲）。所以只能走"采样 → 打分 → 更新"的在线路线。</p>
 <p>三项各自的角色：$\mathbb{E}[r]$ 是<strong>油门</strong>（把高分回答变得更可能），$-\beta\,\mathrm{KL}(\pi\|\pi_{ref})$ 是<strong>缰绳</strong>（不许偏离 SFT 太远），$\beta$ 是缰绳松紧。9.3~9.6 的全部花样，本质上都是在"怎么更稳、更省地踩这脚油门"上做文章。</p>
+<h4>9.1 补：KL 项具体是怎么算的？</h4>
+<p>定义就一句话：<strong>按 P 的概率，对 P/Q 的对数求加权平均</strong>。</p>
+$$\mathrm{KL}(P\,\|\,Q)=\sum_i P(i)\log\frac{P(i)}{Q(i)}$$
+<p>$P$ 是被平均的对象（乘在外面），$Q$ 是分母（比的是 $P/Q$），所以 KL <strong>不对称</strong>：$\mathrm{KL}(P\|Q)\neq\mathrm{KL}(Q\|P)$。用具体数字走一遍（某题答案分布，P 是策略、Q 是参考模型）：</p>
+<table>
+<thead><tr><th>答案</th><th>$P(i)$（策略 $\pi_\theta$）</th><th>$Q(i)$（参考 $\pi_{ref}$）</th><th>$\log(P/Q)$</th><th>$P(i)\cdot\log(P/Q)$</th></tr></thead>
+<tbody>
+<tr><td>A</td><td>0.40</td><td>0.60</td><td>−0.405</td><td>−0.162</td></tr>
+<tr><td>B</td><td>0.35</td><td>0.25</td><td>+0.336</td><td>+0.118</td></tr>
+<tr><td>C</td><td>0.25</td><td>0.15</td><td>+0.511</td><td>+0.128</td></tr>
+</tbody>
+</table>
+<p>三项相加：$\mathrm{KL}\approx 0.083$（nat）。两个细节：P 比 Q 大的项贡献正（"新模型更看好它"算偏离），P 比 Q 小的项虽为负，但乘的 P 本身就小，拉不低总和——数学上保证 <strong>KL ≥ 0，且 P=Q 时恰为 0</strong>。</p>
+<p><strong>为什么代码里全是"log 概率相减"</strong>：整段回答的概率小到会下溢，但在 log 空间里，除法变减法、连乘变连加：</p>
+$$\log\frac{\pi_\theta(y\mid x)}{\pi_{ref}(y\mid x)}=\log\pi_\theta(y\mid x)-\log\pi_{ref}(y\mid x)=\sum_t\Big(\log\pi_\theta(y_t\mid x,y_{&lt;t})-\log\pi_{ref}(y_t\mid x,y_{&lt;t})\Big)$$
+<p>等号右边每一项正是 8.5 的 <code>logits_to_log_probs</code>（或 GRPO 的 <code>compute_per_token_logps</code>）输出的逐 token 对数概率。所以训练代码里 KL 项通常长这样：</p>
+<pre><code class="language-python"># 两次前向，拿到每条回答每个 token 的 log 概率（参考模型冻结）
+logp_theta = logits_to_log_probs(model(x).logits, y)         # (B, S) 新策略
+with torch.no_grad():
+    logp_ref  = logits_to_log_probs(ref_model(x).logits, y)  # (B, S) 参考模型
+
+kl_token = logp_theta - logp_ref               # (B, S) 逐 token 的 log(π_θ/π_ref)
+# 一条回答的 KL ≈ 在模型采到的 token 上求平均（mask 只统计 assistant 段）
+kl_seq = (kl_token * mask).sum(-1) / mask.sum(-1)            # (B,)
+loss = policy_loss + beta * kl_seq.mean()      # 策略梯度损失 + β·KL 惩罚</code></pre>
+<p><strong>"平均"平均在哪</strong>：严格定义要对<strong>所有可能回答</strong>按 $\pi_\theta$ 加权求和，语言模型根本列不完；训练里做的是<strong>蒙特卡洛估计</strong>——模型采到哪几条 y，就在哪几条上算 log 差再平均，样本多了估计就准。工程上为降方差还常用 k3 估计器 $\widehat{\mathrm{KL}}=\exp(d)-d-1$（$d=\log\pi_{ref}-\log\pi_\theta$，代码见 10.3），本质同样是逐 token 比较两个 log 概率，只是换了一种加权方式，恒非负且低方差。</p>
+<p><strong>回到文档里出现过 KL 的三个位置</strong>：DPO 的 <code>dpo_loss</code> 里"减去 ref_logratios"就是<strong>隐式 KL 锚</strong>（被吸收进二分类损失，不单独出现）；PPO/GRPO 目标里的 $-\beta\,\mathrm{KL}$ 是上面代码的<strong>显式惩罚项</strong>（对应 <code>--beta</code>）；而 $\beta$ 越大 = 缰绳越紧。理解这个计算过程后，9.3 的梯度公式、9.4 的 KL 惩罚、10.3 的 k3 代码就都能串起来了。</p>
 <h3>9.2 四类模型角色</h3>
 <table>
 <thead><tr><th>角色</th><th>作用</th><th>是否训练</th></tr></thead>
