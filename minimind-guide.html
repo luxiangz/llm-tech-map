@@ -1142,12 +1142,41 @@ $$y = Wx + BAx = (W + BA)x$$
 <p>假设对同一个 prompt $x$，人类偏好 $y_w$（win）胜过 $y_l$（lose）。BT 模型把偏好建模为：</p>
 $$P(y_w \succ y_l \mid x) = \sigma\big(r(x,y_w) - r(x,y_l)\big), \qquad \sigma(z)=\frac{1}{1+e^{-z}}$$
 <p>分数差越大，"好回答更被偏好"的概率越接近 1。这把成对偏好数据变成二分类问题。</p>
+<p><strong>先认识 sigmoid（数学直觉版）</strong>：$\sigma(z)$ 是一个"压缩器"，把任意实数 $z$ 压到 0~1 之间。它在这里的职责很单纯——把"两个回答的分数差"翻译成"好回答获胜的概率"：差得越多越接近 1，差为 0 就是五五开，差为负就是好回答反而劣势。</p>
+<table>
+<thead><tr><th>好回答分数 $r_w$</th><th>坏回答分数 $r_l$</th><th>分差 $z$</th><th>$\sigma(z)$</th><th>含义</th></tr></thead>
+<tbody>
+<tr><td>1</td><td>1</td><td>0</td><td>0.5</td><td>一样好，五五开</td></tr>
+<tr><td>2</td><td>1</td><td>1</td><td>≈0.73</td><td>好回答约 73% 胜率</td></tr>
+<tr><td>5</td><td>1</td><td>4</td><td>≈0.98</td><td>明显更好，几乎稳赢</td></tr>
+<tr><td>10</td><td>1</td><td>9</td><td>≈0.9999</td><td>碾压级差距</td></tr>
+</tbody>
+</table>
+<p><strong>直觉锚点：这就是棋类的 Elo 积分</strong>。国际象棋 / 围棋的 Elo 算法与 BT 模型同源：两个棋手积分差 200，胜率约 76%；差 400，胜率约 91%——上面"分差越大胜率越高"的曲线就是同一件事。人类很难标出"这条回答 8.5 分"，但很容易说出"这条比那条好"，BT 模型恰好只需要后一种信号。</p>
+<blockquote><strong>本节关键洞察</strong>：公式里只有<strong>分数差</strong>起作用——两个回答同时 +100，分差不变，胜率也不变。所以偏好数据只能确定回答之间的<strong>相对好坏</strong>，绝对分数本身是不可识别的；这也解释了为什么第 9 章 GRPO 用"组内相对奖励"而不是绝对分数。</blockquote>
 <h3>8.2 显式 RM 损失</h3>
 $$\mathcal{L}_{\mathrm{RM}}(\phi) = -\mathbb{E}_{(x,y_w,y_l)\sim D}\Big[\log\sigma\big(r_\phi(x,y_w)-r_\phi(x,y_l)\big)\Big]$$
 <p>训练一个打分器 $r_\phi$（基座 Transformer + 标量 head），最大化偏好对的 BT 似然。</p>
+<p><strong>逐符号拆解</strong>：</p>
+<table>
+<thead><tr><th>符号</th><th>含义</th></tr></thead>
+<tbody>
+<tr><td>$\mathbb{E}_{(x,y_w,y_l)\sim D}$</td><td>在偏好数据集 $D$ 上对样本求平均（期望）</td></tr>
+<tr><td>$r_\phi(x, y_w)$ / $r_\phi(x, y_l)$</td><td>打分器对"好回答 / 坏回答"打出的分数（$\phi$ 是打分器参数）</td></tr>
+<tr><td>$\sigma(\text{分差})$</td><td>按 8.1，这就是"模型认为好回答赢"的概率</td></tr>
+<tr><td>$-\log(\cdot)$</td><td>概率越接近 1，损失越接近 0；越接近 0，损失越大</td></tr>
+</tbody>
+</table>
+<p><strong>为什么损失长这样（三步推理）</strong>：① 单条数据上，"模型猜对"的概率就是 $\sigma(r_w-r_l)$（8.1 的定义）；② 想让所有样本的猜对概率都大，即最大化它们的乘积——但几十条 0~1 的小数连乘会下溢成 0，于是取 $\log$，把连乘变成连加；③ 训练惯例是"损失越小越好"，所以再加负号。$\log$ 是单调递增函数，最大化原概率与最大化 $\log$ 概率是同一件事。</p>
+<p><strong>直觉类比：这就是逻辑回归（二分类交叉熵）</strong>。每条偏好数据相当于一道判断题："好回答是不是比坏回答好？"标准答案是"是"，模型要用"分数差"给出答案——答得越离谱，扣分越狠。分数差为 0（答"五五开"）时损失为 $\log 2 \approx 0.693$，是"完全没把握"的基准线。</p>
+<p><strong>这个 RM 从哪来、到哪去</strong>：$r_\phi$ 通常是一个基座 Transformer 再接一层"打分头"（输出标量，如 <code>768→1</code>），对"prompt + 回答"整体编码后输出一个分数。训好后它不再参与 DPO，而是交给第 9 章的 PPO / GRPO 当"裁判"——MiniMind 里的 <code>internlm2-1_8b-reward</code> 就是这种现成裁判（RLAIF，AI 打分的 RLHF）。</p>
 <h3>8.3 DPO：跳过显式 RM 的闭式解</h3>
 <p>带 KL 约束的 RLHF 目标有解析最优解：</p>
 $$\pi^{*}(y \mid x) \propto \pi_{\mathrm{ref}}(y \mid x)\exp\!\big(r(x,y)/\beta\big)$$
+<p><strong>这一步的大白话</strong>：最优回答分布 = 参考模型原来的分布，再乘一个按分数加权的放大因子。某个回答分数高 → $\exp(r/\beta)$ 大 → 它被生成的概率被"放大"；分数低 → 被"缩小"；$\beta$ 越大，指数增长越平缓，模型越不敢偏离参考模型（越保守）。这个式子说明：<strong>"最优策略长什么样"和"分数"之间存在固定换算关系，中间没有需要逐步学习的环节</strong>——这是 DPO 能省掉 RL 循环的根源。</p>
+<p><strong>反解 reward</strong>：对上面的式子两边取对数并整理，把藏在 $\exp$ 里的 $r(x,y)$ 单独"钓"出来：</p>
+$$r(x,y) = \beta\log\frac{\pi_\theta(y\mid x)}{\pi_{\mathrm{ref}}(y\mid x)} + \beta\log Z(x)$$
+<p>多出来的 $Z(x)$ 是归一化常数（把右侧变成真正的概率分布所需的"总和"），它<strong>只依赖问题 $x$，不依赖具体回答 $y$</strong>——这个性质马上就会派上用场。</p>
 <p>反解出 reward 并代入 BT，$Z(x)$ 抵消，得到 DPO 损失（不训 RM、不做 RL 循环）：</p>
 $$\begin{aligned}
 \mathcal{L}_{\mathrm{DPO}}(\theta) = -\mathbb{E}_{(x,y_w,y_l)\sim D}\Big[\log\sigma\Big(
@@ -1156,6 +1185,16 @@ $$\begin{aligned}
 \Big)\Big]
 \end{aligned}$$
 <p>DPO 是 RLHF 目标在 BT 假设下的等价重参数化。优点是稳定、无需采样；缺点是训练在静态离策略数据上，不能利用可验证奖励。</p>
+<p><strong>$Z(x)$ 为什么能抵消</strong>：把反解出的 $r$ 分别代入好回答和坏回答，两者各带一个 $\beta\log Z(x)$；8.1 的分差 $r_w - r_l$ 做减法时，这两个一模一样的项正好对消。所以最终损失里只剩 $\beta\log(\pi_\theta/\pi_{ref})$ 的概率比——<strong>模型用"自己的概率相对参考模型的变化"冒充裁判分数</strong>。</p>
+<table>
+<thead><tr><th>三节递进</th><th>回答的问题</th><th>产物</th></tr></thead>
+<tbody>
+<tr><td>8.1 BT</td><td>有了分数，怎么算"谁更好"的概率？</td><td>$\sigma(r_w-r_l)$ 偏好模型</td></tr>
+<tr><td>8.2 RM</td><td>分数从哪来？</td><td>训好的打分器 $r_\phi$</td></tr>
+<tr><td>8.3 DPO</td><td>能不能不训打分器、不跑 RL？</td><td>概率比代替分数，一步闭式损失</td></tr>
+</tbody>
+</table>
+<blockquote><strong>一句话对比</strong>：8.2 是"先训裁判，再让模型讨好裁判"（两步、两套系统）；8.3 是"数学证明裁判评分 ≈ 概率比换算，所以直接用概率比当分数"（一步、闭式、离线）。省掉裁判的代价是：模型无法现场生成新回答让裁判打分，也就没有探索与可验证奖励——这正是第 9 章 PPO / GRPO 重新引入 rollout 的原因。</blockquote>
 <h3>8.4 数据格式：chosen / rejected 偏好对</h3>
 <p>DPO 的训练数据不是"问题 + 标准答案"，而是<strong>同一问题下的两个回答</strong>：chosen（被偏好的好回答，chosen = 被选中的）与 rejected（不被偏好的差回答，rejected = 被拒绝的）。一条真实样本长这样（默认数据路径 <code>../dataset/dpo.jsonl</code>，中文箭头只是教学注释、不是 JSON 语法）：</p>
 <pre><code class="language-json">{"chosen": [
