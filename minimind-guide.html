@@ -502,6 +502,23 @@ torch.save({k: v.half().cpu() for k, v in state_dict.items()}, ckp)
 lm_checkpoint(lm_config, weight=args.save_weight, model=model, optimizer=optimizer,
               scaler=scaler, epoch=epoch, step=step, wandb=wandb, save_dir='../checkpoints')</code></pre>
 <p>第一份只有模型参数，体积小、用于后续推理或下一阶段加载；第二份把优化器状态、scaler 缩放因子、当前 epoch/step 一起存下来，断点续训时能无缝恢复训练进度与学习率调度。</p>
+<h3>4.4 训练日志与显存解读</h3>
+<p><strong>loss 怎么读</strong>。预训练 loss 应该从高位（如 7 以上）逐步下降到稳定区间（如 1.5~1.9），这是收敛的标志；尾部单步 loss 在小区间内来回跳（1.5~1.9 之间抖动）是正常的每步噪声。看趋势要看几十步的滑动平均，而不是盯着单步值。</p>
+<p><strong>aux_loss 怎么读（仅 MoE）</strong>。aux_loss 是 4 个专家的负载均衡损失。当路由门把 token 均匀分给 4 个专家时，单层 aux_loss $=0.25\times4\times5\times10^{-4}=5\times10^{-4}$，8 个 MoE 层加起来就是 $0.004$。所以日志里 <code>aux_loss = 0.0040</code> 恒定不变是<strong>好事</strong>——说明专家负载均衡、没有"专家坍塌"；若 aux_loss 突然变大，才说明某个专家被挤死了。</p>
+<p><strong>显存怎么读</strong>。训练时的显存主要不是模型权重，而是"训练开销"。以 198M MoE、bf16、AdamW 为例，单卡约 12.9GB 的构成大致是：</p>
+<table>
+<thead><tr><th>占用项</th><th>大小估算</th><th>说明</th></tr></thead>
+<tbody>
+<tr><td>模型权重（bf16）</td><td>~0.4GB</td><td>198M 参数 × 2 字节</td></tr>
+<tr><td>fp32 主权重</td><td>~0.8GB</td><td>权重以 fp32 维护</td></tr>
+<tr><td>AdamW 一阶矩 m</td><td>~0.8GB</td><td>每参数一份</td></tr>
+<tr><td>AdamW 二阶矩 v</td><td>~0.8GB</td><td>每参数一份</td></tr>
+<tr><td>梯度</td><td>~0.4GB</td><td>反向传播</td></tr>
+<tr><td>激活值</td><td>~3GB</td><td>反向传播需保存前向中间结果</td></tr>
+<tr><td>CUDA 上下文 / 算子库 / 碎片</td><td>~2–4GB</td><td>框架与 cuBLAS 开销</td></tr>
+</tbody>
+</table>
+<p>关键点：AdamW 要存「m、v、fp32 主权重」三个和参数同规模的东西，光优化器状态就是模型权重的约 6 倍。所以"模型才 198M、显存却用 12.9GB"是正常的。要省显存可减小 <code>batch_size</code> / <code>max_seq_len</code>、改用 <code>--dtype float16</code>，或用 8-bit 优化器（AdamW-8bit）。</p>
 </section>
 
 <section id="ch5">
