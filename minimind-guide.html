@@ -54,7 +54,7 @@
     padding: 20px 16px; font-size: 0.9em; z-index: 10;
   }
   .sidebar b { display: block; margin-bottom: 8px; font-size: 1.05em; color: var(--fg); }
-  .sidebar ol { margin: 0; padding-left: 16px; }
+  .sidebar ol { margin: 0; padding-left: 0; list-style: none; }
   .sidebar li { margin: 3px 0; line-height: 1.45; }
   .sidebar a { color: #445; }
   .sidebar a:hover { color: var(--accent); }
@@ -90,12 +90,6 @@
 document.addEventListener('DOMContentLoaded', () => {
   const nav = document.getElementById('sidebar-nav');
   if (!nav) return;
-  const stripNumber = t => t
-    .replace(/^第\s*\d+\s*章\s*/, '')            // 第 X 章
-    .replace(/^第\s*\d+\s*步\s*[：:]\s*/, '')     // 第 X 步：
-    .replace(/^[A-Z]\.\d+(\.\d+)*\s*/, '')        // A.1
-    .replace(/^\d+(\.\d+)*\s*/, '')               // 1.1 / 2.3
-    .replace(/^[一二三四五六七八九十]+、\s*/, ''); // 一、二、
   nav.innerHTML = '';
   document.querySelectorAll('.wrap section').forEach(section => {
     const h2 = section.querySelector('h2');
@@ -103,7 +97,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const li = document.createElement('li');
     const a = document.createElement('a');
     a.href = '#' + section.id;
-    a.textContent = stripNumber(h2.textContent);
+    a.textContent = h2.textContent.trim();
     li.appendChild(a);
     const h3s = section.querySelectorAll('h3');
     if (h3s.length) {
@@ -114,7 +108,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const sli = document.createElement('li');
         const sa = document.createElement('a');
         sa.href = '#' + h3.id;
-        sa.textContent = stripNumber(h3.textContent);
+        sa.textContent = h3.textContent.trim();
         sli.appendChild(sa);
         ul.appendChild(sli);
       });
