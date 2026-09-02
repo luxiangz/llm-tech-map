@@ -1084,6 +1084,60 @@ $$y = Wx + BAx = (W + BA)x$$
 
 <section id="ch8">
 <h2>第 8 章 偏好对齐（RM / DPO）</h2>
+<p><strong>"RM 还是 DPO"只是两个端点</strong>，完整的地图比这大。真正要看懂偏好对齐，得先分清两个正交的维度，再看它们组成的四个格子。</p>
+<p><strong>维度一：奖励信号从哪来？</strong></p>
+<pre><code>信号来源
+├─ 显式奖励（要"打分器"）
+│  ├─ 人类标注 → 训练 RM（Reward Model）       ← 经典 RLHF
+│  ├─ AI 评委打分（RLAIF）                     ← MiniMind 用 internlm2-1_8b-reward 就是 AI 打分
+│  ├─ 规则分（格式/长度/GT 匹配）               ← 推理/数学任务常用
+│  └─ 工具执行结果                             ← Agentic RL
+└─ 隐式奖励（不要打分器，奖励被吸收进损失）
+   └─ DPO 家族：用"偏好对"直接算损失</code></pre>
+<p><strong>维度二：要不要在线采样（rollout）？</strong></p>
+<pre><code>├─ 在线（RL 式）：需要 rollout —— PPO / GRPO / REINFORCE++
+└─ 离线（损失式）：不需要 rollout —— DPO / IPO / KTO / ORPO ...</code></pre>
+<p>所以不是"RM 或 DPO"二选一，而是四个组合格：</p>
+<table>
+<thead><tr><th></th><th>显式奖励（RM / 规则）</th><th>隐式奖励（无 RM）</th></tr></thead>
+<tbody>
+<tr><td><strong>在线（要 rollout）</strong></td><td><strong>RLHF / PPO / GRPO</strong>（MiniMind <code>train_ppo</code> / <code>train_grpo</code>，RM 或规则打分）</td><td>（一般不这么做）</td></tr>
+<tr><td><strong>离线（不要 rollout）</strong></td><td>蒸馏式 / 奖励回归（少见）</td><td><strong>DPO 家族</strong>（MiniMind <code>train_dpo</code>）</td></tr>
+</tbody>
+</table>
+<blockquote class="warn">之前纠结的"同步 / 异步 RL"只属于<strong>左上角</strong>（在线显式奖励那格）——因为有采样环节，才有"采样和训练怎么组织"的问题。DPO 那格根本没有 rollout，所以同步/异步对 DPO 无意义。</blockquote>
+<p><strong>A. RM / 规则驱动的在线 RL（需要 rollout）</strong></p>
+<table>
+<thead><tr><th>方法</th><th>特点</th><th>谁的实现</th></tr></thead>
+<tbody>
+<tr><td><strong>PPO</strong></td><td>四模型（Actor/Critic/Ref/Reward）+ GAE</td><td><code>train_ppo.py</code></td></tr>
+<tr><td><strong>GRPO</strong></td><td>去掉 Critic，组内 z-score（DeepSeek-R1 路线）</td><td><code>train_grpo.py</code></td></tr>
+<tr><td>REINFORCE++ / RLOO / ReMax</td><td>更简单的策略梯度变体</td><td>大模型时代常用</td></tr>
+<tr><td>DAPO / GSPO</td><td>GRPO 的改进版（解耦 clip 等）</td><td>VeRL 里可选</td></tr>
+</tbody>
+</table>
+<blockquote>这一格的奖励可以是 <strong>RM</strong>（学出来的），也可以是 <strong>规则</strong>（写死的）——MiniMind 的 GRPO 规则分（长度/思考/GT 匹配）在奖励模型缺失时就退化成纯规则版。</blockquote>
+<p><strong>B. DPO 家族（离线，无 RM、无 rollout）</strong></p>
+<table>
+<thead><tr><th>方法</th><th>一句话</th><th>与 DPO 的区别</th></tr></thead>
+<tbody>
+<tr><td><strong>DPO</strong></td><td>$-\log\sigma(\beta\cdot(r_w - r_l))$</td><td>原始版（<code>train_dpo.py</code>）</td></tr>
+<tr><td><strong>IPO</strong></td><td>换成 MSE 目标</td><td>修 DPO 过拟合、不依赖偏好强度</td></tr>
+<tr><td><strong>KTO</strong></td><td>只需"好/坏"二元标签，不需要配对</td><td>数据更便宜</td></tr>
+<tr><td><strong>ORPO</strong></td><td>SFT 时顺便做偏好（无需参考模型）</td><td>省一次前向</td></tr>
+<tr><td>SimPO / RSO / cDPO</td><td>各种工程改进</td><td>—</td></tr>
+</tbody>
+</table>
+<p><strong>C. 别忘了还有"信号不是人类"的</strong>：RLAIF（评委是 AI，MiniMind 的 RM 就是 internlm2 奖励模型打分）、规则奖励（推理对答案、工具对 GT，根本不用训 RM）、Constitutional AI（模型自我批评生成约束）。</p>
+<p><strong>决策树（代码库里怎么选）</strong></p>
+<pre><code>要做偏好对齐？
+├─ 只有"好/坏回答对"，想最便宜 → DPO（train_dpo.py，lr 4e-8）
+├─ 有大量 prompt，能负担 rollout → PPO/GRPO（train_grpo / train_ppo）
+│    ├─ 有 RM（internlm2）→ RM 打分
+│    └─ 没有 RM → 规则分（降级补丁）
+├─ 要教"用工具 / 推理" → Agentic RL（规则 / GT 奖励）
+└─ 小模型快速试 → DPO 起步，GRPO 打磨</code></pre>
+<blockquote class="warn"><strong>一句话总结</strong>："RM 还是 DPO"是"显式奖励在线 RL vs 隐式奖励离线损失"两个极端的缩写。真实选择有四个格子，再加上"信号是人工 / AI / 规则 / 工具"的细分——MiniMind 代码库恰好把主要格子都覆盖了：<code>train_dpo.py</code>（离线隐式）、<code>train_ppo / train_grpo</code>（在线显式 RM / 规则）、<code>train_agent.py</code>（在线显式规则 + 工具）。同步 / 异步只影响在线那一格；DPO 是另一个世界（无采样、无 RL 循环、闭式损失），学习路径和 GRPO 完全不同。</blockquote>
 <h3>8.1 Bradley-Terry 偏好模型</h3>
 <p>假设对同一个 prompt $x$，人类偏好 $y_w$（win）胜过 $y_l$（lose）。BT 模型把偏好建模为：</p>
 $$P(y_w \succ y_l \mid x) = \sigma\big(r(x,y_w) - r(x,y_l)\big), \qquad \sigma(z)=\frac{1}{1+e^{-z}}$$
