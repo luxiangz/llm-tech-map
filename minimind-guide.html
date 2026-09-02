@@ -246,6 +246,26 @@ python train_grpo.py --data_path ../dataset/rlaif.jsonl --from_weight full_sft
 # Agentic RL 工具调用
 python train_agent.py --data_path ../dataset/agent_rl.jsonl</code></pre>
 <p>这些进阶阶段依赖对应数据（<code>dpo.jsonl</code>、<code>rlaif.jsonl</code>、<code>agent_rl.jsonl</code>），RL 还需要奖励模型 <code>internlm2-1_8b-reward</code>。</p>
+<p><strong>奖励模型下载（GRPO / Agentic 必需）</strong>。RL 需要 InternLM2-1.8B-Reward（约 3.4GB），放到 minimind 的<strong>同级目录</strong>：</p>
+<pre><code class="language-bash">cd ~/luxiang/trainnew
+# 方式 A：modelscope（若下载权重卡住，改用方式 B）
+modelscope download --model Shanghai_AI_Laboratory/internlm2-1_8b-reward --local_dir ./internlm2-1_8b-reward
+
+# 方式 B：wget 直连分片（modelscope 卡住时用这个）
+cd ~/luxiang/trainnew/internlm2-1_8b-reward
+wget -c "https://modelscope.cn/models/Shanghai_AI_Laboratory/internlm2-1_8b-reward/resolve/master/model-00001-of-00002.safetensors" -O model-00001-of-00002.safetensors
+wget -c "https://modelscope.cn/models/Shanghai_AI_Laboratory/internlm2-1_8b-reward/resolve/master/model-00002-of-00002.safetensors" -O model-00002-of-00002.safetensors</code></pre>
+<p><strong>全量数据 + MoE 训练</strong>：</p>
+<pre><code class="language-bash"># MoE 预训练（全量数据，max_seq_len 用 380）
+torchrun --nproc_per_node 4 train_pretrain.py --use_moe 1 --data_path ../dataset/pretrain_t2t.jsonl --max_seq_len 380
+
+# MoE SFT（加载 MoE 预训练权重，脚本自动加 _moe 后缀）
+torchrun --nproc_per_node 4 train_full_sft.py --use_moe 1 --data_path ../dataset/sft_t2t.jsonl --from_weight pretrain
+
+# MoE GRPO / Agentic
+python train_grpo.py --use_moe 1 --data_path ../dataset/rlaif.jsonl --from_weight full_sft
+python train_agent.py --use_moe 1 --data_path ../dataset/agent_rl.jsonl --from_weight full_sft</code></pre>
+<blockquote class="warn"><strong>问题记录</strong>：① 奖励模型默认相对路径 <code>../../internlm2-1_8b-reward</code> 在新目录结构下解析到 <code>trainnew/internlm2-1_8b-reward</code>，且原目录是空的，导致 <code>HFValidationError: Repo id must be...</code>——解决：下载到正确位置，或显式传 <code>--reward_model_path</code> 绝对路径。② <code>modelscope download</code> 下载权重分片会卡住，改用 <code>wget -c</code> 直连分片 URL。③ MoE 权重带 <code>_moe</code> 后缀（如 <code>pretrain_768_moe.pth</code>），与 Dense 权重不冲突、不覆盖。</blockquote>
 </section>
 
 <section id="ch1">
@@ -814,6 +834,10 @@ $$\theta_{t+1} = \theta_t - \eta \cdot g_t$$
 <li><strong>Nesterov</strong>：动量版的"提前看一步"，收敛更快。</li>
 </ul>
 <p>LLM 场景：大模型基本不用——收敛太慢、对 lr 太敏感。</p>
+<p><strong>补充：与牛顿迭代的关系（一阶 vs 二阶）。</strong>SGD 和牛顿迭代都是"沿某个方向迭代更新参数"，差别在于用了几阶信息：SGD 只用梯度（一阶），牛顿法还额外利用 Hessian（二阶曲率）对梯度方向做缩放和旋转。</p>
+$$\theta_{t+1} = \theta_t - \eta \cdot g_t \quad (\mathrm{SGD}) \qquad \theta_{t+1} = \theta_t - H^{-1}g_t \quad (\mathrm{Newton})$$
+<p>对照可见，牛顿法就是把 SGD 的标量学习率 $\eta$ 换成了 Hessian 的逆矩阵 $H^{-1}$：曲率大的方向自动走小步、平缓方向走大步，理论上收敛更快（对二次函数一步到位；当 $H=I$ 时退化为梯度下降）。</p>
+<p>但 LLM 训练不用牛顿法：Hessian 是"参数×参数"矩阵，64M 模型就是 64M×64M，存不下也求不了逆（$O(N^3)$）；非凸曲面上 Hessian 还可能不正定。所以实际用一阶优化器——Adam 维护梯度平方的滑动平均，近似 Hessian 的对角元素，相当于给每个参数一个自适应步长。从 SGD 到拟牛顿/自然梯度再到牛顿法，是一条"越来越依赖曲率信息、也越来越难实现"的谱系。</p>
 <h3>6.2 Momentum（动量）</h3>
 <p>核心思想：在 SGD 基础上累积历史梯度方向，让更新方向更平滑。</p>
 $$m_t = \beta m_{t-1} + (1-\beta)g_t, \qquad \theta_{t+1} = \theta_t - \eta \cdot m_t$$
