@@ -90,6 +90,12 @@
 document.addEventListener('DOMContentLoaded', () => {
   const nav = document.getElementById('sidebar-nav');
   if (!nav) return;
+  const stripNumber = t => t
+    .replace(/^第\s*\d+\s*章\s*/, '')            // 第 X 章
+    .replace(/^第\s*\d+\s*步\s*[：:]\s*/, '')     // 第 X 步：
+    .replace(/^[A-Z]\.\d+(\.\d+)*\s*/, '')        // A.1
+    .replace(/^\d+(\.\d+)*\s*/, '')               // 1.1 / 2.3
+    .replace(/^[一二三四五六七八九十]+、\s*/, ''); // 一、二、
   nav.innerHTML = '';
   document.querySelectorAll('.wrap section').forEach(section => {
     const h2 = section.querySelector('h2');
@@ -97,7 +103,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const li = document.createElement('li');
     const a = document.createElement('a');
     a.href = '#' + section.id;
-    a.textContent = h2.textContent;
+    a.textContent = stripNumber(h2.textContent);
     li.appendChild(a);
     const h3s = section.querySelectorAll('h3');
     if (h3s.length) {
@@ -108,7 +114,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const sli = document.createElement('li');
         const sa = document.createElement('a');
         sa.href = '#' + h3.id;
-        sa.textContent = h3.textContent;
+        sa.textContent = stripNumber(h3.textContent);
         sli.appendChild(sa);
         ul.appendChild(sli);
       });
@@ -131,21 +137,21 @@ document.addEventListener('DOMContentLoaded', () => {
   <ol id="sidebar-nav">
     <li><a href="#preface">前言：全链路地图与学习路线</a></li>
     <li><a href="#quickstart">快速开始：从头训练一遍</a></li>
-    <li><a href="#ch1">第 1 章 环境准备</a></li>
-    <li><a href="#ch2">第 2 章 模型配置与参数量</a></li>
-    <li><a href="#ch3">第 3 章 分词器 Tokenizer</a></li>
-    <li><a href="#ch4">第 4 章 预训练</a></li>
-    <li><a href="#ch5">第 5 章 模型结构深读</a></li>
-    <li><a href="#ch6">第 6 章 优化器详解</a></li>
-    <li><a href="#ch7">第 7 章 监督微调 SFT</a></li>
-    <li><a href="#ch8">第 8 章 偏好对齐（RM / DPO）</a></li>
-    <li><a href="#ch9">第 9 章 强化学习：理论</a></li>
-    <li><a href="#ch10">第 10 章 强化学习：实现与异步</a></li>
-    <li><a href="#ch11">第 11 章 Agentic RL</a></li>
-    <li><a href="#ch12">第 12 章 知识蒸馏</a></li>
-    <li><a href="#ch13">第 13 章 测试与推理</a></li>
-    <li><a href="#ch14">第 14 章 部署</a></li>
-    <li><a href="#ch15">第 15 章 评测与长文本外推</a></li>
+    <li><a href="#ch1">环境准备</a></li>
+    <li><a href="#ch2">模型配置与参数量</a></li>
+    <li><a href="#ch3">分词器 Tokenizer</a></li>
+    <li><a href="#ch4">预训练</a></li>
+    <li><a href="#ch5">模型结构深读</a></li>
+    <li><a href="#ch6">优化器详解</a></li>
+    <li><a href="#ch7">监督微调 SFT</a></li>
+    <li><a href="#ch8">偏好对齐（RM / DPO）</a></li>
+    <li><a href="#ch9">强化学习：理论</a></li>
+    <li><a href="#ch10">强化学习：实现与异步</a></li>
+    <li><a href="#ch11">Agentic RL</a></li>
+    <li><a href="#ch12">知识蒸馏</a></li>
+    <li><a href="#ch13">测试与推理</a></li>
+    <li><a href="#ch14">部署</a></li>
+    <li><a href="#ch15">评测与长文本外推</a></li>
     <li><a href="#appendix">附录：缩写对照与论文地图</a></li>
   </ol>
 </nav>
