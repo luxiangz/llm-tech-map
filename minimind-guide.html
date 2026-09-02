@@ -796,7 +796,7 @@ $$\theta_{t+1} = \theta_t - \text{更新量}$$
 <tr><td><strong>AdamW</strong></td><td>Adam + 解耦权重衰减</td><td><strong>LLM 标准</strong></td></tr>
 </tbody>
 </table>
-<h3>一、SGD（随机梯度下降）——最朴素的起点</h3>
+<h3>6.1 SGD（随机梯度下降）——最朴素的起点</h3>
 <p>核心思想：<strong>沿梯度反方向走固定步长</strong>——最直接的"下山"方式，哪里陡往哪走。</p>
 $$\theta_{t+1} = \theta_t - \eta \cdot g_t$$
 <p>其中 $\eta$ 是学习率（全局统一），$g_t$ 是当前梯度。</p>
@@ -814,7 +814,7 @@ $$\theta_{t+1} = \theta_t - \eta \cdot g_t$$
 <li><strong>Nesterov</strong>：动量版的"提前看一步"，收敛更快。</li>
 </ul>
 <p>LLM 场景：大模型基本不用——收敛太慢、对 lr 太敏感。</p>
-<h3>二、Momentum（动量）</h3>
+<h3>6.2 Momentum（动量）</h3>
 <p>核心思想：在 SGD 基础上累积历史梯度方向，让更新方向更平滑。</p>
 $$m_t = \beta m_{t-1} + (1-\beta)g_t, \qquad \theta_{t+1} = \theta_t - \eta \cdot m_t$$
 <p>其中 $\beta$ 通常 0.9，$m_t$ 是历史梯度的指数滑动平均。</p>
@@ -841,22 +841,22 @@ $$m_t = \beta m_{t-1} + (1-\beta)g_t, \qquad \theta_{t+1} = \theta_t - \eta \cdo
 </svg>
 <figcaption>动量：小球既沿当前坡度（梯度）滚，又带着历史速度（动量），方向更平滑、更能冲出震荡。</figcaption>
 </figure>
-<h3>三、AdaGrad——自适应学习率的开端</h3>
+<h3>6.3 AdaGrad——自适应学习率的开端</h3>
 <p>核心思想：<strong>每个参数有自己的学习率</strong>。历史梯度平方累积和 $G_t$ 作分母：梯度经常大的参数分母大、步长小；反之步长大。即"梯度大的参数自动放缓"。</p>
 $$G_t = \sum_{i=1}^{t} g_i^2, \qquad \theta_{t+1} = \theta_t - \frac{\eta}{\sqrt{G_t + \epsilon}} \cdot g_t$$
 <p><strong>致命缺点</strong>：$G_t$ 是累积的（只增不减）——训练久了 $G_t$ 越来越大、分母越来越大，学习率趋近于 0，模型"学不动"了。LLM 场景不适用。</p>
-<h3>四、RMSProp——解决 AdaGrad 的"累积爆炸"</h3>
+<h3>6.4 RMSProp——解决 AdaGrad 的"累积爆炸"</h3>
 <p>核心思想：用<strong>滑动平均</strong>代替累积和，$v_t$ 只考虑近期梯度平方（指数滑动平均），而不是从开始一直加。</p>
 $$v_t = \beta v_{t-1} + (1-\beta)g_t^2, \qquad \theta_{t+1} = \theta_t - \frac{\eta}{\sqrt{v_t + \epsilon}} \cdot g_t$$
 <p>$\beta$ 通常 0.9，是历史权重的衰减因子。优点：自适应 lr 不衰减到零、对非平稳目标好；缺点：没有动量（方向可能震荡）。</p>
-<h3>五、Adam（自适应矩估计）——集大成者</h3>
+<h3>6.5 Adam（自适应矩估计）——集大成者</h3>
 <p>核心思想：<strong>动量（RMSProp 的方向版）+ 自适应 lr（RMSProp 的步长版）</strong>，两者结合：</p>
 $$m_t = \beta_1 m_{t-1} + (1-\beta_1)g_t, \quad v_t = \beta_2 v_{t-1} + (1-\beta_2)g_t^2$$
 $$\hat{m}_t = \frac{m_t}{1-\beta_1^t}, \quad \hat{v}_t = \frac{v_t}{1-\beta_2^t}, \qquad \theta_{t+1} = \theta_t - \frac{\eta}{\sqrt{\hat{v}_t} + \epsilon} \hat{m}_t$$
 <p>其中 $m_t$ 是一阶矩（梯度均值，动量），$v_t$ 是二阶矩（梯度平方均值，自适应步长），$\hat m_t/\hat v_t$ 是偏差校正（训练初期 m/v 从 0 开始有偏，校正后更准）。</p>
 <p><strong>为什么好用</strong>：对 lr 不敏感（自适应让每参数自动调步长，lr 差 10 倍都能收敛）；收敛快（动量 + 自适应）；省心（默认参数 $\beta_1=0.9, \beta_2=0.999, \epsilon=1e-8$ 大多场景直接可用）。</p>
 <p><strong>缺点</strong>：权重衰减实现方式有问题——Adam 把 weight decay 加进梯度里（$g_t + \lambda\theta_t$），和自适应 lr 纠缠，衰减步长也被自适应该了，正则效果不干净。</p>
-<h3>六、AdamW——LLM 的标准答案（MiniMind 用这个）</h3>
+<h3>6.6 AdamW——LLM 的标准答案（MiniMind 用这个）</h3>
 <p>Adam 把 weight decay 加进梯度里（<code>g_t + λθ_t</code>），与自适应 lr 纠缠；AdamW 把权重衰减单独减：</p>
 $$\theta_{t+1} = \theta_t - \frac{\eta}{\sqrt{\hat{v}_t} + \epsilon} \hat{m}_t - \eta \lambda \theta_t$$
 <table>
@@ -872,7 +872,7 @@ $$\theta_{t+1} = \theta_t - \frac{\eta}{\sqrt{\hat{v}_t} + \epsilon} \hat{m}_t -
 lr = get_lr(...)                                                      # 计算当前 step 的余弦衰减 lr
 for param_group in optimizer.param_groups: param_group['lr'] = lr     # 动态覆盖学习率
 optimizer.step(); optimizer.zero_grad(set_to_none=True)               # 更新参数并清空梯度（置 None 省显存）</code></pre>
-<h3>七、常见变体与工程优化</h3>
+<h3>6.7 常见变体与工程优化</h3>
 <table>
 <thead><tr><th>变体</th><th>思路</th><th>效果</th></tr></thead>
 <tbody>
