@@ -911,6 +911,10 @@ $$\hat{m}_t = \frac{m_t}{1-\beta_1^t}, \quad \hat{v}_t = \frac{v_t}{1-\beta_2^t}
 <h3>6.6 AdamW——LLM 的标准答案（MiniMind 用这个）</h3>
 <p>Adam 把 weight decay 加进梯度里（<code>g_t + λθ_t</code>），与自适应 lr 纠缠；AdamW 把权重衰减单独减：</p>
 $$\theta_{t+1} = \theta_t - \frac{\eta}{\sqrt{\hat{v}_t} + \epsilon} \hat{m}_t - \eta \lambda \theta_t$$
+<p>其中 Adam 部分先算三个量——一阶矩、二阶矩和它们的偏差校正：</p>
+$$m_t = \beta_1 m_{t-1} + (1-\beta_1) g_t \qquad \text{一阶矩：梯度的动量（方向）}$$
+$$v_t = \beta_2 v_{t-1} + (1-\beta_2) g_t^2 \qquad \text{二阶矩：梯度平方的指数滑动平均（大小）}$$
+$$\hat{m}_t = \frac{m_t}{1-\beta_1^t}, \qquad \hat{v}_t = \frac{v_t}{1-\beta_2^t} \qquad \text{偏差校正：修正 m/v 从 0 起步导致的初期偏小}$$
 <table>
 <thead><tr><th></th><th>Adam</th><th>AdamW</th></tr></thead>
 <tbody>
@@ -919,6 +923,33 @@ $$\theta_{t+1} = \theta_t - \frac{\eta}{\sqrt{\hat{v}_t} + \epsilon} \hat{m}_t -
 <tr><td>效果</td><td>正则不够干净</td><td>正则干净，泛化更好</td></tr>
 </tbody>
 </table>
+<p><strong>优化器状态到底保存什么</strong>。AdamW 对<strong>每一个参数</strong>都额外保存两个和参数同样形状的 fp32 张量：</p>
+<ul>
+<li><strong>m（一阶矩）</strong>：梯度的指数滑动平均，相当于动量，记录"最近梯度朝哪个方向走"；</li>
+<li><strong>v（二阶矩）</strong>：梯度平方的指数滑动平均，记录"最近梯度有多大"，用来做自适应步长——梯度大的参数步长小、梯度小的参数步长大。</li>
+</ul>
+<p>混合精度训练时，PyTorch 还会另存一份 <strong>fp32 主权重</strong>（前向/反向用 bf16，参数更新用 fp32 保证精度）。所以对 P 个参数的模型，参数相关的显存占用是：</p>
+<table>
+<thead><tr><th>内容</th><th>dtype</th><th>字节数</th><th>198M 参数示例</th></tr></thead>
+<tbody>
+<tr><td>模型权重（前向用）</td><td>bf16</td><td>2P</td><td>~0.4GB</td></tr>
+<tr><td>fp32 主权重</td><td>fp32</td><td>4P</td><td>~0.8GB</td></tr>
+<tr><td>一阶矩 m</td><td>fp32</td><td>4P</td><td>~0.8GB</td></tr>
+<tr><td>二阶矩 v</td><td>fp32</td><td>4P</td><td>~0.8GB</td></tr>
+</tbody>
+</table>
+<p>即优化器状态（主权重 + m + v）合计 12P 字节，是 bf16 模型权重（2P）的 6 倍——这就是"198M 的模型、显存却要 12.9GB"的最大头。</p>
+<p><strong>举例：一个参数走一步</strong>。设 $\theta_0=0.5$、$\eta=0.001$、$\beta_1=0.9$、$\beta_2=0.999$、$\epsilon=10^{-8}$、$\lambda=0.01$，当前梯度 $g_1=0.4$：</p>
+<ol>
+<li>一阶矩：$m_1 = 0.9\times0 + 0.1\times0.4 = 0.04$（注意不是 0.4，只取了 10% 的新梯度）；</li>
+<li>二阶矩：$v_1 = 0.999\times0 + 0.001\times0.4^2 = 0.00016$；</li>
+<li>偏差校正：$\hat{m}_1 = 0.04/(1-0.9) = 0.4$，$\hat{v}_1 = 0.00016/(1-0.999) = 0.16$；</li>
+<li>自适应步长：$\eta/\sqrt{\hat{v}_1} = 0.001/0.4 = 0.0025$；</li>
+<li>更新量：$\hat{m}_1 \times \eta/\sqrt{\hat{v}_1} = 0.4 \times 0.0025 = 0.001$；</li>
+<li>权重衰减：$\eta\lambda\theta_0 = 0.001\times0.01\times0.5 = 0.000005$；</li>
+<li>新参数：$\theta_1 = 0.5 - 0.001 - 0.000005 \approx 0.499$。</li>
+</ol>
+<p>三个关键观察：① <strong>m 是"平滑后的梯度"</strong>，初期被 $\beta_1$ 压得很小（0.04 vs 原始 0.4），靠偏差校正拉回正常尺度（0.4）；② <strong>$\sqrt{\hat{v}}$ 负责"自适应"</strong>——梯度平方越大，分母越大，步长越小；③ <strong>AdamW 的权重衰减 $-\eta\lambda\theta$ 是单独减的</strong>，不经过 $\hat{v}$，所以衰减更干净。</p>
 <p><strong>为什么 LLM 都用 AdamW</strong>：权重衰减的目的（防过拟合）不被自适应 lr 干扰；LLaMA、Qwen、MiniMind 全部使用；配合 lr 调度（动态覆盖 <code>param_groups['lr']</code>）实现余弦衰减。</p>
 <pre><code class="language-python">optimizer = optim.AdamW(model.parameters(), lr=args.learning_rate)   # 创建 AdamW 优化器
 lr = get_lr(...)                                                      # 计算当前 step 的余弦衰减 lr
