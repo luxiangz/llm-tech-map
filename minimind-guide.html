@@ -1156,28 +1156,164 @@ $$\begin{aligned}
 \Big)\Big]
 \end{aligned}$$
 <p>DPO 是 RLHF 目标在 BT 假设下的等价重参数化。优点是稳定、无需采样；缺点是训练在静态离策略数据上，不能利用可验证奖励。</p>
-<h3>8.4 DPO 实现要点</h3>
-<p>策略模型可训练、参考模型冻结（都从 <code>full_sft</code> 加载）。一次前向算两个模型的 log-prob：</p>
-<pre><code class="language-python">def logits_to_log_probs(logits, labels):
-    # logits: (B, S, vocab)，labels: (B, S)
-    log_probs = F.log_softmax(logits, dim=2)  # (B, S, vocab) 对词表维取对数概率
-    return log_probs.gather(dim=2, index=labels.unsqueeze(2)).squeeze(-1)  # (B, S) 取真实 token 的 logp
+<h3>8.4 数据格式：chosen / rejected 偏好对</h3>
+<p>DPO 的训练数据不是"问题 + 标准答案"，而是<strong>同一问题下的两个回答</strong>：chosen（被偏好的好回答，chosen = 被选中的）与 rejected（不被偏好的差回答，rejected = 被拒绝的）。一条真实样本长这样（默认数据路径 <code>../dataset/dpo.jsonl</code>，中文箭头只是教学注释、不是 JSON 语法）：</p>
+<pre><code class="language-json">{"chosen": [
+    {"role": "user", "content": "什么是机器学习？"},
+    {"role": "assistant", "content": "机器学习是让计算机从数据中自动学习规律、并用来做预测或决策的技术……"}  ← 好回答
+  ],
+ "rejected": [
+    {"role": "user", "content": "什么是机器学习？"},
+    {"role": "assistant", "content": "就是人工智能。"}                                                   ← 差回答
+  ]}</code></pre>
+<blockquote class="warn"><strong>最容易写错的一点</strong>：两个字段各自是<strong>一段完整对话</strong>，不是把好/坏回答塞进同一条 <code>conversations</code>。代码里 <code>DPODataset</code> 只认两个 key：<code>chosen</code> 和 <code>rejected</code>，并各自独立套一遍 chat 模板（<code>apply_chat_template(..., add_generation_prompt=False)</code>）、各自截断/补零到 <code>max_seq_len=1024</code>。两份对话的 <strong>user（及 system）段必须逐字一致、只有 assistant 回答不同</strong>——否则后面"好减坏"的 logratio 里混入了 prompt 的差异，数值就没有意义。</blockquote>
+<p>每条样本产出<strong>六个张量</strong>（chosen / rejected 各一套，每套都是输入、标签、掩码三件套）：</p>
+<pre><code class="language-python">chosen_input_ids = tokenizer(chosen_prompt, truncation=True,
+                             max_length=1024, padding='max_length')['input_ids']
+# 长度 = 1024（右侧补 pad）
 
-with torch.no_grad():                        # 参考模型前向不求梯度（冻结）
-    ref_logits = ref_model(x)
-ref_log_probs = logits_to_log_probs(ref_logits, y)            # 参考模型的 log 概率
-outputs = model(x)                                            # 策略模型前向（可训练）
-policy_log_probs = logits_to_log_probs(outputs.logits, y)     # 策略模型的 log 概率
-loss = dpo_loss(ref_log_probs, policy_log_probs, mask, beta=beta)  # -F.logsigmoid(beta * logratio)</code></pre>
-<p>关键超参与坑：<code>lr=4e-8</code>（极低，防遗忘）、<code>beta=0.15</code>（控制偏离参考模型的强度）、数据质量决定上限、chosen/rejected 的 mask 必须只覆盖 assistant 段。</p>
+x_chosen = torch.tensor(chosen_input_ids[:-1])    # (S,) 输入：去掉最后一个 token
+y_chosen = torch.tensor(chosen_input_ids[1:])     # (S,) 标签：每个位置要预测的"下一个 token" y_t
+mask_chosen = torch.tensor(chosen_loss_mask[1:])  # (S,) 1 = 该标签落在 assistant 段，0 = 不参与损失
+# x / y / mask 三者的长度都是 S = max_seq_len - 1（平移一位后少了尾巴）
+# rejected 一套完全相同：x_rejected / y_rejected / mask_rejected</code></pre>
+<p><strong>掩码怎么来的</strong>：<code>generate_loss_mask</code> 与 SFT 复用同一套思路——先编码"assistant 起始标记"和"结束标记"两个锚点串，然后线性扫描整条输入：一旦命中 assistant 起始标记，就把其后到结束标记为止的位置全部标 1。于是 <strong>user / system 段是 0（不参与偏好损失），assistant 段是 1，右侧 pad 区天然是 0</strong>。</p>
+
+<h3>8.5 逐 token 对数概率：logits_to_log_probs</h3>
+<p>DPO 的第一步是拿到"模型认为这个 token 有多可能"。语言模型输出的是词表打分 logits，要转成对数概率：</p>
+<pre><code class="language-python">def logits_to_log_probs(logits, labels):
+    # logits: (B, S, V) —— batch、序列位置、词表 V 三者的打分
+    # labels: (B, S)    —— 每个位置"真实该出现的下一个 token"（即 y_t）
+    log_probs = F.log_softmax(logits, dim=2)          # (B, S, V) 沿词表维归一化
+    # 在词表维上按 labels 做 gather：只取"真实 token"那一格的对数概率
+    log_probs_per_token = torch.gather(log_probs, dim=2,
+                                       index=labels.unsqueeze(2)).squeeze(-1)  # (B, S)
+    return log_probs_per_token</code></pre>
+<p>等价写法就是逐位置取条件对数概率：</p>
+$$p_t = \log\pi_\theta(y_t \mid x,\, y_{&lt;t}) = \Big[\operatorname{logsoftmax}\big(\mathrm{logits}\big)\Big]_{t,\,y_t}$$
+<p><code>log_softmax</code> 先把每个位置对全词表的打分归一化成合法概率分布，<code>gather</code> 再按 <code>labels</code> 给出的"真实 token 编号"取出对应那一格——<strong>模型给这个正确 token 分配的概率越大，这一格越接近 0；分配得越离谱（自信地给错），越接近负无穷</strong>。这与 GRPO 里 <code>compute_per_token_logps</code> 是同一招。</p>
+
+<h3>8.6 闭式损失：dpo_loss 逐段拆解</h3>
+<p>DPO 的全部秘密是 8.3 推出的那条<strong>隐式奖励恒等式</strong>——不需要训练打分器，把"策略相对参考模型的偏离程度"直接当作奖励：</p>
+$$r(x,y) = \beta\log\frac{\pi_\theta(y\mid x)}{\pi_{\mathrm{ref}}(y\mid x)}$$
+<p>把好/坏两个回答的 $r$ 之差塞进 Bradley-Terry 的二分类似然，就是 <code>dpo_loss</code>（<code>train_dpo.py</code>）：</p>
+<pre><code class="language-python">def dpo_loss(ref_log_probs, policy_log_probs, mask, beta):
+    # 三个入参 shape 都是 (2B, S)；mask 把非 assistant 段清零
+    ref_log_probs    = (ref_log_probs * mask).sum(dim=1)     # (2B,) 每条序列的总 log 概率
+    policy_log_probs = (policy_log_probs * mask).sum(dim=1)  # (2B,)（位置求和 = 概率连乘取 log）
+
+    batch_size = ref_log_probs.shape[0]          # = 2B（chosen + rejected 拼出来的行数）
+    chosen_ref_log_probs    = ref_log_probs[:batch_size // 2]     # 前半 = chosen（布局约定！）
+    reject_ref_log_probs    = ref_log_probs[batch_size // 2:]     # 后半 = rejected
+    chosen_policy_log_probs = policy_log_probs[:batch_size // 2]
+    reject_policy_log_probs = policy_log_probs[batch_size // 2:]
+
+    pi_logratios  = chosen_policy_log_probs - reject_policy_log_probs  # 策略模型：好 − 坏
+    ref_logratios = chosen_ref_log_probs    - reject_ref_log_probs     # 参考模型：好 − 坏
+    logits = pi_logratios - ref_logratios    # 相对参考模型的"偏好增量"
+    loss = -F.logsigmoid(beta * logits)      # 二分类损失，再对 batch 求平均
+    return loss.mean()</code></pre>
+<p>写成数学式就是：</p>
+$$\mathcal{L}_{\mathrm{DPO}} = -\log\sigma\Big(\underbrace{\beta\log\frac{\pi_\theta(y_w\mid x)}{\pi_{\mathrm{ref}}(y_w\mid x)}}_{r(x,y_w)} - \underbrace{\beta\log\frac{\pi_\theta(y_l\mid x)}{\pi_{\mathrm{ref}}(y_l\mid x)}}_{r(x,y_l)}\Big)$$
+<p>四步拆开看设计意图：</p>
 <table>
-<thead><tr><th></th><th>DPO</th><th>PPO</th></tr></thead>
+<thead><tr><th>代码片段</th><th>含义</th><th>训练想要的方向</th></tr></thead>
 <tbody>
-<tr><td>奖励模型</td><td>不需要（用对数据）</td><td>需要（或规则/模型评分）</td></tr>
-<tr><td>数据</td><td>静态 chosen/rejected 对</td><td>策略自己采样（在线）</td></tr>
-<tr><td>工程复杂度</td><td>低（双模型前向）</td><td>高（Actor/Critic/Ref/Reward）</td></tr>
+<tr><td>按 mask 求和</td><td>把整段 assistant 回答的逐 token log 概率累加 = 整段回答的总 log 概率</td><td>只比较"回答整体"，不掺 prompt / pad</td></tr>
+<tr><td>前后两半拆分</td><td>约定 batch 前半是 chosen、后半是 rejected（见 8.7 的 cat 拼接）</td><td>一一配对才能"好减坏"</td></tr>
+<tr><td><code>pi_logratios</code></td><td>策略模型认为"好回答比坏回答好多少"</td><td>不断增大（这就是被优化的量）</td></tr>
+<tr><td><code>ref_logratios</code></td><td>参考模型（SFT 冻结版）同样的差值，是"先验基线"</td><td>固定不动</td></tr>
+<tr><td>减去 <code>ref_logratios</code></td><td>内置 KL 正则：只学"相对 SFT 的改进"，防止策略漂太远</td><td>对应 PPO 里的 KL 惩罚，但这里免费获得</td></tr>
+<tr><td><code>-log&#963;(&#946;&#183;)</code></td><td>二分类损失：最大化"chosen 胜过 rejected"的 sigmoid 概率</td><td>概率趋近 1</td></tr>
 </tbody>
 </table>
+<p><strong>理解锚点</strong>：DPO 从头到尾没有奖励模型打分、也没有 rollout 采样——<strong>奖励被吸收进了损失函数</strong>（用 log 比当奖励），所以它是一条"离线、闭式"的优化路径。这正好呼应用户最初的问题：DPO 不需要"同步 / 异步 RL"那一整套采样组织架构，因为根本没有采样环节。</p>
+
+<h3>8.7 训练循环：一次前向算好 / 坏两边</h3>
+<pre><code class="language-python"># ① 取 batch：chosen / rejected 各自带 x、y、mask 六个张量，先搬到 GPU
+
+# ② 【关键技巧】沿 batch 维拼接：一个 batch 里好回答在前、坏回答在后
+x    = torch.cat([x_chosen, x_rejected], dim=0)        # (2B, S)
+y    = torch.cat([y_chosen, y_rejected], dim=0)        # (2B, S)
+mask = torch.cat([mask_chosen, mask_rejected], dim=0)  # (2B, S)
+
+# ③ 参考模型前向（冻结、不求梯度、不缓存计算图）
+with torch.no_grad():
+    ref_log_probs = logits_to_log_probs(ref_model(x).logits, y)  # (2B, S)
+
+# ④ 策略模型前向（可训练，同一份 x）
+outputs = model(x)                                        # (2B, S, V) → logits
+policy_log_probs = logits_to_log_probs(outputs.logits, y) # (2B, S)
+
+# ⑤ DPO 损失 + MoE 辅助损失 + 梯度累积步数归一
+dpo_loss_val = dpo_loss(ref_log_probs, policy_log_probs, mask, beta=beta)
+loss = (dpo_loss_val + outputs.aux_loss) / args.accumulation_steps
+scaler.scale(loss).backward()</code></pre>
+<p><strong>为什么拼接一个 batch</strong>：两条回答的 prompt 相同、补齐后长度也相同，拼在一起<strong>一次前向同时算出好 / 坏两边的 log 概率，省掉一次前向</strong>。这也解释了 8.6 里 <code>batch_size // 2</code> 的拆分为什么安全——布局是训练循环与损失函数之间心照不宣的约定，改任何一边都会错位。</p>
+<p>训练循环其余部分与 SFT / GRPO 同构：</p>
+<ul>
+<li><strong>双模型分工</strong>：策略模型 <code>model</code> 可训练；参考模型 <code>ref_model</code> 是<strong>同一份 <code>full_sft</code> 权重的冻结副本</strong>（<code>ref_model.eval(); ref_model.requires_grad_(False)</code>）——一个当"选手"被更新，一个当"锚"不许动。</li>
+<li><strong>MoE 辅助损失</strong>：<code>outputs.aux_loss</code> 只在 <code>use_moe=1</code> 时有非零值（负载均衡项），与主损失相加一起反向。</li>
+<li><strong>混合精度</strong>：默认 <code>bfloat16</code> + <code>GradScaler</code>（fp16 时才真正启用 scaler）。</li>
+<li><strong>余弦学习率</strong>：<code>lr = get_lr(epoch * iters + step, epochs * iters, learning_rate)</code>，与全链路一致。</li>
+<li><strong>双份保存</strong>：fp16 纯权重（CPU，供推理）+ <code>lm_checkpoint</code> 完整训练状态（模型 / 优化器 / scaler / epoch / step，供断点续训），与 SFT 完全相同。</li>
+</ul>
+
+<h3>8.8 main 流程与断点续训</h3>
+<ol>
+<li><code>init_distributed_mode()</code> + <code>setup_seed()</code>——标准开头（DDP 时每个进程按 rank 加种子）。</li>
+<li><code>MiniMindConfig</code> + 检查 checkpoint（<code>--from_resume 1</code> 时读取 <code>../checkpoints</code>）。</li>
+<li>设置混合精度上下文 <code>autocast(dtype=bfloat16)</code>（CPU 上退化为 <code>nullcontext</code>）。</li>
+<li>（可选）初始化 swanlab / wandb。</li>
+<li><strong>加载两份模型</strong>：<code>model, _ = init_model(lm_config, from_weight)</code> 与 <code>ref_model, _ = init_model(...)</code>——都从 <code>full_sft</code> 出发，随后冻结 ref。</li>
+<li>构建 <code>DPODataset</code> + <code>DistributedSampler</code>（多卡时）+ <code>AdamW</code> 优化器。</li>
+<li>可选 <code>torch.compile</code>；DDP 时包 <code>DistributedDataParallel</code>。</li>
+<li>逐 epoch：<code>set_epoch</code> → 重新洗牌（<code>torch.randperm</code>）→ <code>SkipBatchSampler</code> 跳过已训 step（断点续训核心）→ <code>train_epoch</code>。</li>
+<li>训练完 <code>dist.barrier()</code> + <code>destroy_process_group()</code>。</li>
+</ol>
+<p>对比 SFT / GRPO 会发现 main 骨架几乎一样，<strong>DPO 独特的只有三处</strong>：数据集换成偏好对、模型初始化两遍（策略 + 参考）、损失函数换成 <code>dpo_loss</code>。其余分布式、混合精度、断点续训、保存策略全是复用。</p>
+
+<h3>8.9 关键超参：为什么 lr 要低到 4e-8</h3>
+<table>
+<thead><tr><th>参数</th><th>默认值</th><th>为什么这么设</th></tr></thead>
+<tbody>
+<tr><td><code>learning_rate</code></td><td><strong>4e-8</strong></td><td>比 SFT（1e-5）低约 2.5 个数量级。DPO 只做"微调里的微调"：模型的语言能力是 SFT 给的，DPO 学的只是<strong>相对量</strong>（好/坏概率差）。lr 一大，策略会整体漂离参考模型，把 SFT 学到的流畅度、知识一起冲掉（灾难性遗忘）；代码注释也明确"建议 &lt;=5e-8 避免遗忘"。</td></tr>
+<tr><td><code>beta</code></td><td>0.15</td><td>温度 / 缩放系数，控制"多用力推向偏好"：越大越激进地拉开好/坏差距（也更冒险），越小越贴着参考模型保守更新。</td></tr>
+<tr><td><code>from_weight</code></td><td>full_sft</td><td>先让模型"会说话"（SFT），再教它"说得好"（偏好）——两个模型都从这份权重初始化。</td></tr>
+<tr><td><code>epochs</code></td><td>1</td><td>偏好数据是静态的，一轮足够；反复碾压只会让模型死记这几对回答。</td></tr>
+<tr><td><code>batch_size</code></td><td>4</td><td>拼接后每步实际喂 8 条（4 chosen + 4 rejected）；偏好对齐数据量通常不大，小 batch 足够。</td></tr>
+<tr><td><code>max_seq_len</code></td><td>1024</td><td>chosen / rejected 各自是"完整对话"（含 prompt），中文约 1 token ≈ 1.5~1.7 字符；超长会被截断，注意别把回答尾巴截掉。</td></tr>
+<tr><td><code>accumulation_steps</code> / <code>grad_clip</code></td><td>1 / 1.0</td><td>与全链路一致的梯度累积与裁剪配置。</td></tr>
+</tbody>
+</table>
+<p>深层原因再看一眼损失：目标里的 <code>log(&#960;&#952;/&#960;ref)</code> 比值项把梯度同时耦合到"提升好回答概率"与"压低坏回答概率"上。压低的诱惑很大（概率可无限趋近 0），而 chosen 的概率本来已接近 1、提升空间有限——<strong>不对称的梯度会让大 lr 倾向把整个词表概率分布压扁，语言质量随之崩塌</strong>，这正是 DPO 必须用小 lr 的数学直觉。</p>
+
+<h3>8.10 DPO vs PPO vs GRPO：三方法一张表</h3>
+<table>
+<thead><tr><th>维度</th><th>DPO（train_dpo.py）</th><th>PPO（train_ppo.py）</th><th>GRPO（train_grpo.py）</th></tr></thead>
+<tbody>
+<tr><td>回答从哪来</td><td>静态数据集里的现成对</td><td>策略自己现场采样（rollout）</td><td>策略自己现场采样（rollout）</td></tr>
+<tr><td>需要 rollout 吗</td><td>❌ 不需要</td><td>✅ 需要</td><td>✅ 需要</td></tr>
+<tr><td>奖励信号</td><td>隐式奖励 <code>&#946;log(&#960;&#952;/&#960;ref)</code>（无打分器）</td><td>显式 RM / 规则分 / 可验证结果</td><td>显式 RM / 规则分（RLAIF 或规则）</td></tr>
+<tr><td>参考模型</td><td>✅ 冻结，算 KL 先验</td><td>✅ 算 KL 惩罚</td><td>✅ 算 KL 惩罚</td></tr>
+<tr><td>Critic / 价值网络</td><td>无</td><td>有（估计价值、GAE 优势）</td><td>无（组内 z-score 代替）</td></tr>
+<tr><td>核心损失</td><td><code>-log&#963;(&#946;&#183;logratio)</code></td><td><code>-min(ratio&#183;A, clip(ratio)A) + &#946;KL</code></td><td>组内 z-score 优势 <code>(r_i - r_mean) / r_std</code> + clip</td></tr>
+<tr><td>同步 / 异步架构</td><td><strong>不适用</strong>（无采样环节）</td><td>适用（采样决定架构）</td><td>适用（采样决定架构）</td></tr>
+<tr><td>工程复杂度 / 显存</td><td>低（双模型前向）</td><td>最高（Actor/Critic/Ref/Reward 四模型）</td><td>中高（采样 + 双模型）</td></tr>
+<tr><td>主要学习内容</td><td>偏好：哪个回答"更好"</td><td>能力：高分回答长什么样</td><td>能力：高分回答长什么样</td></tr>
+<tr><td>成本 / 稳定性</td><td>便宜、稳定</td><td>最贵、调参难</td><td>贵、相对稳</td></tr>
+</tbody>
+</table>
+<p>一句话概括：<strong>DPO = 拿"已批改好的卷子"直接学（离线、便宜、稳定）；PPO / GRPO = 让模型"现做题现批改"（在线、贵、能力上限更高）</strong>。这也是偏好对齐链路的常见安排：DPO 做轻量第一步把风格 / 偏好摆正，再上 GRPO / PPO 打磨推理等硬能力。</p>
+
+<h3>8.11 常见坑与小结</h3>
+<ol>
+<li><strong>lr 必须极低</strong>：4e-8 量级（官方建议不超过 5e-8）。观察指标：不只盯 dpo_loss，还要周期性评测 SFT 能力是否回退。</li>
+<li><strong>数据质量决定上限</strong>：DPO 不学新知识，只重排偏好。chosen / rejected 必须真实反映"更好 / 更差"，且<strong>user / system 段逐字一致、模板一致</strong>，否则 logratio 无意义；也别把"只是更长"或"只是格式花哨"当偏好。</li>
+<li><strong>mask 与平移要对齐</strong>：x 是 <code>input_ids[:-1]</code>、y 是 <code>[1:]</code>，loss mask 也必须同步平移一位，且只覆盖 assistant 段。自造数据时保证 assistant 起始 / 结束锚点完整，否则掩码会漏标或错标。</li>
+<li><strong>别拿 DPO 当能力训练</strong>：没有探索、没有可验证奖励，天花板是"把数据里的偏好学到位"；真正的能力提升要交给第 9 章起的在线 RL。</li>
+</ol>
+<blockquote><strong>本章小结</strong>：DPO 把 RLHF 的"奖励建模 + 策略优化"两步解析消去成一条闭式分类损失 <code>-log&#963;(&#946;&#183;logratio)</code>，代价是只能离线学静态偏好、无法利用可验证奖励。<code>logits_to_log_probs</code> 负责逐 token 取真实 token 的对数概率；<code>dpo_loss</code> 靠"batch 前半 chosen、后半 rejected"的布局约定做配对；训练循环用 cat 拼接一次前向算两边、参考模型冻结当锚。它是从 SFT 走向在线 RL（GRPO / PPO）之间最便宜的过渡站——理解它，正好为第 9 章"为什么在线 RL 要 rollout、要同步 / 异步架构"铺好对比基线。</blockquote>
 </section>
 
 <section id="ch9">
