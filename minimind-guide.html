@@ -79,10 +79,10 @@
 <script>
   window.MathJax = {
     tex: { inlineMath: [['$', '$'], ['\\(', '\\)']], displayMath: [['$$', '$$'], ['\\[', '\\]']] },
-    svg: { fontCache: 'global', scale: 0.9 }
+    svg: { fontCache: 'local', scale: 0.9 }
   };
 </script>
-<script async src="lib/mathjax-tex-svg.js"></script>
+<script id="MathJax-script" async src="lib/mathjax-tex-svg.js" onerror="this.onerror=null;var f=document.createElement('script');f.src='https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js';document.head.appendChild(f);"></script>
 <link rel="stylesheet" href="lib/highlight-github.min.css">
 <script src="lib/highlight.min.js"></script>
 <script>document.addEventListener('DOMContentLoaded', () => hljs.highlightAll());</script>
