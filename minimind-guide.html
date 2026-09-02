@@ -1502,17 +1502,18 @@ $$\mathrm{KL}(\pi_\theta\,\|\,\pi_{ref}) = \mathbb{E}_{y\sim\pi_\theta(\cdot\mid
 <p>落地到代码：策略采到哪几条 $y$，就对哪几条分别算 $\log\pi_\theta(y\mid x)$ 和 $\log\pi_{ref}(y\mid x)$，相减再平均，就是 KL 的估计（也就是前面代码里的 <code>kl_seq.mean()</code>）。</p>
 <p>工程上还有个"更稳"的版本叫 <strong>k3</strong>：用 $\widehat{\mathrm{KL}}=\exp(d)-d-1$（其中 $d=\log\pi_{ref}-\log\pi_\theta$）代替直接相减。好处是<strong>恒 ≥0</strong>（因为 $e^d\ge d+1$ 永远成立）、方差更低，训练更平稳；本质仍是"比较两个模型的 log 概率"，只是换了个打分函数。代码见 10.3。</p>
 <p><strong>回到文档里出现过 KL 的三个位置</strong>：DPO 的 <code>dpo_loss</code> 里"减去 ref_logratios"就是<strong>隐式 KL 锚</strong>（被吸收进二分类损失，不单独出现）；PPO/GRPO 目标里的 $-\beta\,\mathrm{KL}$ 是上面代码的<strong>显式惩罚项</strong>（对应 <code>--beta</code>）；而 $\beta$ 越大 = 缰绳越紧。理解这个计算过程后，9.3 的梯度公式、9.4 的 KL 惩罚、10.3 的 k3 代码就都能串起来了。</p>
-<h3>9.3 策略梯度定理</h3>
-<p><strong>先问：为什么 SFT 那套"对损失直接求导"在 RL 里行不通？</strong>两个原因：① 奖励 $r(x,y)$ 常常<strong>不可导</strong>——对答案、调工具、规则分都是"程序/字典查表"式的，没有梯度可言；② 就算奖励是神经网络（RM），样本 $y$ 是从离散分布里<strong>随机抽样</strong>得到的，梯度穿不过"抽样"这一步。所以必须绕道：对<strong>我们自己网络的 log 概率</strong>求导，因为那个一定能求。</p>
-$$\nabla_\theta J(\theta) = \mathbb{E}_{y\sim \pi_\theta(\cdot\mid x)}\Big[\nabla_\theta \log \pi_\theta(y \mid x)\cdot A(x,y)\Big]$$
-<p>所有 RL 算法的差异几乎都归结为：<strong>如何估计优势 $A$</strong> 和 <strong>如何限制更新幅度</strong>。</p>
-<p><strong>这条公式怎么来的（log 导数技巧，数学小白可跟）</strong>：期望就是"概率 × 分数"求和：</p>
+<h3>9.3 怎么让分数变高：策略梯度</h3>
+<p>到这一节为止，我们已经知道<strong>目标</strong>（9.1：回答要拿高分、但别跑偏）和<strong>要用哪些模型</strong>（9.2：Policy / Reference / Reward / Critic）。现在只剩最后一个问题：<strong>Policy 的参数到底怎么改，分数才会往上走？</strong>这一节只回答这一件事。</p>
+<p><strong>先给直觉，别管公式</strong>：让模型"试错"——同一个问题多答几条，答得好的就把它的生成概率往上抬，答得差的就往下压。反复做很多次，模型就越来越会往高分方向答。整节就是把这句大白话写成数学。</p>
+<p><strong>为什么不能照搬 SFT 那套"求导更新"？</strong>SFT 有标准答案，损失 = "预测 vs 标准答案"的差距，这个差距能对参数求导。RL 不一样，有两个坎：① 奖励 $r(x,y)$ 常常<strong>不可导</strong>——对答案、调工具、规则分都是"查表 / 跑程序"式的，没有梯度；② 回答 $y$ 是从模型里<strong>随机抽</strong>出来的，梯度也穿不过"抽样"这一步。于是对"分数"求不了导，只能对"模型自己生成这条回答的概率"求导——概率一定可导。</p>
+<p>结论先摆出来（可以先用起来，推导放后面）：</p>
+$$\nabla_\theta J(\theta) = \mathbb{E}_{y\sim \pi_\theta}\Big[\nabla_\theta \log \pi_\theta(y \mid x)\cdot A(x,y)\Big]$$
+<p><strong>一句话翻译</strong>：更新方向 = 采样若干条回答，每条都算出"让这条回答概率上升的方向"（$\nabla\log\pi_\theta$），再按"这条回答比平均好多少"（优势 $A$）加权——好的往上抬、差的往下压。所有 RL 算法的区别，最后都归结为两件事：<strong>$A$ 怎么估</strong>、<strong>每步改多少</strong>。</p>
+<p><strong>推导（想彻底搞懂再看，只想会用可跳过）</strong>：目标 $J$ 就是"每条回答的概率 × 分数"的总和：</p>
 $$J(\theta)=\sum_y \pi_\theta(y\mid x)\,r(x,y)$$
-<p>对 $\theta$ 求导时，$r(x,y)$ 不依赖 $\theta$，只需要导 $\pi_\theta$：</p>
-$$\nabla_\theta J(\theta)=\sum_y \nabla_\theta \pi_\theta(y\mid x)\cdot r(x,y)$$
-<p>再用对数求导恒等式 $\nabla_\theta \log\pi_\theta = \nabla_\theta\pi_\theta\,/\,\pi_\theta$，即 $\nabla_\theta\pi_\theta=\pi_\theta\,\nabla_\theta\log\pi_\theta$，代回去：</p>
-$$\nabla_\theta J(\theta)=\sum_y \pi_\theta(y\mid x)\,\nabla_\theta\log\pi_\theta(y\mid x)\cdot r(x,y)=\mathbb{E}_{y\sim\pi_\theta}\Big[\nabla_\theta\log\pi_\theta(y\mid x)\cdot r(x,y)\Big]$$
-<p>最后一步就是定理的公式（把 $r$ 换成优势 $A$，原因见下）。<strong>直觉翻译</strong>：采样若干条回答，谁分高就把谁的生成概率往上推，谁分低就往下压；$\nabla\log\pi_\theta$ 提供"往哪个方向推最有效"，$A$ 提供"推多狠、往哪边推"。下图示意：</p>
+<p>对参数 $\theta$ 求导时，分数 $r$ 不随 $\theta$ 变，只需导概率 $\pi_\theta$；再用恒等式 $\nabla\log\pi_\theta=\nabla\pi_\theta/\pi_\theta$ 把 $\nabla\pi_\theta$ 换成 $\pi_\theta\cdot\nabla\log\pi_\theta$：</p>
+$$\nabla_\theta J(\theta)=\sum_y \nabla_\theta\pi_\theta(y\mid x)\cdot r(x,y)=\sum_y \pi_\theta(y\mid x)\,\nabla_\theta\log\pi_\theta(y\mid x)\cdot r(x,y)=\mathbb{E}_{y\sim\pi_\theta}\Big[\nabla_\theta\log\pi_\theta(y\mid x)\cdot r(x,y)\Big]$$
+<p>最后把 $r$ 换成 $A$（原因见下），就是上面的策略梯度公式。下图把"高分抬、低分压"画了出来：</p>
 <figure>
 <svg viewBox="0 0 860 320" style="max-width:840px; width:100%; height:auto;" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="策略梯度推高压低示意图">
   <defs>
@@ -1538,7 +1539,7 @@ $$\nabla_\theta J(\theta)=\sum_y \pi_\theta(y\mid x)\,\nabla_\theta\log\pi_\thet
 </svg>
 <figcaption>策略梯度直觉：分数越高，那条回答的生成概率被推得越高（绿色↑）；分数为负则被压低（红色↓）。方向由 ∇logπ_θ 给出，幅度由优势 A 决定。</figcaption>
 </figure>
-<p><strong>为什么用 A 而不是直接用 r（基线的意义）</strong>：把 $r(x,y)$ 换成 $r(x,y)-b$（$b$ 是与 $y$ 无关的基线），期望梯度<strong>数学上不变</strong>：多出来的项是 $-b\sum_y\nabla_\theta\pi_\theta(y)=-b\,\nabla_\theta\!\left(\sum_y\pi_\theta(y)\right)=-b\,\nabla_\theta 1=0$（概率之和恒为 1，导数为 0）。也就是说<strong>任何与 y 无关的基线都不改变梯度的期望方向，只影响方差</strong>。直觉：判断一个人高不高，与其报"180cm"，不如报"比全班平均高 12cm"——信息一样，但方差小得多、更稳定。PPO 的基线来自 Critic，GRPO 的基线来自组内平均，ReMax / RLOO 也用各自的基线——9.6 的变体差异本质上就在"基线从哪来"。</p>
+<p><strong>为什么用 A 而不是直接用 r？</strong>直觉：判断一个人高不高，与其报"180 厘米"，不如报"比全班平均高 12 厘米"——信息一样，但更稳定。数学上也一样：给分数减一个与回答无关的基线 $b$（即用 $r-b$），梯度的期望方向不变（多出来的项是 $-b\,\nabla_\theta(\sum_y\pi_\theta)=-b\,\nabla_\theta 1=0$，因为概率和恒为 1），但方差会小很多。$A$ 就是"减去基线后的分数"。PPO 的基线来自 Critic，GRPO 的基线来自组内平均，9.6 的变体差异本质就是"基线从哪来"。</p>
 <h3>9.4 PPO：critic + GAE</h3>
 <p><strong>PPO 要解决 9.3 留下的两个工程问题</strong>：</p>
 <ul>
