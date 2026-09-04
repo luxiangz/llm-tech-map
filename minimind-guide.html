@@ -1116,7 +1116,7 @@ $$y = Wx + BAx = (W + BA)x$$
 <tr><td>DAPO / GSPO</td><td>GRPO 的改进版（解耦 clip 等）</td><td>VeRL 里可选</td></tr>
 </tbody>
 </table>
-<blockquote>这一格的奖励可以是 <strong>RM</strong>（学出来的），也可以是 <strong>规则</strong>（写死的）——MiniMind 的 GRPO 规则分（长度/思考/GT 匹配）在奖励模型缺失时就退化成纯规则版。</blockquote>
+<blockquote>这一格的奖励可以是 <strong>RM</strong>（学出来的），也可以是 <strong>规则</strong>（写死的）——如数学 RLVR 用可验证答案做规则分、Agentic RL 用工具/GT 校验。<strong>注意</strong>：MiniMind 的 <code>train_grpo.py</code> 是"规则分 + RM 分"混合——规则分（长度/思考结构/重复惩罚）只是补充，<code>calculate_rewards</code> 对每条回答<strong>无条件调用</strong> <code>reward_model.get_score</code>，RM 路径缺失会直接抛异常，不存在"奖励模型缺失就退化成纯规则版"的分支；纯规则打分属于可验证任务（RLVR / Agentic）那一路。</blockquote>
 <p><strong>B. DPO 家族（离线，无 RM、无 rollout）</strong></p>
 <table>
 <thead><tr><th>方法</th><th>一句话</th><th>与 DPO 的区别</th></tr></thead>
@@ -1382,7 +1382,7 @@ scaler.scale(loss).backward()</code></pre>
 <li><strong>然后解决"参数怎么改"</strong>（9.3）：策略梯度，一句话是"高分抬、低分压"。</li>
 <li><strong>怎么改得稳、怎么把功劳分到每个 token</strong>（9.4 PPO）：Critic 估"惊喜"，裁剪踩刹车。</li>
 <li><strong>能不能省掉 Critic</strong>（9.5 GRPO）：多答几条互相比较，用组内平均当基准。</li>
-<li><strong>变体一览</strong>（9.6），以及章末附录（9.7）把 KL 怎么算的细节补全。</li>
+<li><strong>变体一览</strong>（9.6），以及章末附录（9.7）把 KL 的计算细节完整走一遍。</li>
 </ol>
 <p>遇到 KL、优势、GAE、ratio 这类词先别慌，它们都会在首次出现的那一节用大白话拆开。想先建立整体印象，可以先扫一眼 9.2 那张循环大图，再回到 9.1 从头读。</p>
 <h3>9.1 目标：回答要拿高分，但不能"跑偏"</h3>
@@ -1585,7 +1585,7 @@ $$\rho = \frac{\pi_\theta(y \mid x)}{\pi_{\mathrm{old}}(y \mid x)}, \qquad \math
 <p>GRPO 丢掉价值网络，对同一 prompt 采 $G$ 条，用组内均值/标准差做优势：</p>
 $$A_i = \frac{r_i - \bar r}{\hat\sigma_r + \varepsilon}, \qquad \bar r = \frac1G\sum_j r_j, \qquad \hat\sigma_r = \sqrt{\frac1G\sum_j (r_j-\bar r)^2}$$
 <p>奖励的绝对值没意义，但"同一 prompt 下谁的几条回答更好"是可靠信号——这就是 GRPO 不需要 critic 的原因。</p>
-<p><strong>逐项拆解</strong>：① 减 $\bar r$ 是 9.3 说的"减基线"——只是基线从"学出来的 Critic 预测"换成了"实测的组内平均"，一个零成本的蒙特卡洛基线：比组内平均好 → $A_i&gt;0$（抬），差 → $A_i&lt;0$（压）。② 除以 $\hat\sigma_r$ 是<strong>标准化（z-score）</strong>：不同任务的打分尺度不同（格式分 0~2、数学对错 0/1），除以组内标准差后优势无量纲化，更新力度不会随打分尺度漂移。③ $+\varepsilon$（很小，如 $10^{-8}$）防止一组成绩全相同（$\hat\sigma_r=0$）时除零。</p>
+<p><strong>逐项拆解</strong>：① 减 $\bar r$ 是 9.3 说的"减基线"——只是基线从"学出来的 Critic 预测"换成了"实测的组内平均"，一个零成本的蒙特卡洛基线：比组内平均好 → $A_i&gt;0$（抬），差 → $A_i&lt;0$（压）。② 除以 $\hat\sigma_r$ 是<strong>标准化（z-score）</strong>：不同任务的打分尺度不同（格式分 0~2、数学对错 0/1），除以组内标准差后优势无量纲化，更新力度不会随打分尺度漂移。③ $+\varepsilon$（<code>train_grpo.py</code> 里取 $10^{-4}$）防止一组成绩全相同（$\hat\sigma_r=0$）时除零。</p>
 <p><strong>数字例子</strong>：同一 prompt 采 4 条回答，奖励 $r=[2,1,-1,0]$，则 $\bar r=0.5$、$\hat\sigma_r\approx1.12$：</p>
 <table>
 <thead><tr><th>回答</th><th>奖励 $r_i$</th><th>$r_i-\bar r$</th><th>优势 $A_i=(r_i-\bar r)/(\hat\sigma_r+\varepsilon)$</th><th>效果</th></tr></thead>
@@ -1628,6 +1628,7 @@ $$A_i = \frac{r_i - \bar r}{\hat\sigma_r + \varepsilon}, \qquad \bar r = \frac1G
 </figure>
 <p><strong>完整损失</strong>：GRPO 与 PPO 用同一个 clip 框架，只是优势换成组内 z-score、且没有价值网络项：</p>
 $$\mathcal{L}_{\mathrm{GRPO}} = \mathbb{E}\Big[\min\big(\rho_i A_i,\ \operatorname{clip}(\rho_i,1-\varepsilon,1+\varepsilon)\,A_i\big)\Big]$$
+<p><strong>对照源码的提醒</strong>：上面这个 min 式对应 <code>loss_type="grpo"</code> 分支；MiniMind 的默认值是 <code>loss_type="cispo"</code>，实际实现并不长这样（见 9.6 与 10.3）——CISPO 把 clip 后的 ratio <code>detach</code> 掉当常数系数、乘在 log 概率上，等价于带权 REINFORCE，而不是这里的 min 代理。</p>
 <p>其中 $\rho_i=\pi_\theta(y_i\mid x)/\pi_{old}(y_i\mid x)$ 与 PPO 相同。还有一个极端情况值得注意：如果一组的 G 条回答全部同分（比如简单题全员满分），$A_i=0$，这一组不产生任何学习信号——这正是 9.6 里 DAPO"动态采样跳过简单组"要解决的问题。</p>
 <h3>9.6 PPO 家族变体</h3>
 <table>
@@ -1638,11 +1639,11 @@ $$\mathcal{L}_{\mathrm{GRPO}} = \mathbb{E}\Big[\min\big(\rho_i A_i,\ \operatorna
 <tr><td>RLOO</td><td>2024</td><td>无</td><td>leave-one-out baseline</td></tr>
 <tr><td>GRPO</td><td>DeepSeekMath 2024</td><td>无</td><td>组内 (r-mean)/std</td></tr>
 <tr><td>DAPO</td><td>ByteDance 2025</td><td>无</td><td>clip-higher + 动态采样</td></tr>
-<tr><td>CISPO</td><td>MiniMax-M1</td><td>无</td><td>只裁上界，ratio 当系数乘 logp</td></tr>
+<tr><td>CISPO</td><td>MiniMax-M1</td><td>无</td><td>只裁上界；ratio <code>detach</code> 后当系数乘 logp</td></tr>
 <tr><td>GSPO</td><td>2025</td><td>无</td><td>序列级 ratio，不逐 token clip</td></tr>
 </tbody>
 </table>
-<p>CISPO 是 MiniMind 的默认 loss_type：只裁上界（<code>epsilon_high=5.0</code>）防 ratio 爆炸，不裁下界让策略自由降低坏回答概率。</p>
+<p>CISPO 是 MiniMind 的默认 loss_type：只裁上界（<code>epsilon_high=5.0</code>）防 ratio 爆炸，不裁下界让策略自由降低坏回答概率。精确实现（见 10.3 代码）：<code>clamped_ratio = torch.clamp(ratio, max=5.0).detach()</code>，损失 = −(clamped_ratio·A·logπ_θ − β·k3)。clamped_ratio 被 <code>detach</code> 后不参与梯度，梯度只沿 logπ_θ 走，等效"带权 REINFORCE"；<code>loss_type="grpo"</code> 分支才是 9.5 的 min 代理式（无 logp 因子）。</p>
 <p><strong>为什么有这么多变体（两个旋钮）</strong>：回到 9.3 的结论——所有 RL 算法差异只剩两处：<strong>旋钮一：优势 A 的基线从哪来</strong>（Critic 预测 / 贪心基线 / leave-one-out / 组内 z-score）；<strong>旋钮二：更新幅度怎么限</strong>（对称裁剪 / 只裁上界 / 序列级裁剪 / KL 惩罚）。逐行看：</p>
 <ul>
 <li><strong>PPO-clip</strong>：基线来自 Critic（GAE），ρ 上下对称裁剪 1±0.2。经典款，四模型最重。</li>
@@ -1655,7 +1656,7 @@ $$\mathcal{L}_{\mathrm{GRPO}} = \mathbb{E}\Big[\min\big(\rho_i A_i,\ \operatorna
 </ul>
 <p>落地时这些变体大多只是 <code>train_grpo.py</code> / <code>rollout_engine.py</code> 里一个 <code>loss_type</code> 参数的差别，第 10 章展开代码时会看到同一个训练循环如何切换它们。</p>
 <h3 id="ch9-kl">9.7 附录：KL 散度到底怎么算（实现细节，可先跳过）</h3>
-<p>前面 9.1 / 9.2 反复说"KL 是缰绳"，这里把计算过程补全。定义就一句话：<strong>按 P 的概率，对 P/Q 的对数求加权平均</strong>。</p>
+<p>前面 9.1 / 9.2 反复说"KL 是缰绳"，这里把计算过程完整展开。定义就一句话：<strong>按 P 的概率，对 P/Q 的对数求加权平均</strong>。</p>
 $$\mathrm{KL}(P\,\|\,Q)=\sum_i P(i)\log\frac{P(i)}{Q(i)}$$
 <p>$P$ 是被平均的对象（乘在外面），$Q$ 是分母（比的是 $P/Q$），所以 KL <strong>不对称</strong>：$\mathrm{KL}(P\|Q)\neq\mathrm{KL}(Q\|P)$。用具体数字走一遍（某题答案分布，P 是策略、Q 是参考模型）：</p>
 <table>
@@ -1699,8 +1700,9 @@ if '&lt;/think&gt;' in response:                                   # 思考链�
     rewards[i] += 1.0 if 20 &lt;= len(thinking) &lt;= 300 else -0.5
     rewards[i] += 0.25 if response.count('&lt;/think&gt;') == 1 else -0.25
 rewards[i] -= rep_penalty(answer)                            # 重复惩罚
-score = reward_model.get_score(messages, answer)             # RM 分（internlm2-1.8b-reward）
-rewards[i] = max(min(rewards[i] + score, 3.0), -3.0)         # clip 到 [-3, 3]</code></pre>
+score = reward_model.get_score(messages, answer)             # RM 分（internlm2-1.8b-reward，内部 clip ±3）
+rewards[i] += score                                          # 规则分 + RM 分直接相加，不再整体 clip</code></pre>
+<p><strong>注意（对照源码）</strong>：奖励模型是<strong>硬依赖</strong>——<code>calculate_rewards</code> 对每条回答无条件调用 <code>get_score</code>，RM 路径加载失败会直接抛异常（源码注释里"缺失时降级为纯规则分"并不成立）；RM 分数在 <code>LMForRewardModel.get_score</code> 内部 clip 到 [−3, 3]，规则分与 RM 分相加后不再整体 clip。</p>
 <h3>10.2 Rollout 引擎：训练-推理解耦</h3>
 <p>rollout 引擎是可插拔的生成后端，抽象基类定义两个接口：</p>
 <pre><code class="language-python">class RolloutEngine(ABC):
@@ -1718,6 +1720,8 @@ rewards[i] = max(min(rewards[i] + score, 3.0), -3.0)         # clip 到 [-3, 3]<
 </tbody>
 </table>
 <p><code>compute_per_token_logps</code> 是 ratio 的基础：对生成序列每个 token，<code>log_softmax(logits)</code> 后 <code>gather</code> 出真实 token 的 log 概率（旧策略采样概率）。</p>
+<p>logp 在代码里有两套等价实现：<code>compute_per_token_logps</code> 只对序列末尾算（<code>logits_to_keep=n_keep+1</code>，省 lm_head 输出）；<code>train_grpo.py</code> 主循环里 new/ref logp 走全序列前向，再按 <code>logp_pos = prompt_lens − 1 + arange(R)</code> 对齐到回答段。数学上一致，后者是为了顺便拿全序列 logits。</p>
+<p><strong>update_policy 的两副面孔</strong>：Torch 引擎与训练共用同一个模型对象，<code>optimizer.step()</code> 已原地改参，<code>update_policy</code> 只是刷新引用（no-op）；SGLang 引擎的权重在独立进程里是拷贝，必须把 state_dict 落盘（<code>save_pretrained</code>）再 POST <code>/update_weights_from_disk</code> 通知服务器重载，失败会直接 raise。主循环把 <code>update_policy</code> 与 <code>save_interval</code> 绑在一起调用（默认每 10 步一次），所以 SGLang 在两次同步之间用旧权重采样——这就是 10.6 的 staleness，也是 ratio 需要存在的直接原因。</p>
 <h3>10.3 GRPO 训练循环（四步流水线）</h3>
 <pre><code class="language-python"># ① Rollout：每个 prompt 用当前策略生成 N 条回答 + 记录旧概率
 # ② Reward：calculate_rewards 打分
@@ -1728,13 +1732,18 @@ std_r = grouped_rewards.std(dim=1, unbiased=False).repeat_interleave(6)  # (B*G,
 advantages = (rewards - mean_r) / (std_r + 1e-4)  # (B*G,) 组内 z-score
 # ④ Update：CISPO/GRPO loss + KL 惩罚
 ratio = torch.exp(per_token_logps - old_per_token_logps)  # (B*G, L) 逐 token 概率比
-clamped_ratio = torch.clamp(ratio, max=epsilon_high).detach()      # CISPO
-per_token_loss = -(clamped_ratio * advantages * per_token_logps - beta * per_token_kl)</code></pre>
+if loss_type == "cispo":  # CISPO（默认）：只裁上界，clamp 后 detach 当常数系数
+    clamped_ratio = torch.clamp(ratio, max=epsilon_high).detach()   # 不参与梯度
+    per_token_loss = -(clamped_ratio * advantages.unsqueeze(1) * per_token_logps - beta * per_token_kl)  # 梯度只走 logp：带权 REINFORCE
+else:  # GRPO：标准对称 clip min 代理（9.5 的公式，无 logp 因子）
+    clipped_ratio = torch.clamp(ratio, 1 - epsilon, 1 + epsilon)
+    per_token_loss = -(torch.min(ratio * advantages.unsqueeze(1), clipped_ratio * advantages.unsqueeze(1)) - beta * per_token_kl)</code></pre>
 <p><strong>KL 的 k3 估计</strong>。令 $d_t = \log\pi_{\mathrm{ref}}(y_t\mid x,y_{&lt;t}) - \log\pi_\theta(y_t\mid x,y_{&lt;t})$，则每个 token 的 KL 惩罚用：</p>
 $$\widehat{\mathrm{KL}}_t = \exp(d_t) - d_t - 1$$
 <p>k3 估计恒非负（因为 $e^z \ge z+1$）且低方差，是 GRPO 里常用的稳定 KL 惩罚。当新旧 logprob 相等时 $d_t=0$、KL=0；偏离越远惩罚增长越快（指数项主导）。</p>
-<h4>10.3 补：同步 Rollout 闭环图</h4>
-<p>把 ①②③④ 四步流水线连起来看，就是一个"采样 → 打分 → 算优势 → 更新 → 同步权重"的闭环。因为每一步都等上一步彻底走完才继续，所以叫<strong>同步（on-policy 最严格）</strong>：</p>
+<blockquote><strong>对照 train_grpo.py 的核对清单</strong>：① 完成区 mask = 第一个 EOS（含）之前 × 非 pad；torch 引擎的 completion_mask 初始全 1，真正的裁剪由 EOS 逻辑完成。② 只统计回答段 token，prompt 的 logp 不进 loss。③ loss 每步除以 accumulation_steps；epoch 尾步凑不满时会在末尾收尾更新一次，但该次梯度只攒了余数份（默认 accumulation_steps=1 无影响）。④ 日志里的 KL_ref 是 d 的均值、不是 k3，见 10.5。</blockquote>
+<h4>10.3.1 同步 Rollout 闭环图</h4>
+<p>把 ①②③④ 四步流水线连起来看，就是一个"采样 → 打分 → 算优势 → 更新 → 同步权重"的闭环。因为每一步都等上一步彻底走完才继续，所以叫<strong>同步</strong>。Torch 引擎下模型是同一对象，这是 on-policy 最严格的情况；若后端是 SGLang，权重按 save_interval 周期同步，两次同步之间实为 off-policy（10.6 展开）：</p>
 <figure>
 <svg viewBox="0 0 860 810" style="max-width:820px; width:100%; height:auto;" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="同步 Rollout 闭环示意图">
   <defs>
@@ -1784,6 +1793,7 @@ $$\widehat{\mathrm{KL}}_t = \exp(d_t) - d_t - 1$$
 </svg>
 <figcaption>同步 Rollout 闭环：prompt → 引擎采样（Torch 同进程或 SGLang HTTP）→ RolloutResult → Reward 打分 → 组内 advantage → loss（clip·A − β·KL，输入含 old/new/ref 三份 logp）→ optimizer.step → Actor 更新，最后 update_policy 把新权重同步回引擎。Reference 冻结，只提供 ref_logp 当 KL 基线。</figcaption>
 </figure>
+<p>图中"更新后立即同步回引擎"对 Torch 引擎成立（同一对象）；SGLang 引擎只在每次 save_interval（默认 10 步）落盘重载一次，期间服务器权重滞后、ratio 偏离 1 做重要性修正。</p>
 <h3>10.4 PPO 与 GRPO 参数对比</h3>
 <table>
 <thead><tr><th>参数</th><th>PPO</th><th>GRPO</th></tr></thead>
@@ -1798,10 +1808,13 @@ $$\widehat{\mathrm{KL}}_t = \exp(d_t) - d_t - 1$$
 <table>
 <thead><tr><th>指标</th><th>含义</th><th>好坏判断</th></tr></thead>
 <tbody>
-<tr><td>Reward</td><td>平均奖励</td><td>应逐步上升</td></tr>
-<tr><td>KL_ref</td><td>与 SFT 基模的 KL 散度</td><td>保持低位（没偏离太远）</td></tr>
-<tr><td>Adv Std</td><td>组内优势标准差</td><td>太小 = 奖励区分不了好坏</td></tr>
+<tr><td>Reward</td><td>本步 B×G 条回答的平均分（规则分 + RM 分）</td><td>看分桶 / 正值占比逐步上升；单步波动 ±2 属正常</td></tr>
+<tr><td>KL_ref</td><td>logπ_ref − logπ_θ 在有效 token 上的均值（可负；不是 k3 KL）</td><td>从 0 快速到一个量级后走平；持续单调加深 = KL 缰绳失效</td></tr>
+<tr><td>Adv Std</td><td>结构常数 ≈ √(BG/(BG−1))；B·G=12 时 ≈1.044，不是奖励区分度</td><td>基本不用看；要监控区分度需改打组内 std_r 均值</td></tr>
 <tr><td>Avg Response Len</td><td>平均回答长度</td><td>警惕"刷长度"奖励黑客</td></tr>
+<tr><td>Adv Mean</td><td>组内 z-score 后整批均值</td><td>恒 ≈0，说明标准化工作正常</td></tr>
+<tr><td>Actor Loss</td><td>本步策略损失均值（乘回 accumulation_steps）</td><td>分桶均值小且平稳；单步可为负</td></tr>
+<tr><td>Learning Rate</td><td>余弦退火当前值（3e-7 → 3e-8）</td><td>与 step 对齐；退到底属正常收尾</td></tr>
 </tbody>
 </table>
 <h3>10.6 同步 vs 异步 RL</h3>
@@ -1811,12 +1824,13 @@ $$\widehat{\mathrm{KL}}_t = \exp(d_t) - d_t - 1$$
 <tbody>
 <tr><td>架构</td><td>单进程</td><td>双进程（server + trainer）</td></tr>
 <tr><td>生成与训练</td><td>串行（阻塞）</td><td>并行（重叠）</td></tr>
-<tr><td>策略新鲜度</td><td>永远最新</td><td>可能陈旧（staleness）</td></tr>
-<tr><td>权重同步</td><td>不需要</td><td>需要（update_policy）</td></tr>
+<tr><td>策略新鲜度</td><td>永远最新（同一对象）</td><td>按 save_interval（默认 10 步）追平，窗口内陈旧/off-policy</td></tr>
+<tr><td>权重同步</td><td>不需要（update_policy 仅刷新引用）</td><td>需要：save_pretrained 落盘 + update_weights_from_disk</td></tr>
 </tbody>
 </table>
 <p><strong>staleness（陈旧性）是异步的核心 tradeoff</strong>：服务器权重永远比训练进程"旧一点"，梯度方向滞后。同步间隔越大吞吐越高但越不稳。</p>
-<h4>10.6 补：异步 Rollout 架构图（verl 的做法）</h4>
+<p>本仓库的 SGLang 引擎把同步周期直接设成 <code>save_interval</code>（默认 10 步）：每次保存 checkpoint 时才落盘重载，窗口内 rollout 用的是旧权重——严格说是 off-policy，靠 <code>ratio = exp(new − old)</code> 做重要性修正（Torch 引擎里 ratio≈1）。同步间隔越大，吞吐越高但数据越旧。</p>
+<h4>10.6.1 异步 Rollout 架构图（verl 的做法）</h4>
 <p>把 10.6 的对照画成架构图，就是"三个 worker 组 + 一个解耦缓冲区"：采样端永不阻塞训练端，代价是训练吃到的样本可能是旧策略采的（off-policy）：</p>
 <figure>
 <svg viewBox="0 0 920 230" style="max-width:900px; width:100%; height:auto;" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="异步 Rollout 三 worker 架构图">
@@ -1953,14 +1967,107 @@ context = tokenizer.apply_chat_template(messages, open_thinking=open_thinking)</
 
 <section id="ch12">
 <h2>第 12 章 知识蒸馏</h2>
-<p>蒸馏让"大老师"教"小学生"。两种范式：</p>
+<p>蒸馏让"大老师"教"小学生"：用一次昂贵的训练（或调用），换一个长期便宜的部署。它不产生教师没有的知识，而是把教师脑子里的判断结构尽量完整地搬进参数更少的学生。</p>
+<h3>12.1 为什么需要蒸馏</h3>
 <ul>
-<li><strong>黑盒蒸馏</strong>：学教师输出文本（≈ 对教师输出做 SFT）；</li>
-<li><strong>白盒蒸馏</strong>：学教师输出分布（软标签 + KL）。</li>
+<li><strong>部署变便宜</strong>：推理时的体积、显存、延迟、功耗都下降。训练养得起大模型 / MoE，线上每次调用却都要付推理成本。</li>
+<li><strong>同参数量下更强</strong>：同样 64M 的 Dense 模型，从强教师蒸馏通常比直接 SFT 更好——软标签携带了硬标签丢弃的类间结构。</li>
+<li><strong>架构解耦</strong>：训练架构（MoE、大模型）和部署架构（Dense、小模型）不必相同。MoE 激活参数少但总参数大、依赖路由；Dense 实现简单、易量化、易部署到端侧。</li>
+<li><strong>能力迁移</strong>：教师可以是更强的开源模型甚至 API，把外部能力搬进自己的模型，不碰原始训练数据。</li>
 </ul>
-<p>白盒蒸馏损失：</p>
+<p><strong>边界</strong>：蒸馏不会超过教师——学生天花板就是教师的知识。教师不够强、或学生容量小到装不下，收益都会递减。</p>
+<h3>12.2 三种流派：教师给什么决定一切</h3>
+<table>
+<thead><tr><th>流派</th><th>教师给什么</th><th>学生怎么学</th><th>典型代表</th></tr></thead>
+<tbody>
+<tr><td>白盒（logits）蒸馏</td><td>每个位置的概率分布（软标签）</td><td>KL + 温度 T²，需同词表、能拿 logits</td><td>Hinton 2015；<code>train_distillation.py</code></td></tr>
+<tr><td>文本（黑盒）蒸馏</td><td>教师生成的文本 / 思维链</td><td>对教师输出做 SFT，跨模型家族、闭源 API 可用</td><td>DeepSeek-R1-Distill、Alpaca / Orca</td></tr>
+<tr><td>偏好蒸馏</td><td>教师给成对排序 / 评分</td><td>DPO 类训练</td><td>Zephyr 等</td></tr>
+</tbody>
+</table>
+<p>一句话：白盒蒸馏搬"概率"，黑盒蒸馏搬"文本"。白盒信息密度高但受限多；黑盒通用但只拿到教师"说出来的答案"。</p>
+<h3>12.3 白盒蒸馏原理：软标签 + 温度</h3>
+<p>SFT 的硬标签只告诉学生"正确答案是 token 42"，把教师内部的判断结构（70% 像猫、25% 像狗、5% 像狐狸）压成了 1/0。蒸馏要保留这份"模糊知识"（dark knowledge），所以教师吐完整分布：</p>
+$$q_i = \frac{\exp(z_i / T)}{\sum_j \exp(z_j / T)}$$
+<p><strong>温度 $T&gt;1$ 把分布抹平</strong>：次优 token 不再被当成纯噪声，学生才学得到"猫和狗比猫和汽车更像"这类类间相似结构。$T$ 越大分布越平；$T=1$ 就是原始分布。</p>
+<p><strong>KL 散度让学生贴教师</strong>（方向是教师当目标 q、学生被调整 p）：</p>
+$$\mathrm{KL}(q \,\|\, p) = \sum_i q_i \log\frac{q_i}{p_i}$$
+<p>它对学生 logits 的梯度约等于 $(p_s - q_t)/T$——温度出现在分母会缩小梯度，所以损失前乘回 $T^2$ 做补偿：温度只改变分布的"平滑度"，不改变更新幅度。</p>
+<p><strong>为什么还留 CE</strong>：教师也会错。双监督让学生既被硬标签锚定、又吸收教师的软知识：</p>
 $$L = \alpha \cdot \mathrm{CE}(p_s, y) + (1-\alpha) \cdot T^2 \cdot \mathrm{KL}(p_t^T \,\|\, p_s^T)$$
-<p>教师冻结 + 温度 $T$ 软化分布 + $T^2$ 梯度补偿。默认 MoE（198M）蒸馏出 Dense（64M），<code>alpha=0.5</code> 表示真值标签和教师分布各占一半。主线更依赖黑盒蒸馏（高质量数据本身）。</p>
+<p><code>alpha=0.5</code>（默认）表示真值标签和教师分布各占一半；调大 alpha 更信标签，调小更信教师。想最快验证蒸馏价值，就把 alpha 调到 1.0 跑一版对照——那会退化成纯 SFT。</p>
+<h3>12.4 代码逐段：train_distillation.py</h3>
+<p><strong>蒸馏损失函数</strong>（原理直接落地，注意 PyTorch 的 API 约定）：</p>
+<pre><code class="language-python">def distillation_loss(student_logits, teacher_logits, temperature=1.0, reduction='batchmean'):
+    with torch.no_grad():
+        teacher_probs = F.softmax(teacher_logits / temperature, dim=-1).detach()  # 教师分布（冻结）
+    student_log_probs = F.log_softmax(student_logits / temperature, dim=-1)      # 学生 log 概率
+    kl = F.kl_div(student_log_probs, teacher_probs, reduction=reduction)          # KL(q || p)
+    return (temperature ** 2) * kl                                                # T² 梯度补偿</code></pre>
+<ul>
+<li><code>F.kl_div(input, target)</code> 要求 input 是 <strong>log 概率</strong>、target 是<strong>普通概率</strong>，内部算的就是 $\sum q(\log q - \log p)$。学生侧传 softmax 概率是常见错误。</li>
+<li>教师套 <code>no_grad</code> + <code>detach</code>：只供信号，永不反传。</li>
+<li><code>batchmean</code> 在"已经过滤掉 padding 的行"上求平均，等于对有效 token 求平均 KL。</li>
+</ul>
+<p><strong>训练循环</strong>：同一个 <code>input_ids</code> 过两份模型——学生带梯度、教师冻结：</p>
+<pre><code class="language-python">res = model(input_ids)                                    # 学生前向（可训练）
+student_logits = res.logits[..., :-1, :].contiguous()
+with torch.no_grad():
+    teacher_logits = teacher_model(input_ids).logits[..., :-1, :].contiguous()
+    teacher_logits = teacher_logits[..., :student_logits.size(-1)]   # 词表截断对齐
+
+# ① CE：只在答案 token 上算（labels 里 prompt/padding 为 -100，ignore_index=-100）
+ce_loss_raw = ...
+if student 是 MoE: ce_loss = ce_loss_raw + res.aux_loss
+# ② KL：同样只取有效 token 的行
+distill_loss = distillation_loss(valid_student_rows, valid_teacher_rows, temperature)
+# ③ 合并
+loss = (alpha * ce_loss + (1 - alpha) * distill_loss) / args.accumulation_steps</code></pre>
+<ul>
+<li><code>loss_mask = (labels[..., 1:] != -100)</code>：prompt 和 padding 是 -100，CE 与 KL 都只教答案段。</li>
+<li>学生、教师吃同一个 batch、<strong>没有 generate</strong>——这是离线白盒蒸馏最直接的证据。</li>
+<li>只优化学生：optimizer 里只有 <code>model.parameters()</code>；lr 默认 5e-6（软标签先验强，步子要小）；fp16 用 GradScaler，bf16 自动关闭。</li>
+<li>保存双份：纯权重 .pth（部署/评测）+ 带 optimizer/scaler/step 的 resume 文件（续训）。</li>
+</ul>
+<h3>12.5 "变小"发生在哪：MoE 198M → Dense 64M</h3>
+<p>同是 768 隐藏层 / 8 层的实测参数量（来自训练日志头部打印）：</p>
+<table>
+<thead><tr><th>模型</th><th>结构</th><th>总参数</th><th>每 token 激活</th></tr></thead>
+<tbody>
+<tr><td>教师 MoE</td><td>每层 FFN 换成 4 个专家，路由每次激活 1 个</td><td>198.42M</td><td>63.94M</td></tr>
+<tr><td>学生 Dense</td><td>每层只有 1 个普通 FFN</td><td>63.91M</td><td>63.91M</td></tr>
+</tbody>
+</table>
+<p>差值约 134.5M，正是"3 份没被激活也要占内存的 FFN 专家副本"（每层 4 个专家 − Dense 的 1 份）。所以：</p>
+<ul>
+<li><strong>变小的是总参数 / 权重文件 / 常驻显存</strong>（约 3.1 倍，fp16 权重约 397MB → 128MB）；</li>
+<li><strong>每 token 的计算量几乎没变</strong>：MoE 本来就是"激活少"的设计（63.94M ≈ 63.91M）；</li>
+<li>想连计算量一起变小，改 <code>--student_hidden_size</code> / <code>--student_num_layers</code>，脚本本身支持任意"小学生"组合。</li>
+</ul>
+<p>本质：蒸馏不是把 198M"压成"64M，而是<strong>换一栋只带 1 份 FFN 的房子</strong>（dense 架构），再让 198M 的教师把知识搬进去——参数个数在初始化时就定死了，训练只负责提高每个参数的信息密度。</p>
+<h3>12.6 DeepSeek 系列：原生训练 vs 蒸馏</h3>
+<p>DeepSeek 家族里只有最末端才是蒸馏，前面全是原生训练：</p>
+<ul>
+<li><strong>DeepSeek-V3</strong>：原生从零预训练（671B 总参 / 37B 激活的 MoE，约 14.8T token），随后 SFT + RL 对齐。论文里的 MTP（一次预测多个 token）是预训练技巧，<strong>不是蒸馏</strong>。</li>
+<li><strong>DeepSeek-R1-Zero / R1</strong>：在 V3-Base 上后训练。R1-Zero 跳过 SFT 纯 RL；R1 是"冷启动 SFT → RL → 拒绝采样 → 再 SFT → 再 RL"的多阶段版本。</li>
+<li><strong>DeepSeek-R1-Distill-Qwen / -Llama</strong>：唯一真正的蒸馏环节——拿 R1（教师）生成的约 80 万条高质量思维链样本，对 Qwen2.5（1.5B~32B）与 Llama（8B/70B）底座做<strong>纯 SFT</strong>；论文明确该阶段没有再上 RL。</li>
+</ul>
+<p>效果（官方模型卡，R1-Distill-Qwen-32B）：AIME 2024 pass@1 72.6、MATH-500 pass@1 94.3、Codeforces 约 1691，超过当时的 o1-mini；同规模下"从 R1 蒸馏"明显好于"自己从零 RL"。结论：小模型的探索成本太贵，站在强教师肩上抄作业比摸黑 RL 划算得多。</p>
+<p>注意它的形态是<strong>文本蒸馏</strong>：学生是现成底座、教师只需输出文本，所以闭源教师也能用。R1-Distill 是"数据级蒸馏"的典型，而本项目的 <code>train_distillation.py</code> 是"logits 级蒸馏"的典型，两者互补。</p>
+<h3>12.7 本项目的落地路线</h3>
+<ul>
+<li><strong>白盒同族</strong>：直接 <code>python train_distillation.py</code>（默认 MoE → Dense）。想对照就加 <code>--alpha 1.0</code>，观察 distill 项归零后效果差异。</li>
+<li><strong>黑盒跨族 / 闭源</strong>：让教师按格式要求生成 N 条回答 → 用规则过滤（答案对不对、长度、<code>&lt;/think&gt;</code> 结构）→ 对 Dense 学生做 SFT → 有预算再补小规模 RL。这就是 DeepSeek-R1-Distill 的复刻路线。</li>
+<li>两者不互斥：先用 logits 白盒保底（同词表时信息最密），再用 R1 式文本数据补推理能力。</li>
+</ul>
+<h3>12.8 小结与常见坑</h3>
+<ul>
+<li>蒸馏上限是教师；CE 是保险丝，防止教师犯错时学生跟着错。</li>
+<li><code>F.kl_div</code> 的 input / target 约定别记反：input 是 log 概率、target 是概率。</li>
+<li>教师词表截断依赖"两模型词表前缀对齐"的假设（同 tokenizer 家族成立）。</li>
+<li>显存约等于"学生 + 教师两份模型"；教师 no_grad 但 logits 仍占内存。</li>
+<li>判断在线 / 离线蒸馏：训练循环里有没有 <code>generate</code>——没有就是离线。</li>
+</ul>
 </section>
 
 <section id="ch13">
