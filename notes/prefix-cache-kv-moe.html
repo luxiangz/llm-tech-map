@@ -1,0 +1,549 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>前缀命中在 Transformer / MoE 中到底节省了什么计算</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/lxgw-wenkai-webfont@1.7.0/style.css">
+<script>
+window.MathJax = {
+  tex: { inlineMath: [['$', '$'], ['\\(', '\\)']], tags: 'none' },
+  chtml: { scale: 1.0 }
+};
+</script>
+<script async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js"></script>
+<style>
+  :root {
+    --bg: #ffffff;
+    --panel: #f7f8fa;
+    --panel2: #eef1f5;
+    --line: #e3e6ec;
+    --text: #20242e;
+    --muted: #626a76;
+    --accent: #b3354a;
+    --accent2: #2c5fa8;
+    --warn: #d98e04;
+    --code: #8a1f3d;
+    --code-bg: #f2f4f7;
+    --head-bg: #16324f;
+    --c-prefill: #3158b8;
+    --c-hit: #17795f;
+    --c-decode: #7440b8;
+    --c-spec: #b06a12;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0f1420;
+      --panel: #171d2b;
+      --panel2: #1d2434;
+      --line: #2a3245;
+      --text: #e6e9f0;
+      --muted: #9aa3b5;
+      --accent: #7fa8ff;
+      --accent2: #4ee0c2;
+      --warn: #ffb454;
+      --code: #cfe0ff;
+      --code-bg: #10151f;
+      --head-bg: #232c40;
+      --c-prefill: #c9d8ff;
+      --c-hit: #b5f0e4;
+      --c-decode: #e4c9ff;
+      --c-spec: #ffe0b8;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: "LXGW WenKai", "Microsoft YaHei", "PingFang SC", "Segoe UI", sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.85;
+    font-size: 17px;
+    letter-spacing: 0.01em;
+  }
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 40px 26px 100px; }
+  h1, h2, h3, h4 { line-height: 1.4; font-family: "Microsoft YaHei", "PingFang SC", sans-serif; }
+  h1 { font-size: 28px; margin: 0 0 6px; }
+  .subtitle { color: var(--muted); font-size: 15px; margin: 0 0 24px; }
+  h2 {
+    font-size: 22px; margin: 46px 0 14px; padding-bottom: 9px;
+    border-bottom: 2px solid var(--accent); scroll-margin-top: 20px;
+  }
+  h2 .n { color: var(--accent); margin-right: 8px; }
+  h3 { font-size: 18px; margin: 26px 0 10px; }
+  p { margin: 12px 0; }
+  code, pre { font-family: "Cascadia Code", Consolas, "Microsoft YaHei", monospace; }
+  code {
+    background: var(--code-bg); border-radius: 4px; padding: 1px 6px;
+    font-size: 0.86em; color: var(--code);
+  }
+  .lead {
+    background: var(--panel); border: 1px solid var(--line); border-left: 4px solid var(--accent2);
+    border-radius: 12px; padding: 18px 22px; margin: 20px 0;
+  }
+  .callout {
+    border-radius: 10px; padding: 14px 18px; margin: 16px 0;
+    border: 1px solid var(--line); background: var(--panel);
+  }
+  .callout.key { border-left: 4px solid var(--accent2); }
+  .callout.note { border-left: 4px solid var(--warn); }
+  .callout .tag { font-weight: 700; font-size: 13px; }
+  .key .tag { color: var(--accent2); }
+  .note .tag { color: var(--warn); }
+  ul, ol { padding-left: 26px; }
+  li { margin: 6px 0; }
+  .toc {
+    background: var(--panel); border: 1px solid var(--line);
+    border-radius: 12px; padding: 16px 20px; margin: 20px 0; columns: 2; column-gap: 36px;
+  }
+  .toc a { display: block; padding: 3px 0; color: var(--muted); text-decoration: none; }
+  .toc a:hover { color: var(--accent); }
+  .kv { display: grid; grid-template-columns: repeat(auto-fit, minmax(175px, 1fr)); gap: 10px; margin: 16px 0; }
+  .kv .cell { background: var(--panel2); border: 1px solid var(--line); border-radius: 10px; padding: 9px 12px; }
+  .kv .cell b { display: block; color: var(--accent2); font-size: 13px; margin-bottom: 3px; }
+  .kv .cell span { font-size: 14px; }
+  .table-scroll { overflow-x: auto; border: 1px solid var(--line); border-radius: 12px; margin: 18px 0; }
+  table { border-collapse: collapse; width: 100%; font-size: 14px; }
+  th, td { border: 1px solid var(--line); padding: 8px 11px; vertical-align: top; text-align: left; }
+  th { background: var(--head-bg); color: #fff; font-weight: 600; }
+  tr:nth-child(even) td { background: var(--panel); }
+  .op { display: inline-block; font-size: 11px; padding: 1px 8px; border-radius: 20px;
+    background: var(--panel2); border: 1px solid var(--line); color: var(--muted); margin-left: 6px; }
+  .step { font-weight: 700; color: var(--text); }
+  .muted { color: var(--muted); }
+  .formula-block {
+    background: var(--code-bg); border: 1px solid var(--line);
+    border-radius: 10px; padding: 14px 16px; margin: 14px 0; overflow-x: auto; font-size: 15px;
+  }
+  .legend { display: flex; flex-wrap: wrap; gap: 14px; margin: 12px 0; font-size: 13px; color: var(--muted); }
+  .legend .sw { display: inline-block; width: 12px; height: 12px; border-radius: 3px; margin-right: 6px; vertical-align: -1px; }
+  .sw.prefill { background: #6f8bd8; }
+  .sw.hit { background: #4ec7b6; }
+  .sw.decode { background: #b48ce0; }
+  .sw.spec { background: #e0a45c; }
+  .steps { display: flex; flex-direction: column; gap: 14px; margin: 18px 0; }
+  .step-card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; }
+  .step-head { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+  .step-head .step { font-size: 15px; }
+  .step-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .scenario {
+    border-radius: 10px; padding: 10px 12px; border: 1px solid var(--line);
+    background: var(--panel2); font-size: 14px; line-height: 1.7; overflow-wrap: anywhere;
+  }
+  .sc-label { font-weight: 700; font-size: 12px; letter-spacing: .3px; margin-bottom: 4px; }
+  .scenario.prefill { border-left: 3px solid #6f8bd8; }
+  .scenario.prefill .sc-label { color: var(--c-prefill); }
+  .scenario.hit { border-left: 3px solid #4ec7b6; }
+  .scenario.hit .sc-label { color: var(--c-hit); }
+  .scenario.decode { border-left: 3px solid #b48ce0; }
+  .scenario.decode .sc-label { color: var(--c-decode); }
+  .scenario.spec { border-left: 3px solid #e0a45c; }
+  .scenario.spec .sc-label { color: var(--c-spec); }
+  .step-save {
+    margin-top: 10px; padding: 8px 12px; border-radius: 8px;
+    background: var(--code-bg); border: 1px dashed var(--line); font-size: 14px;
+  }
+  .step-save b { color: var(--accent); }
+  @media (max-width: 720px) { .toc { columns: 1; } h1 { font-size: 24px; } .step-grid { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>前缀命中在 Transformer / MoE 中到底节省了什么计算</h1>
+  <p class="subtitle">从「一句话结论」到「逐层 Shape 与 FLOPs 对照表」，系统梳理 Prefill、Decode 与投机解码三个阶段。</p>
+
+  <div class="lead">
+    <b>一句话结论：</b>工程上说的“前缀命中”性能提升，<b>绝大部分来自 KV Cache 复用了注意力（Attention）相关的计算</b>——具体是
+    省掉“前缀 Token 之间的注意力分数（$Q \cdot K^{\top}$）与加权求和（$\mathrm{Softmax}\cdot V$）”，以及前缀 Token 的
+    Q/K/V 投影等逐层前向；而 <b>MoE 的“专家路由命中”基本省不掉昂贵的 FFN</b>，只省 Router 门控和权重加载。
+    投机解码则只作用于 <b>Decode</b> 阶段，靠“小模型猜、大模型验”减少大模型的串行调用次数。
+  </div>
+
+  <div class="toc">
+    <a href="#s0">0 · 问题背景</a>
+    <a href="#s1">1 · 前缀命中的核心：Attention（KV Cache）</a>
+    <a href="#s2">2 · 从 Shape 角度精确拆解</a>
+    <a href="#s3">3 · MoE 专家路由命中到底省什么</a>
+    <a href="#s4">4 · 典型模型：Mistral 8x7B 参数</a>
+    <a href="#s5">5 · 完整大表：Prefill + Decode + 投机解码</a>
+    <a href="#s6">6 · 投机解码为什么只在 Decode</a>
+    <a href="#s7">7 · 关键洞察与总结</a>
+  </div>
+
+  <h2 id="s0"><span class="n">0</span>问题背景</h2>
+  <p>
+    自回归 Transformer 每生成一个新 Token，都要用当前 Query 去和所有历史 Token 的 Key/Value 做注意力运算。
+    如果每次都从头算整段上下文，代价随序列长度 <b>平方级</b>增长（$O(S^2)$）。因此推理引擎普遍缓存已算好的 K、V，
+    即 <b>KV Cache</b>；当新请求与已有前缀相同，还能跨请求复用（常被叫 <b>Prefix Cache / Prompt Cache</b>）。
+    本页要回答的是：<b>“命中”那一刻，到底哪一步计算被省掉了？省了多少？</b>
+  </p>
+
+  <h2 id="s1"><span class="n">1</span>前缀命中的核心：Attention（KV Cache）</h2>
+  <p>这里的“前缀命中”默认指 <b>KV Cache 命中</b>，而不是模型参数的稀疏计算。</p>
+  <p>它主要节省 <b>Transformer Decoder 的 Self-Attention</b> 里、针对前缀 Token 的以下计算：</p>
+  <ul>
+    <li><b>Key / Value 投影</b>（$X W_K$、$X W_V$），以及前缀部分的 Query 投影（$X W_Q$）——因为旧 Token 的注意力输出已经算好，不再需要它们的 Q。</li>
+    <li><b>注意力分数</b> $Q \cdot K^{\top}$ 和 <b>加权求和</b> $\mathrm{Softmax}\cdot V$ 中，前缀 Token 之间的那一块。</li>
+    <li><b>Softmax 归一化</b> 中前缀 Token 对应行的指数与约简。</li>
+    <li>次要但关键：减少从 HBM 反复读取原始激活、反复写入 K/V 的<b>显存带宽</b>开销（Decode 阶段的主要瓶颈）。</li>
+  </ul>
+  <p>一句话：把“从头计算前缀上下文语义关联”的串行计算，转化成了“从缓存读 K/V 并只算新 Token”的查表操作。</p>
+
+  <h2 id="s2"><span class="n">2</span>从 Shape 角度精确拆解</h2>
+  <p>统一符号：</p>
+  <div class="kv">
+    <div class="cell"><b>B</b><span>Batch Size（本页取 1）</span></div>
+    <div class="cell"><b>S</b><span>总输入序列长度（Prefill = 完整 Prompt）</span></div>
+    <div class="cell"><b>S<sub>hit</sub></b><span>命中的旧前缀长度</span></div>
+    <div class="cell"><b>S<sub>new</sub></b><span>未命中新 Token 数 = S − S<sub>hit</sub></span></div>
+    <div class="cell"><b>H / D</b><span>头数 / 每头维度，d<sub>model</sub> = H·D</span></div>
+    <div class="cell"><b>E / K</b><span>专家总数 / 每 Token 激活数（Top-K）</span></div>
+    <div class="cell"><b>d<sub>ff</sub></b><span>FFN 中间维度（≈3.5~4 × d<sub>model</sub>）</span></div>
+    <div class="cell"><b>m / α</b><span>投机候选数 / 接受率</span></div>
+  </div>
+
+  <h3>2.1 有命中时，输入 Shape 被“压缩”了</h3>
+  <p>
+    无命中时，Attention 矩阵是 $[B, H, S, S]$ 的方阵；有命中时，只需算新 Token 的 Query 对全部 Key 的分数，
+    变成 $[B, H, S_{new}, S]$。本质是把“总长度 × 总长度”压缩成“新长度 × 总长度”。
+  </p>
+
+  <h3>2.2 四处节省</h3>
+  <ul>
+    <li><b>① Q/K/V 投影</b>：只算 $S_{new}$ 个 Token，省 $3\,B\,S_{hit}\,d_{model}^{2}$（含 $W_Q$，见上）。</li>
+    <li><b>② 注意力分数 $Q \cdot K^{\top}$</b>：从 $[B,H,S,S]$ 降到 $[B,H,S_{new},S]$，省的是<b>左上“前缀×前缀”方块</b> $[B,H,S_{hit},S_{hit}]$。</li>
+    <li><b>③ 加权求和 $\mathrm{Softmax}\cdot V$</b>：从 $[B,H,S,S]$ 降到 $[B,H,S_{new},S]$，同样省前缀×前缀块。</li>
+    <li><b>④ Softmax</b>：从 $B H S$ 行降到 $B H S_{new}$ 行，省 $B H S_{hit}$ 行的 exp/求和/除法。</li>
+  </ul>
+  <div class="callout note">
+    <div class="tag">关键点：精确到块</div>
+    <p style="margin:8px 0 0">
+      注意力真正省下的是<b>前缀×前缀</b>块。在因果掩码下，注意力分数矩阵只算下三角，省下的分数块严格是
+      $\dfrac{S_{hit}(S_{hit}+1)}{2}$ 个元素（即 $\Theta(S_{hit}^{2})$）；若用“方阵”近似，省下的可写作
+      $\Theta(S_{hit}\cdot S)$（它已经包含了 $S_{hit}^2$ 项）。
+      <b>注意：新 Token 对前缀 Token 的“交叉注意力”（左下 $[S_{new}, S_{hit}]$ 块）仍然要实时计算</b>，
+      只是 K/V 从缓存读，省的是带宽与重算，而不是这次注意力本身。
+    </p>
+  </div>
+
+  <h2 id="s3"><span class="n">3</span>MoE 专家路由命中到底省什么</h2>
+  <p>MoE 里有两种容易被混淆的“前缀命中”：</p>
+  <ul>
+    <li><b>语义前缀命中（Prompt Cache）</b>：整个 Prompt 复用，Attention + FFN <b>全部</b>免算，收益最大。</li>
+    <li><b>专家路由命中（Routing Pattern Hit）</b>：当前 Token 命中了与历史相同的 Top-K 专家组合。</li>
+  </ul>
+  <p>对于“专家路由命中”，准确结论是：</p>
+  <ul>
+    <li>路由命中<b>只省 Router（Gate）门控</b>：$O(S \times E \times d_{model})$，以及<b>未命中专家权重的加载（内存 IO）</b>。</li>
+    <li><b>省不掉 FFN 矩阵乘法</b>：即使专家 ID 相同，新 Token 的数值特征不同，仍必须用 $W_1, W_2$ 乘新的输入 $X_{new}$。</li>
+    <li>FFN 的真实计算量是 $O(S \times d_{model} \times d_{ff})$，而不是 $O(S \times d_{model}^2)$（要含扩张系数 $d_{ff}$）。</li>
+  </ul>
+  <div class="callout key">
+    <div class="tag">三种情况的省法对照</div>
+    <div class="formula-block">
+      文本前缀命中（KV Cache）：省 $Q\!\cdot\!K^{\top}$ 与 $\mathrm{Softmax}\!\cdot\!V$，$\Theta(S_{hit}\cdot S\cdot D)$（因果下精确为前缀×前缀块 $\Theta(S_{hit}^2\cdot D)$）。<br><br>
+      MoE 路由命中：省 Router 门控 $O(S\cdot E\cdot d_{model})$，<b>不省 FFN</b>。<br><br>
+      MoE 批量前缀命中（连续 Token 走同一专家）：省 Kernel 启动与权重加载<b>延迟</b>，而非 FLOPs。
+    </div>
+  </div>
+
+  <h2 id="s4"><span class="n">4</span>典型模型：Mistral 8x7B（Mixtral）</h2>
+  <div class="kv">
+    <div class="cell"><b>总参数</b><span>≈ 470 亿</span></div>
+    <div class="cell"><b>激活参数 / Token</b><span>≈ 130 亿（约 28%）</span></div>
+    <div class="cell"><b>层数</b><span>32</span></div>
+    <div class="cell"><b>d<sub>model</sub></b><span>4096</span></div>
+    <div class="cell"><b>d<sub>ff</sub></b><span>14336（4096 × 3.5）</span></div>
+    <div class="cell"><b>专家数 E</b><span>8</span></div>
+    <div class="cell"><b>Top-K</b><span>2</span></div>
+    <div class="cell"><b>头 H / 头维 D</b><span>32 / 128</span></div>
+    <div class="cell"><b>词表 V</b><span>32000</span></div>
+  </div>
+  <p class="muted">为方便代入：Batch=1，Prefill 总长 S=2048，命中前缀 S<sub>hit</sub>=1024，未命中 S<sub>new</sub>=1024；Decode 每次生成 1 个 Token；投机解码取 m=5。</p>
+
+  <h2 id="s5"><span class="n">5</span>完整大表：Prefill + Decode + 投机解码</h2>
+  <p>
+    下面把 <b>全量 Prefill / 缓存命中 Prefill / 普通 Decode / 投机解码 Decode</b> 四种情形按步骤逐条列出，
+    覆盖 <b>Embedding、LayerNorm、Q/K/V 投影、注意力、MoE 路由、专家 FFN、输出投影、残差</b> 等全部环节。
+  </p>
+  <div class="legend">
+    <span><span class="sw prefill"></span>全量 Prefill（无缓存）</span>
+    <span><span class="sw hit"></span>缓存命中 Prefill（有 KV Cache）</span>
+    <span><span class="sw decode"></span>普通 Decode（每步 1 Token）</span>
+    <span><span class="sw spec"></span>投机解码 Decode（每步 m 候选）</span>
+  </div>
+
+  <div class="steps">
+
+    <div class="step-card">
+      <div class="step-head"><span class="step">0. 输入 Embedding</span><span class="op">查表</span></div>
+      <div class="step-grid">
+        <div class="scenario prefill"><div class="sc-label">全量 Prefill（无缓存）</div>$X=\mathrm{Embed}(t)$<br>$[B,S]\to[B,S,d_{model}]$<br>$O(S)$</div>
+        <div class="scenario hit"><div class="sc-label">缓存命中 Prefill（有 KV Cache）</div>$X_{new}=\mathrm{Embed}(t_{new})$<br>$[B,S_{new}]\to[B,S_{new},d_{model}]$<br>$O(S_{new})$</div>
+        <div class="scenario decode"><div class="sc-label">普通 Decode（1 Token/步）</div>$x_{gen}=\mathrm{Embed}(t_{gen})$<br>$[B,1]\to[B,1,d_{model}]$<br>$O(1)$</div>
+        <div class="scenario spec"><div class="sc-label">投机解码（m 候选/步）</div>$X_{gen}=\mathrm{Embed}(t_{1..m})$<br>$[B,m]\to[B,m,d_{model}]$<br>$O(m)$</div>
+      </div>
+      <div class="step-save"><b>节省：</b>Prefill 省 $O(S_{hit})$；Decode 无缓存可省（必须查新 Token）</div>
+    </div>
+
+    <div class="step-card">
+      <div class="step-head"><span class="step">1. 输入 LayerNorm</span><span class="op">归一化</span></div>
+      <div class="step-grid">
+        <div class="scenario prefill"><div class="sc-label">全量 Prefill（无缓存）</div>$\bar X=\mathrm{LN}(X)$<br>$O(B\,S\,d_{model})$</div>
+        <div class="scenario hit"><div class="sc-label">缓存命中 Prefill（有 KV Cache）</div>$\bar X_{new}=\mathrm{LN}(X_{new})$<br>$O(B\,S_{new}\,d_{model})$</div>
+        <div class="scenario decode"><div class="sc-label">普通 Decode（1 Token/步）</div>$\bar x=\mathrm{LN}(x_{gen})$<br>$O(B\,d_{model})$</div>
+        <div class="scenario spec"><div class="sc-label">投机解码（m 候选/步）</div>$\bar X_{gen}=\mathrm{LN}(X_{gen})$<br>$O(B\,m\,d_{model})$</div>
+      </div>
+      <div class="step-save"><b>节省：</b>Prefill 省 $O(B\,S_{hit}\,d_{model})$</div>
+    </div>
+
+    <div class="step-card">
+      <div class="step-head"><span class="step">2. Q/K/V 投影</span><span class="op">线性层</span></div>
+      <div class="step-grid">
+        <div class="scenario prefill"><div class="sc-label">全量 Prefill（无缓存）</div>$Q,K,V=\bar X W_Q,\bar X W_K,\bar X W_V$<br>$3\,B\,S\,d_{model}^{2}$</div>
+        <div class="scenario hit"><div class="sc-label">缓存命中 Prefill（有 KV Cache）</div>只算 $S_{new}$ 个 Token 的 Q/K/V，旧 K/V 从 Cache 读<br>$3\,B\,S_{new}\,d_{model}^{2}$</div>
+        <div class="scenario decode"><div class="sc-label">普通 Decode（1 Token/步）</div>$q,k,v$ 各 $[B,1,d_{model}]$<br>$3\,B\,d_{model}^{2}$</div>
+        <div class="scenario spec"><div class="sc-label">投机解码（m 候选/步）</div>$Q,K,V$ 各 $[B,m,d_{model}]$<br>$3\,B\,m\,d_{model}^{2}$</div>
+      </div>
+      <div class="step-save"><b>节省：</b>Prefill 省 $3\,B\,S_{hit}\,d_{model}^{2}$（连 $W_Q$ 一起省）</div>
+    </div>
+
+    <div class="step-card">
+      <div class="step-head"><span class="step">3. 多头 Reshape</span><span class="op">0 FLOPs</span></div>
+      <div class="step-grid">
+        <div class="scenario prefill"><div class="sc-label">全量 Prefill（无缓存）</div>$Q,K,V\in\mathbb R^{B\times H\times S\times D}$</div>
+        <div class="scenario hit"><div class="sc-label">缓存命中 Prefill（有 KV Cache）</div>$Q_{new}\in\mathbb R^{B\times H\times S_{new}\times D}$<br>$K_{c},V_{c}\in\mathbb R^{B\times H\times S\times D}$</div>
+        <div class="scenario decode"><div class="sc-label">普通 Decode（1 Token/步）</div>$q,k,v\in\mathbb R^{B\times H\times 1\times D}$</div>
+        <div class="scenario spec"><div class="sc-label">投机解码（m 候选/步）</div>$q,k,v\in\mathbb R^{B\times H\times m\times D}$</div>
+      </div>
+      <div class="step-save"><b>节省：</b>无（纯数据搬移）</div>
+    </div>
+
+    <div class="step-card">
+      <div class="step-head"><span class="step">4. 注意力分数 $Q\cdot K^{\top}$</span><span class="op">矩阵乘+缩放</span></div>
+      <div class="step-grid">
+        <div class="scenario prefill"><div class="sc-label">全量 Prefill（无缓存）</div>$[B,H,S,D]\times[B,H,D,S]\to[B,H,S,S]$<br>$B\,H\,S^2\,D$</div>
+        <div class="scenario hit"><div class="sc-label">缓存命中 Prefill（有 KV Cache）</div>$[B,H,S_{new},D]\times[B,H,D,S]\to[B,H,S_{new},S]$<br>$B\,H\,S_{new}\,S\,D$</div>
+        <div class="scenario decode"><div class="sc-label">普通 Decode（1 Token/步）</div>$[B,H,1,D]\times[B,H,D,S]\to[B,H,1,S]$<br>$B\,H\,S\,D$</div>
+        <div class="scenario spec"><div class="sc-label">投机解码（m 候选/步）</div>$[B,H,m,D]\times[B,H,D,S{+}m]\to[B,H,m,S{+}m]$<br>$B\,H\,m\,(S{+}m)\,D$</div>
+      </div>
+      <div class="step-save"><b>节省：</b>Prefill 省前缀×前缀块 $O(B\,H\,S_{hit}^2\,D)$；Decode 相对无缓存从 $S^2\to S$</div>
+    </div>
+
+    <div class="step-card">
+      <div class="step-head"><span class="step">5. 注意力掩码</span><span class="op">上三角置 -∞</span></div>
+      <div class="step-grid">
+        <div class="scenario prefill"><div class="sc-label">全量 Prefill（无缓存）</div>$[B,H,S,S]$<br>$O(B\,H\,S^2)$</div>
+        <div class="scenario hit"><div class="sc-label">缓存命中 Prefill（有 KV Cache）</div>$[B,H,S_{new},S]$<br>$O(B\,H\,S_{new}\,S)$</div>
+        <div class="scenario decode"><div class="sc-label">普通 Decode（1 Token/步）</div>$[B,H,1,S]$<br>$O(B\,H\,S)$</div>
+        <div class="scenario spec"><div class="sc-label">投机解码（m 候选/步）</div>$[B,H,m,S{+}m]$<br>$O(B\,H\,m\,(S{+}m))$</div>
+      </div>
+      <div class="step-save"><b>节省：</b>同 Step 4 量级</div>
+    </div>
+
+    <div class="step-card">
+      <div class="step-head"><span class="step">6. Softmax</span><span class="op">指数+约简</span></div>
+      <div class="step-grid">
+        <div class="scenario prefill"><div class="sc-label">全量 Prefill（无缓存）</div>$B\,H\,S$ 行</div>
+        <div class="scenario hit"><div class="sc-label">缓存命中 Prefill（有 KV Cache）</div>$B\,H\,S_{new}$ 行</div>
+        <div class="scenario decode"><div class="sc-label">普通 Decode（1 Token/步）</div>$B\,H$ 行</div>
+        <div class="scenario spec"><div class="sc-label">投机解码（m 候选/步）</div>$B\,H\,m$ 行</div>
+      </div>
+      <div class="step-save"><b>节省：</b>Prefill 省 $B\,H\,S_{hit}$ 行（长上下文可达总耗时 15%~20%）</div>
+    </div>
+
+    <div class="step-card">
+      <div class="step-head"><span class="step">7. 加权求和 $\mathrm{Softmax}\cdot V$</span><span class="op">矩阵乘</span></div>
+      <div class="step-grid">
+        <div class="scenario prefill"><div class="sc-label">全量 Prefill（无缓存）</div>$[B,H,S,S]\times[B,H,S,D]\to[B,H,S,D]$<br>$B\,H\,S^2\,D$</div>
+        <div class="scenario hit"><div class="sc-label">缓存命中 Prefill（有 KV Cache）</div>$[B,H,S_{new},S]\times[B,H,S,D]\to[B,H,S_{new},D]$<br>$B\,H\,S_{new}\,S\,D$</div>
+        <div class="scenario decode"><div class="sc-label">普通 Decode（1 Token/步）</div>$[B,H,1,S]\times[B,H,S,D]\to[B,H,1,D]$<br>$B\,H\,S\,D$</div>
+        <div class="scenario spec"><div class="sc-label">投机解码（m 候选/步）</div>$[B,H,m,S{+}m]\times[B,H,S{+}m,D]\to[B,H,m,D]$<br>$B\,H\,m\,(S{+}m)\,D$</div>
+      </div>
+      <div class="step-save"><b>节省：</b>Prefill 省前缀×前缀块 $O(B\,H\,S_{hit}^2\,D)$</div>
+    </div>
+
+    <div class="step-card">
+      <div class="step-head"><span class="step">8. 多头合并</span><span class="op">Reshape</span></div>
+      <div class="step-grid">
+        <div class="scenario prefill"><div class="sc-label">全量 Prefill（无缓存）</div>$[B,H,S,D]\to[B,S,d_{model}]$</div>
+        <div class="scenario hit"><div class="sc-label">缓存命中 Prefill（有 KV Cache）</div>$[B,H,S_{new},D]\to[B,S_{new},d_{model}]$</div>
+        <div class="scenario decode"><div class="sc-label">普通 Decode（1 Token/步）</div>$[B,H,1,D]\to[B,1,d_{model}]$</div>
+        <div class="scenario spec"><div class="sc-label">投机解码（m 候选/步）</div>$[B,H,m,D]\to[B,m,d_{model}]$</div>
+      </div>
+      <div class="step-save"><b>节省：</b>无</div>
+    </div>
+
+    <div class="step-card">
+      <div class="step-head"><span class="step">9. 输出投影 $W_O$</span><span class="op">线性层</span></div>
+      <div class="step-grid">
+        <div class="scenario prefill"><div class="sc-label">全量 Prefill（无缓存）</div>$B\,S\,d_{model}^{2}$</div>
+        <div class="scenario hit"><div class="sc-label">缓存命中 Prefill（有 KV Cache）</div>$B\,S_{new}\,d_{model}^{2}$</div>
+        <div class="scenario decode"><div class="sc-label">普通 Decode（1 Token/步）</div>$B\,d_{model}^{2}$</div>
+        <div class="scenario spec"><div class="sc-label">投机解码（m 候选/步）</div>$B\,m\,d_{model}^{2}$</div>
+      </div>
+      <div class="step-save"><b>节省：</b>Prefill 省 $B\,S_{hit}\,d_{model}^{2}$</div>
+    </div>
+
+    <div class="step-card">
+      <div class="step-head"><span class="step">10. Attention 残差</span><span class="op">加法</span></div>
+      <div class="step-grid">
+        <div class="scenario prefill"><div class="sc-label">全量 Prefill（无缓存）</div>$X_{attn}=X+\mathrm{AttnProj}$<br>$O(B\,S\,d_{model})$</div>
+        <div class="scenario hit"><div class="sc-label">缓存命中 Prefill（有 KV Cache）</div>$O(B\,S_{new}\,d_{model})$</div>
+        <div class="scenario decode"><div class="sc-label">普通 Decode（1 Token/步）</div>$O(B\,d_{model})$</div>
+        <div class="scenario spec"><div class="sc-label">投机解码（m 候选/步）</div>$O(B\,m\,d_{model})$</div>
+      </div>
+      <div class="step-save"><b>节省：</b>Prefill 省 $O(B\,S_{hit}\,d_{model})$</div>
+    </div>
+
+    <div class="step-card">
+      <div class="step-head"><span class="step">11. FFN 前 LayerNorm</span><span class="op">归一化</span></div>
+      <div class="step-grid">
+        <div class="scenario prefill"><div class="sc-label">全量 Prefill（无缓存）</div>$\bar X_{attn}=\mathrm{LN}(X_{attn})$<br>$O(B\,S\,d_{model})$</div>
+        <div class="scenario hit"><div class="sc-label">缓存命中 Prefill（有 KV Cache）</div>$O(B\,S_{new}\,d_{model})$</div>
+        <div class="scenario decode"><div class="sc-label">普通 Decode（1 Token/步）</div>$O(B\,d_{model})$</div>
+        <div class="scenario spec"><div class="sc-label">投机解码（m 候选/步）</div>$O(B\,m\,d_{model})$</div>
+      </div>
+      <div class="step-save"><b>节省：</b>Prefill 省 $O(B\,S_{hit}\,d_{model})$</div>
+    </div>
+
+    <div class="step-card">
+      <div class="step-head"><span class="step">12. MoE 路由（门控）</span><span class="op">线性+Softmax</span></div>
+      <div class="step-grid">
+        <div class="scenario prefill"><div class="sc-label">全量 Prefill（无缓存）</div>$G=\mathrm{Softmax}(\bar X_{attn}W_{gate})$<br>$[B,S,d_{model}]\to[B,S,E]$<br>$B\,S\,d_{model}\,E$</div>
+        <div class="scenario hit"><div class="sc-label">缓存命中 Prefill（有 KV Cache）</div>$B\,S_{new}\,d_{model}\,E$</div>
+        <div class="scenario decode"><div class="sc-label">普通 Decode（1 Token/步）</div>$B\,d_{model}\,E$</div>
+        <div class="scenario spec"><div class="sc-label">投机解码（m 候选/步）</div>$B\,m\,d_{model}\,E$</div>
+      </div>
+      <div class="step-save"><b>节省：</b>Prefill 省 $B\,S_{hit}\,d_{model}\,E$；Decode 每个新 Token 仍要重新路由</div>
+    </div>
+
+    <div class="step-card">
+      <div class="step-head"><span class="step">13. Top-K 选择</span><span class="op">排序/堆</span></div>
+      <div class="step-grid">
+        <div class="scenario prefill"><div class="sc-label">全量 Prefill（无缓存）</div>$B\,S$ 个 Token 各选 Top-K<br>$O(B\,S\,E\log K)$</div>
+        <div class="scenario hit"><div class="sc-label">缓存命中 Prefill（有 KV Cache）</div>$O(B\,S_{new}\,E\log K)$</div>
+        <div class="scenario decode"><div class="sc-label">普通 Decode（1 Token/步）</div>$O(B\,E\log K)$</div>
+        <div class="scenario spec"><div class="sc-label">投机解码（m 候选/步）</div>$O(B\,m\,E\log K)$</div>
+      </div>
+      <div class="step-save"><b>节省：</b>Prefill 省 $O(B\,S_{hit}\,E\log K)$</div>
+    </div>
+
+    <div class="step-card">
+      <div class="step-head"><span class="step">14. MoE 专家 FFN</span><span class="op">稀疏矩阵乘</span></div>
+      <div class="step-grid">
+        <div class="scenario prefill"><div class="sc-label">全量 Prefill（无缓存）</div>$\mathrm{FFN}_k(x)=\mathrm{SiLU}(xW_{1,k})\cdot W_{2,k}$<br>$B\,S\,K\cdot 2\,d_{model}\,d_{ff}$<br>（S=2048 → ≈ $4.81\times10^{11}$ FLOPs）</div>
+        <div class="scenario hit"><div class="sc-label">缓存命中 Prefill（有 KV Cache）</div>$B\,S_{new}\,K\cdot 2\,d_{model}\,d_{ff}$<br>（S<sub>new</sub>=1024 → ≈ $2.405\times10^{11}$）</div>
+        <div class="scenario decode"><div class="sc-label">普通 Decode（1 Token/步）</div>$B\,K\cdot 2\,d_{model}\,d_{ff}$<br>≈ $2.35\times10^{8}$</div>
+        <div class="scenario spec"><div class="sc-label">投机解码（m 候选/步）</div>$B\,m\,K\cdot 2\,d_{model}\,d_{ff}$（m 个候选并行）</div>
+      </div>
+      <div class="step-save"><b>节省：</b>几乎无——<b>路由命中省不掉 FFN</b>，新 Token 必须重算</div>
+    </div>
+
+    <div class="step-card">
+      <div class="step-head"><span class="step">15. 专家输出加权</span><span class="op">加权求和</span></div>
+      <div class="step-grid">
+        <div class="scenario prefill"><div class="sc-label">全量 Prefill（无缓存）</div>$\mathrm{MoEOut}=\sum_{k\in\mathrm{TopK}(i)}G_{i,k}\,\mathrm{FFN}_k(x_i)$<br>$O(B\,S\,K\,d_{model})$</div>
+        <div class="scenario hit"><div class="sc-label">缓存命中 Prefill（有 KV Cache）</div>$O(B\,S_{new}\,K\,d_{model})$</div>
+        <div class="scenario decode"><div class="sc-label">普通 Decode（1 Token/步）</div>$O(B\,K\,d_{model})$</div>
+        <div class="scenario spec"><div class="sc-label">投机解码（m 候选/步）</div>$O(B\,m\,K\,d_{model})$</div>
+      </div>
+      <div class="step-save"><b>节省：</b>Prefill 省 $O(B\,S_{hit}\,K\,d_{model})$</div>
+    </div>
+
+    <div class="step-card">
+      <div class="step-head"><span class="step">16. FFN 残差</span><span class="op">加法</span></div>
+      <div class="step-grid">
+        <div class="scenario prefill"><div class="sc-label">全量 Prefill（无缓存）</div>$X_{final}=X_{attn}+\mathrm{MoEOut}$<br>$O(B\,S\,d_{model})$</div>
+        <div class="scenario hit"><div class="sc-label">缓存命中 Prefill（有 KV Cache）</div>$O(B\,S_{new}\,d_{model})$</div>
+        <div class="scenario decode"><div class="sc-label">普通 Decode（1 Token/步）</div>$O(B\,d_{model})$</div>
+        <div class="scenario spec"><div class="sc-label">投机解码（m 候选/步）</div>$O(B\,m\,d_{model})$</div>
+      </div>
+      <div class="step-save"><b>节省：</b>Prefill 省 $O(B\,S_{hit}\,d_{model})$</div>
+    </div>
+
+    <div class="step-card">
+      <div class="step-head"><span class="step">17. 接受 / 拒绝判断</span><span class="op">拒绝采样</span></div>
+      <div class="step-grid">
+        <div class="scenario prefill"><div class="sc-label">全量 Prefill（无缓存）</div>—（不存在）</div>
+        <div class="scenario hit"><div class="sc-label">缓存命中 Prefill（有 KV Cache）</div>—（不存在）</div>
+        <div class="scenario decode"><div class="sc-label">普通 Decode（1 Token/步）</div>—（不存在）</div>
+        <div class="scenario spec"><div class="sc-label">投机解码（m 候选/步）</div>逐个比较 Draft 与 Target 的概率分布<br>$O(m\cdot V)$，接受率 $\alpha$ 决定跳过步数</div>
+      </div>
+      <div class="step-save"><b>节省：</b>投机新增（相对 FFN 可忽略）</div>
+    </div>
+
+    <div class="step-card">
+      <div class="step-head"><span class="step">18. KV Cache 更新</span><span class="op">写入缓存</span></div>
+      <div class="step-grid">
+        <div class="scenario prefill"><div class="sc-label">全量 Prefill（无缓存）</div>缓存全部 S 个 Token 的 K/V<br>写入量 $2\,B\,S\,d_{model}$</div>
+        <div class="scenario hit"><div class="sc-label">缓存命中 Prefill（有 KV Cache）</div>只缓存 $S_{new}$ 个新 Token 的 K/V<br>写入量 $2\,B\,S_{new}\,d_{model}$</div>
+        <div class="scenario decode"><div class="sc-label">普通 Decode（1 Token/步）</div>每步写 1 个 Token，共 N 次<br>$2\,B\,d_{model}$</div>
+        <div class="scenario spec"><div class="sc-label">投机解码（m 候选/步）</div>验证通过一次性写 $m_{acc}$ 个（$\le m$）<br>共 $\frac{N}{\alpha m}$ 次</div>
+      </div>
+      <div class="step-save"><b>节省：</b>Prefill 省 $2\,B\,S_{hit}\,d_{model}$ 写入；投机把写入次数 $N\to\frac{N}{\alpha m}$</div>
+    </div>
+
+  </div>
+
+  <div class="callout key">
+    <div class="tag">表格背后的三个关键洞察</div>
+    <ol style="margin:8px 0 0">
+      <li><b>KV Cache 省的是“平方级”注意力</b>：最大收益来自 Step 4 / Step 7 把 $O(S^2)$ 降到 $O(S_{new}\cdot S)$；序列越长越压倒性。</li>
+      <li><b>MoE 路由命中“几乎无用”</b>：Step 12/13 只省门控，Step 14 的昂贵 FFN 一点没省。在 Mistral 8x7B 里 FFN 占单层算力绝大部分。</li>
+      <li><b>投机解码的省法完全不同</b>：它不减单步 FLOPs，反而加一步“m 个候选并行验证”，但把 N 步串行压缩成约 $N/(\alpha m)$ 轮，总耗时下降。</li>
+    </ol>
+  </div>
+
+  <h2 id="s6"><span class="n">6</span>投机解码为什么只在 Decode</h2>
+  <p>投机解码（Speculative Decoding）几乎只能在 Decode 阶段生效，且优化目标和 KV Cache 完全不同。</p>
+  <ul>
+    <li><b>Prefill 的本质是并行 GEMM</b>：一次性处理整个 Prompt，GPU 利用率接近 100%，没有“生成”动作，无从猜起。</li>
+    <li><b>Decode 的本质是串行 GEMV</b>：每步只生成 1 个 Token，瓶颈在显存带宽，GPU 利用率常低于 30%。</li>
+    <li><b>投机解码靠“猜-验”</b>：小模型（Draft）快速生成 m 个候选，大模型（Target）一次性并行验证，接受/拒绝后更新 KV Cache。</li>
+  </ul>
+
+  <h3>6.1 普通 Decode vs 投机解码（核心公式）</h3>
+  <div class="formula-block">
+    普通 Decode 生成 N 个 Token：$\mathrm{TotalFLOPs}_{normal}=N\times\big(\mathrm{Attention}(S_t)+\mathrm{MoE\_FFN}+\mathrm{Router}\big)$<br><br>
+    投机解码（Draft 长 m、接受率 α）：$\mathrm{TotalFLOPs}_{spec}=\dfrac{N}{\alpha m}\times\mathrm{Target\_Verify}(m,S)+N\times\mathrm{Draft\_Model}(1)$<br><br>
+    加速比：$\mathrm{Speedup}\approx\dfrac{N\cdot \mathrm{Cost}_{Target}(1)}{\frac{N}{\alpha m}\cdot \mathrm{Cost}_{Target}(m)+N\cdot \mathrm{Cost}_{Draft}(1)}$
+  </div>
+  <p>
+    当接受率 α 较高、Draft 模型足够小（$\mathrm{Cost}_{Draft}\ll\mathrm{Cost}_{Target}$）时，加速比趋近 <b>α·m</b>。
+    更精确地说，单轮（Draft 长 m、逐 Token 接受率 α、近似 i.i.d.）的<b>期望接受 Token 数</b>是
+    $\dfrac{1-\alpha^{m+1}}{1-\alpha}$（例如 α=0.8、m=5 时约 3.69 个，而非理想化的 4 个）。
+  </p>
+
+  <h3>6.2 Prefill 与 Decode 的对比</h3>
+  <div class="table-scroll">
+    <table>
+      <thead>
+        <tr><th>维度</th><th>Prefill</th><th>Decode</th></tr>
+      </thead>
+      <tbody>
+        <tr><td class="step">计算模式</td><td>并行密集型矩阵乘（GEMM）</td><td>串行访存密集型（GEMV）</td></tr>
+        <tr><td class="step">GPU 利用率</td><td>接近 100%</td><td>通常低于 30%（瓶颈在显存带宽）</td></tr>
+        <tr><td class="step">输入 Token 数</td><td>一次性处理 S 个（整个 Prompt）</td><td>每次只处理 1 个新 Token</td></tr>
+        <tr><td class="step">KV Cache 状态</td><td>空 / 部分命中</td><td>已满（含全部历史 K/V）</td></tr>
+        <tr><td class="step">注意力 Shape</td><td>$[B,H,S,S]$</td><td>$[B,H,1,S]$</td></tr>
+        <tr><td class="step">投机解码收益</td><td>无（甚至拖慢）</td><td>大（减少串行调用次数）</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h2 id="s7"><span class="n">7</span>关键洞察与总结</h2>
+  <ul>
+    <li><b>前缀命中（KV Cache）</b>省的是 Self-Attention 里针对前缀 Token 的 $Q\!\cdot\!K^{\top}$、$\mathrm{Softmax}\!\cdot\!V$、Softmax 行，以及 Q/K/V 投影等逐层前向；核心收益是<b>平方级</b>的注意力节省，加一层<b>线性</b>的逐 Token 前向节省。</li>
+    <li><b>Shape 视角</b>：注意力矩阵从 $[B,H,S,S]$ 压成 $[B,H,S_{new},S]$；省掉的是左上“前缀×前缀”块，新 Token 对前缀的交叉注意力仍要算（读缓存 K/V）。</li>
+    <li><b>MoE 路由命中</b>只省门控与权重加载，<b>省不掉 FFN</b>。</li>
+    <li><b>投机解码</b>只在 Decode 生效，靠减少大模型串行调用次数换吞吐，理想加速比 $\alpha m$。</li>
+  </ul>
+
+  <p class="muted" style="margin-top:40px;font-size:13px">
+    本页为独立整理的技术笔记，Mistral 8x7B 数值代入的 FLOPs 量级经复核，结论用于理解推理优化，不构成对特定框架源码实现的一一对应。
+  </p>
+</div>
+</body>
+</html>

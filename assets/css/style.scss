@@ -27,3 +27,23 @@ li input[type="checkbox"] {
   margin: 0 0.45em 0 0;
   vertical-align: middle;
 }
+
+/* ===== 跟随系统深浅色（prefers-color-scheme）===== */
+@media (prefers-color-scheme: dark) {
+  html { color-scheme: dark; }
+  body { background: #0f1420; color: #d7dce3; }
+  .main-content { color: #d7dce3; }
+  h1, h2, h3, h4, h5, h6 { color: #8fb6ff; }
+  a { color: #7fa8ff; }
+  a:hover, a:active { color: #a8c6ff; }
+  .main-content table { border-color: #2a3245; }
+  .main-content th { background: #232c40; color: #e6e9f0; }
+  .main-content td { border-color: #2a3245; }
+  .main-content tr:nth-child(even) td { background: #171d2b; }
+  code, pre { background: #10151f; color: #cfe0ff; }
+  pre { border: 1px solid #2a3245; }
+  blockquote { color: #c9d1dc; border-left: 4px solid #2a3245; }
+  hr { border-color: #2a3245; }
+  .site-footer { border-top-color: #2a3245; color: #9aa3b5; }
+  input[type="checkbox"] { accent-color: #7fa8ff; }
+}

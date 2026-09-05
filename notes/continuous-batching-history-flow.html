@@ -68,6 +68,51 @@
   .step .step-no { display: inline-block; font-weight: 700; color: var(--accent); margin-right: 6px; font-size: 15px; }
   .step .step-title { font-weight: 600; color: #16324f; font-size: 15.5px; }
   .step .src { font-size: 12.5px; color: var(--muted); }
+
+/* ===== 跟随系统深浅色（prefers-color-scheme）===== */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --ink: #e6e9f0; --muted: #9aa3b5; --accent: #ff8fa3; --accent2: #7fa8ff;
+    --bg: #0f1420; --bg-soft: #171d2b; --line: #2a3245; --code-bg: #10151f;
+    --green: #4ec7b6; --purple: #b48ce0; --orange: #ffb454;
+  }
+  html { color-scheme: dark; }
+  body { color: var(--ink); background: var(--bg); }
+  h3 { color: #8fb6ff; }
+  h4 { color: var(--accent2); }
+  a { color: var(--accent2); }
+  .toc a { color: #8fb6ff; }
+  .card-title { color: #cfe0ff; }
+  .step .step-title { color: #cfe0ff; }
+  .shp { color: #8fb6ff; }
+  .gshp { color: #ff8fa3; }
+  .lshp { color: #7fa8ff; }
+  .vsp { color: #4ec7b6; }
+  .vcp { color: #b48ce0; }
+  code { color: #ffb4c5; background: var(--code-bg); }
+  .file-ref { color: #ffb4c5; }
+  th { background: #232c40; color: #e6e9f0; }
+  td { border-bottom-color: var(--line); }
+  tr:nth-child(even) td { background: var(--bg-soft); }
+  .tag.red { background: rgba(255,143,163,0.15); color: #ff8fa3; }
+  .tag.blue { background: rgba(127,168,255,0.15); color: #7fa8ff; }
+  .tag.green { background: rgba(78,199,182,0.15); color: #4ec7b6; }
+  .tag.purple { background: rgba(180,140,224,0.15); color: #b48ce0; }
+  .tag.gray { background: rgba(154,163,181,0.15); color: #9aa3b5; }
+  .tag.orange { background: rgba(255,180,84,0.15); color: #ffb454; }
+  .callout { background: rgba(255,180,84,0.10); border-left-color: #ffb454; }
+  .callout.info { background: rgba(127,168,255,0.10); border-left-color: #7fa8ff; }
+  .callout.green { background: rgba(78,199,182,0.10); border-left-color: #4ec7b6; }
+  .callout.red { background: rgba(255,143,163,0.10); border-left-color: #ff8fa3; }
+  .callout.purple { background: rgba(180,140,224,0.10); border-left-color: #b48ce0; }
+  .callout code { background: rgba(255,255,255,0.06); }
+  .formula { background: #1a1a12; border-color: #4a3f22; color: #e0c27a; }
+  .formula .lbl { color: #d4b26a; }
+  .fig img { border-color: var(--line); box-shadow: 0 2px 14px rgba(0,0,0,0.5); }
+  [style*="position:fixed;top:12px;right:14px"] { background: #1d2434 !important; border-color: #2a3245 !important; color: #7fa8ff !important; }
+  [style="color:#b3354a"] { color: #ff8fa3 !important; }
+  [style="color:#6b3fa0"] { color: #b48ce0 !important; }
+}
 </style>
 </head>
 <body>
