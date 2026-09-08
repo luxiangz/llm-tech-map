@@ -1,0 +1,583 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>大模型端到端数据流 × 内存与通信技术栈（系统整合版）</title>
+<style>
+  :root {
+    --ink:#0f172a; --muted:#5b6472; --line:#e3e8ef; --bg:#f7f9fc; --card:#fff;
+    --code-bg:#eef2f7; --code-fg:#1d4ed8; --link:#1d4ed8;
+    --th-bg:#f1f5f9; --chip-bg:#f8fafc; --chip-border:#cbd5e1; --chip-fg:#334155;
+    --pbody:#334155; --do-bg:#f8fafc; --toc-bg:#fff;
+    --lead-bg:#eef6ff; --lead-border:#2563eb; --lead-fg:#1e293b;
+    --warn-bg:#fff7ed; --warn-border:#d97706; --warn-fg:#7c2d12;
+    --note-bg:#f0fdf4; --note-border:#16a34a; --note-fg:#14532d;
+    --tier-hbm-bg:#fef2f2; --tier-hbm-border:#fecaca;
+    --tier-dram-bg:#fffbeb; --tier-dram-border:#fde68a;
+    --tier-ssd-bg:#f0fdf4; --tier-ssd-border:#bbf7d0;
+    --svg-ink:#0f172a; --svg-stroke:#334155; --svg-line:#cbd5e1;
+    --s0:#64748b; --s1:#2563eb; --s2:#7c3aed; --s3:#0e7490; --s4:#9333ea;
+    --s5:#16a34a; --s6:#d97706; --s7:#db2777;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --ink:#e2e8f0; --muted:#94a3b8; --line:#334155; --bg:#0b1220; --card:#1e293b;
+      --code-bg:#0f1e33; --code-fg:#93c5fd; --link:#60a5fa;
+      --th-bg:#1e293b; --chip-bg:#1e293b; --chip-border:#475569; --chip-fg:#cbd5e1;
+      --pbody:#cbd5e1; --do-bg:#16202e; --toc-bg:#1e293b;
+      --lead-bg:#0f2547; --lead-border:#3b82f6; --lead-fg:#dbeafe;
+      --warn-bg:#2a1a0a; --warn-border:#f59e0b; --warn-fg:#fde68a;
+      --note-bg:#0a1f14; --note-border:#22c55e; --note-fg:#bbf7d0;
+      --tier-hbm-bg:#2a1515; --tier-hbm-border:#7f1d1d;
+      --tier-dram-bg:#2a200a; --tier-dram-border:#92600a;
+      --tier-ssd-bg:#0a1f14; --tier-ssd-border:#166534;
+      --svg-ink:#e2e8f0; --svg-stroke:#cbd5e1; --svg-line:#475569;
+    }
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei","Noto Sans CJK SC",sans-serif; color:var(--ink); background:var(--bg); line-height:1.8; font-size:16px; }
+  .wrap { max-width:1080px; margin:0 auto; padding:0 22px; }
+  header.hero { background:linear-gradient(135deg,#0f172a 0%,#1e3a5f 55%,#0e7490 120%); color:#fff; padding:46px 0 40px; }
+  header.hero h1 { margin:0 0 10px; font-size:28px; line-height:1.32; }
+  header.hero p { margin:6px 0; color:#cbd5e1; font-size:15px; }
+  header.hero .tag { display:inline-block; background:rgba(255,255,255,.12); border:1px solid rgba(255,255,255,.25); border-radius:999px; padding:3px 12px; font-size:12.5px; margin-right:6px; }
+  nav.toc { background:var(--toc-bg); border:1px solid var(--line); border-radius:12px; padding:16px 20px; margin:20px 0; }
+  nav.toc b { font-size:15px; }
+  nav.toc ol { margin:8px 0 0; padding-left:22px; }
+  nav.toc li { margin:3px 0; font-size:14.5px; }
+  nav.toc a { color:var(--link); text-decoration:none; } nav.toc a:hover { text-decoration:underline; }
+  main { padding:20px 0 60px; }
+  section { margin:0 0 46px; }
+  h2 { font-size:22px; margin:0 0 8px; padding-top:10px; border-bottom:3px solid var(--line); padding-bottom:10px; }
+  h2 .no { color:var(--muted); font-weight:700; margin-right:8px; }
+  h3 { font-size:17.5px; margin:24px 0 8px; }
+  h4 { font-size:15.5px; margin:14px 0 6px; }
+  p { margin:10px 0; }
+  code { font-family:"SFMono-Regular","JetBrains Mono",Consolas,monospace; background:var(--code-bg); border-radius:4px; padding:1px 5px; font-size:.92em; color:var(--code-fg); }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:16px 18px; box-shadow:0 1px 3px rgba(15,23,42,.04); }
+  .lead { background:var(--lead-bg); border-left:4px solid var(--lead-border); padding:14px 18px; border-radius:8px; color:var(--lead-fg); }
+  .warn { background:var(--warn-bg); border-left:4px solid var(--warn-border); padding:12px 16px; border-radius:8px; color:var(--warn-fg); }
+  .note { background:var(--note-bg); border-left:4px solid var(--note-border); padding:12px 16px; border-radius:8px; color:var(--note-fg); }
+  table { width:100%; border-collapse:collapse; margin:14px 0; background:var(--card); }
+  th,td { border:1px solid var(--line); padding:9px 11px; text-align:left; vertical-align:top; font-size:14px; }
+  th { background:var(--th-bg); font-weight:700; }
+  td code,th code { background:transparent; padding:0; color:inherit; }
+  .chip { display:inline-block; border:1px solid var(--chip-border); border-radius:6px; padding:0 8px; font-size:12.5px; margin:2px 3px 2px 0; font-family:Consolas,monospace; background:var(--chip-bg); color:var(--chip-fg); }
+
+  /* pipeline */
+  .pipeline { margin:18px 0; }
+  .pstep { border:1px solid var(--line); border-left:6px solid; border-radius:10px; padding:11px 15px; margin:0 0 8px; background:var(--card); }
+  .pstep .phead { display:flex; gap:10px; align-items:baseline; flex-wrap:wrap; }
+  .pstep .pn { font-weight:800; font-size:15px; white-space:nowrap; }
+  .pstep .pq { color:var(--muted); font-size:13px; }
+  .pstep .pbody { font-size:13.5px; color:var(--pbody); margin-top:4px; }
+  .pstep .pbody b { color:var(--ink); }
+  .p-0{border-left-color:var(--s0)} .p-1{border-left-color:var(--s1)} .p-2{border-left-color:var(--s2)} .p-3{border-left-color:var(--s3)}
+  .p-4{border-left-color:var(--s4)} .p-5{border-left-color:var(--s5)} .p-6{border-left-color:var(--s6)} .p-7{border-left-color:var(--s7)}
+  .arrow { text-align:center; color:var(--muted); font-size:15px; margin:1px 0; line-height:1; }
+
+  /* step detail */
+  .step { border:1px solid var(--line); border-radius:12px; margin:18px 0; overflow:hidden; background:var(--card); }
+  .step > .sh { padding:13px 18px; color:#fff; font-weight:800; font-size:16px; }
+  .step > .sb { padding:16px 18px; }
+  .step .do { background:var(--do-bg); border-radius:8px; padding:10px 14px; margin:10px 0; font-size:14px; }
+  .step .do b { color:var(--ink); }
+  .sh-0{background:var(--s0)} .sh-1{background:var(--s1)} .sh-2{background:var(--s2)} .sh-3{background:var(--s3)}
+  .sh-4{background:var(--s4)} .sh-5{background:var(--s5)} .sh-6{background:var(--s6)} .sh-7{background:var(--s7)}
+
+  /* memory tier */
+  .tiers { display:flex; gap:10px; align-items:stretch; margin:14px 0; }
+  .tier { flex:1; border:1px solid var(--line); border-radius:10px; padding:12px; text-align:center; }
+  .tier b { display:block; font-size:14.5px; }
+  .tier span { display:block; font-size:12.5px; color:var(--muted); margin-top:2px; }
+  .t-hbm{background:var(--tier-hbm-bg);border-color:var(--tier-hbm-border)} .t-dram{background:var(--tier-dram-bg);border-color:var(--tier-dram-border)} .t-ssd{background:var(--tier-ssd-bg);border-color:var(--tier-ssd-border)}
+  .tier-arrow { align-self:center; color:var(--muted); font-size:20px; }
+
+  .fig { margin:18px 0; text-align:center; }
+  .fig svg { max-width:100%; height:auto; color:var(--svg-ink); }
+  .fig svg .life { stroke:var(--svg-line); }
+  .figcap { color:var(--muted); font-size:13px; text-align:center; margin-top:6px; }
+
+  .srcs { font-size:14px; } .srcs li { margin:6px 0; } .srcs a { color:var(--link); text-decoration:none; } .srcs a:hover{text-decoration:underline; }
+  footer { text-align:center; color:var(--muted); font-size:13px; padding:24px 0 40px; }
+  .muted { color:var(--muted); }
+  @media (max-width:640px){ header.hero h1{font-size:23px} .tiers{flex-direction:column} .tier-arrow{transform:rotate(90deg)} }
+</style>
+</head>
+<body>
+
+<header class="hero">
+  <div class="wrap">
+    <span class="tag">大模型推理 / 训练</span>
+    <span class="tag">内存池化</span>
+    <span class="tag">通信技术栈</span>
+    <span class="tag">不限华为昇腾</span>
+    <h1>大模型端到端数据流 × 内存与通信技术栈</h1>
+    <p>从一个请求进入，到 KV Cache 落地、跨节点传输、被 Decode 消费——按数据流逐步展开每一步的概念，并跨英伟达 / 昇腾 / 开源生态对照。</p>
+    <p class="muted" style="color:#94a3b8">系统整合版：把基础语义、数据流、概念深挖、跨栈对照、术语速查集中在一份文档内。</p>
+  </div>
+</header>
+
+<div class="wrap">
+  <nav class="toc">
+    <b>目录</b>
+    <ol>
+      <li><a href="#tldr">§0 摘要与阅读方式</a></li>
+      <li><a href="#base">§1 基础概念：三类语义 + 概念分类法</a></li>
+      <li><a href="#flow">§2 端到端数据流总览</a></li>
+      <li><a href="#steps">§3 逐步展开（Step 0~7）</a></li>
+      <li><a href="#map">§4 跨栈对照大表</a></li>
+      <li><a href="#glossary">§5 术语速查表</a></li>
+      <li><a href="#src">§6 权威来源</a></li>
+    </ol>
+  </nav>
+</div>
+
+<main class="wrap">
+
+<!-- ================= §0 ================= -->
+<section id="tldr">
+  <h2><span class="no">§0</span>摘要与阅读方式</h2>
+  <div class="lead">
+    大模型里的「数据」从被算出来，到被另一个节点用上，要经过一串步骤：
+    <b>算出来 → 存到哪 → 选什么语义搬 → 怎么找到对方 → 谁下单 → 谁搬字节 → 走哪条链路 → 怎么确认搬完了</b>。
+    本文把这串步骤抽象成 8 个 Step（0~7），把 <code>MemFabric / MemCache / Mooncake / TransferEngine / DeepEP / NCCL / NVLink / GPUDirect RDMA / CXL / LMCache / SHMEM / HiXL</code> 等概念，按「它属于哪个步骤、在该步骤里回答什么问题」归位。
+  </div>
+  <p><b>阅读路径：</b>先读 <a href="#base">§1</a> 建立三类基础语义的认知 → 再读 <a href="#flow">§2</a> 看数据流总览 → 然后按 <a href="#steps">§3</a> 的 Step 0~7 逐个展开 → 最后用 <a href="#map">§4</a> 跨栈对照和 <a href="#glossary">§5</a> 术语速查兜底。</p>
+  <p><b>核心观察：</b>同一个技术名词常常只覆盖这串流程里的某 1~2 步。例如 <code>NCCL</code> 主要管「选语义 + 走链路」，<code>Mooncake TransferEngine</code> 主要管「单边传输语义 + 走 RDMA/TCP」。把不同步骤的概念放在一起比「谁快谁慢」，往往会比错对象。</p>
+</section>
+
+<!-- ================= §1 ================= -->
+<section id="base">
+  <h2><span class="no">§1</span>基础概念：先建立底层认知</h2>
+
+  <h3>1.1 概念怎么分类：按「回答什么问题」切维度</h3>
+  <p>
+    这些词很容易被误画成一座从上到下堆叠的塔。实际上它们回答的是<b>不同问题</b>，应切成五根<b>正交的轴</b>（英伟达 / 昇腾 / 开源通用各自有对应成员）：
+  </p>
+  <table>
+    <thead><tr><th>轴</th><th>回答的问题</th><th>英伟达</th><th>昇腾</th><th>开源/通用</th></tr></thead>
+    <tbody>
+      <tr><td><b>① 通信语义</b></td><td>我要完成什么通信（选哪种语义）</td><td>NCCL / NVSHMEM</td><td>HCCL / HiXL / shmem</td><td>Mooncake TransferEngine / DeepEP</td></tr>
+      <tr><td><b>② 数据执行机制</b></td><td>谁搬字节</td><td>Copy Engine / GPUDirect RDMA</td><td>MTE / SDMA / RDMA / UDMA</td><td>—</td></tr>
+      <tr><td><b>③ 互联</b></td><td>数据走哪条物理链路</td><td>NVLink / NVSwitch</td><td>HCCS / UB</td><td>PCIe / UALink / InfiniBand / RoCE / CXL</td></tr>
+      <tr><td><b>④ 地址与内存语义</b></td><td>谁建立地址、谁能访问</td><td>MR（IB Verbs）/ UVM</td><td>VMM / IPC / 对称堆 / Fabric Memory</td><td>CXL load/store</td></tr>
+      <tr><td><b>⑤ 跨层属性</b></td><td>中间有没有副本、谁提交</td><td>GPUDirect / GPU-initiated</td><td>OneCopy / AIV 直驱</td><td>零拷贝</td></tr>
+    </tbody>
+  </table>
+  <p class="muted">读图原则：「位于下方」不等于「被上方包含」；同一个库也可能根据芯片、拓扑、数据方向和版本走完全不同的路径。</p>
+
+  <h3>1.2 三种基础语义：load/store · RDMA 单边 · 消息</h3>
+  <p>按「远端内存怎么被访问」从细到粗排成一条谱系：</p>
+  <table>
+    <thead><tr><th>语义</th><th>怎么访问远端</th><th>粒度</th><th>要不要注册</th><th>缓存一致</th><th>代表</th></tr></thead>
+    <tbody>
+      <tr><td><b>load/store 语义</b>（≈ 内存语义互连）</td><td>用 <code>load</code>/<code>store</code> 指令直接读写地址，像本地内存</td><td>cache line 级</td><td>免注册（建页表映射即可）</td><td>可</td><td>CXL.mem / NVLink / HCCS</td></tr>
+      <tr><td><b>RDMA 单边语义</b></td><td><code>RDMA Read/Write</code> 直接读写远端已注册内存（MR），远端 CPU 不参与</td><td>消息级（有 read/write 放大）</td><td>必须先注册 MR、拿 key</td><td>无</td><td>InfiniBand / RoCE / GPUDirect</td></tr>
+      <tr><td><b>消息语义</b></td><td>显式 <code>send/recv</code>，双方按消息收发、匹配</td><td>消息级</td><td>视实现</td><td>无</td><td>TCP / 传统网络 / IB send-recv</td></tr>
+    </tbody>
+  </table>
+      <div class="note"><b>表中几个术语的说明：</b>
+        <ul>
+          <li><b>粒度 · cache line 级</b>：访问/传输的最小单位是一条「缓存行」（cache line，通常 64 字节，部分 ARM / 加速器为 128 字节）。load/store 语义可以只读/写一个 cache line，只搬你真正碰到的数据，没有「读写放大」，所以延迟低。</li>
+          <li><b>粒度 · 消息级</b>：传输的最小单位是一整条「消息」（一个 buffer / 块）。即便你只想动 1 字节，也要按一整块消息来发/收，每条消息还有协议头与队列开销，存在「读写放大」——小访问被放大成整块传输。</li>
+          <li><b>缓存一致（Coherence）</b>：多个观察者（CPU 核 / GPU / NPU）各自有 cache、都缓存了同一块内存时，保证「同一个地址的多个副本最终收敛到一致的值」。它只约束「同一地址的副本收敛」，不约束「不同地址之间的顺序」（后者叫一致性模型 Consistency）。</li>
+          <li><b>视实现</b>：指「要不要注册」取决于具体是哪种消息语义的实现——RDMA 需要先注册内存（MR）；而 TCP / 传统网络的消息语义不需要注册，由内核协议栈自己管理缓冲区。</li>
+        </ul>
+      </div>
+      <div class="warn"><b>术语提醒：</b>「内存语义」有歧义——有时指「直接操作内存实体」（可涵盖 IB 的 RDMA），有时指「load/store 式统一编址」（CXL 口径）。本文统一用后者：<b>内存语义 ≈ load/store 语义</b>，与「消息语义」相对。RDMA 是夹在中间的「单边消息语义」：底层是队列/消息机制，但单边 Read/Write 让它「看起来像直接访问内存」。</div>
+
+  <h3>1.3 缓存一致 vs 一致性模型</h3>
+  <p>
+    <b>缓存一致（Coherence）</b>：多个观察者（CPU 核 / GPU / NPU）各自有 cache，都缓存了同一块内存时，保证「<b>同一个地址</b>的多个副本最终收敛到一致的值」。它只回答「同一地址的副本怎么收敛」。
+    <b>一致性模型（Consistency）</b>：规定「<b>不同地址之间</b>读写操作的顺序与可见性」。
+  </p>
+  <div class="note"><b>两个关键不等式（贯穿全文）：</b><code>Coherence ≠ Consistency</code>（缓存一致 ≠ 跨地址强一致）；<code>Completion ≠ Visibility</code>（提交返回 / 本地完成 ≠ 远端已能安全消费）。所以单边通信里常要额外用 <code>fence/barrier</code> 建立「先放货、后翻 ready 标志」的顺序。</div>
+</section>
+
+<!-- ================= §2 ================= -->
+<section id="flow">
+  <h2><span class="no">§2</span>端到端数据流总览</h2>
+  <p>主线是<b>推理 Prefill/Decode（PD）分离 + KV Cache 池化</b>——<code>MemFabric / MemCache / Mooncake / LMCache</code> 共同瞄准的场景。训练是并行支线，在 Step 3/5/6 汇入同一套底层机制。</p>
+
+  <div class="pipeline">
+    <div class="pstep p-0"><div class="phead"><span class="pn">Step 0 · 框架调度</span><span class="pq">请求进来，路由到 Prefill</span></div>
+      <div class="pbody"><b>vLLM / SGLang / MindIE / TensorRT-LLM</b> 接收请求，选 KV 传输后端（connector），做前缀缓存命中判断。</div></div>
+    <div class="arrow">↓</div>
+    <div class="pstep p-1"><div class="phead"><span class="pn">Step 1 · Prefill 计算</span><span class="pq">前向算完，产出 KV Cache</span></div>
+      <div class="pbody">注意力层产出 <b>K / V</b>，这是后续要跨节点搬运和复用的「货」。</div></div>
+    <div class="arrow">↓</div>
+    <div class="pstep p-2"><div class="phead"><span class="pn">Step 2 · 落位 / 内存池化</span><span class="pq">KV 存到哪</span></div>
+      <div class="pbody"><b>HBM → DRAM → SSD</b> 分层；<b>MemFabric / CXL</b> 统一编址，<b>MemCache / Mooncake Store / LMCache</b> 对象化存取。</div></div>
+    <div class="arrow">↓</div>
+    <div class="pstep p-3"><div class="phead"><span class="pn">Step 3 · 选通信语义</span><span class="pq">怎么搬的抽象</span></div>
+      <div class="pbody"><b>NCCL/HCCL</b>（集合）· <b>TransferEngine/HiXL</b>（单边）· <b>NVSHMEM/shmem</b>（PGAS）· <b>DeepEP</b>（MoE all-to-all）。</div></div>
+    <div class="arrow">↓</div>
+    <div class="pstep p-4"><div class="phead"><span class="pn">Step 4 · 建地址 / 内存注册</span><span class="pq">怎么找到对方</span></div>
+      <div class="pbody"><b>MR（IB Verbs）/ VMM / IPC / 对称堆 / Fabric Memory</b>；<b>CXL</b> 用 load/store 地址，无需注册。</div></div>
+    <div class="arrow">↓</div>
+    <div class="pstep p-5"><div class="phead"><span class="pn">Step 5 · 提交 / 异步重叠</span><span class="pq">谁下单、怎么重叠</span></div>
+      <div class="pbody"><b>Host 提交</b> vs <b>Device 直驱（AIV / GPU-initiated）</b>；异步 put/get，计算-通信重叠。</div></div>
+    <div class="arrow">↓</div>
+    <div class="pstep p-6"><div class="phead"><span class="pn">Step 6 · 搬运 / 物理链路</span><span class="pq">谁搬字节、走哪条路</span></div>
+      <div class="pbody">搬运：<b>MTE/SDMA/RDMA/UDMA</b>、<b>Copy Engine / GPUDirect RDMA</b>；链路：<b>NVLink/HCCS/PCIe/UALink</b>、<b>IB/RoCE/UB</b>。</div></div>
+    <div class="arrow">↓</div>
+    <div class="pstep p-7"><div class="phead"><span class="pn">Step 7 · 完成 / 一致 / 可见</span><span class="pq">怎么确认搬完了</span></div>
+      <div class="pbody"><b>Decode 消费</b>；<b>fence / barrier / CQ</b>；<code>Completion ≠ Visibility</code>、<code>Coherence ≠ Consistency</code>。</div></div>
+  </div>
+
+  <div class="warn"><b>训练支线（并行，不重复画）：</b>反向传播产出<b>梯度</b> → Step 3 选 <code>NCCL/HCCL</code> 的 <code>AllReduce</code>（或 MoE 用 <code>DeepEP</code> 的 <code>all-to-all</code> dispatch/combine）→ Step 4~7 复用同一套地址/提交/搬运/链路/完成机制。</div>
+</section>
+
+<!-- ================= §3 ================= -->
+<section id="steps">
+  <h2><span class="no">§3</span>逐步展开：每个步骤的概念干了啥、同步骤内的区别与联系</h2>
+
+  <!-- Step 0 -->
+  <div class="step">
+    <div class="sh sh-0">Step 0 · 框架调度与请求入口</div>
+    <div class="sb">
+      <div class="do"><b>这一步干什么：</b>决定请求路由到哪个 Prefill 实例、命中哪些前缀缓存、用哪个「KV 传输后端」把 KV 交给 Decode。</div>
+      <table>
+        <thead><tr><th>框架/组件</th><th>定位</th><th>KV 传输/池化后端（connector）</th></tr></thead>
+        <tbody>
+          <tr><td><b>vLLM</b></td><td>高吞吐 LLM 推理引擎</td><td><code>P2pNcclConnector</code>、<code>NixlConnector</code>、<code>Mooncake</code>、<code>LMCache</code>、<code>MemCache</code>（昇腾）、AMD <code>MORI-IO</code></td></tr>
+          <tr><td><b>SGLang</b></td><td>结构化生成 + 高吞吐</td><td><code>Mooncake TransferEngine</code>（PD 分离 + KV 传输 + RL 权重 P2P）</td></tr>
+          <tr><td><b>MindIE</b>（昇腾）</td><td>昇腾推理引擎</td><td><code>MemCache</code>（基于 MemFabric）</td></tr>
+          <tr><td><b>TensorRT-LLM</b></td><td>英伟达推理引擎</td><td>自带 PD 分离 / KV cache 管理</td></tr>
+        </tbody>
+      </table>
+      <p class="muted">区别：框架本身只负责「调度与算」，真正决定「KV 怎么跨节点搬」的是它接的 <b>connector / backend</b>。</p>
+
+      <h4>vLLM 内置 Prefix Cache（APC）与 LMCache 的关系</h4>
+      <p>两者是<b>互补的分层</b>，不是二选一；正常能同时开，但有需要对齐的边界。</p>
+      <table>
+        <thead><tr><th></th><th>vLLM 内置 Prefix Cache（APC）</th><th>LMCache</th></tr></thead>
+        <tbody>
+          <tr><td><b>作用范围</b></td><td>单实例内、GPU 显存（L1）</td><td>跨实例 / 跨节点、多级存储（CPU 内存 / 磁盘 / 远程，L2/L3）</td></tr>
+          <tr><td><b>粒度</b></td><td>GPU block（引擎内 KVCacheManager 管理）</td><td>chunk（token 切成固定大小）</td></tr>
+          <tr><td><b>机制</b></td><td>引擎内嵌，block 级复用，命中即省 prefill</td><td>独立 connector，把缓存扩展到引擎之外</td></tr>
+          <tr><td><b>默认</b></td><td>vLLM V1 默认开启</td><td>需显式接入</td></tr>
+        </tbody>
+      </table>
+      <div class="note"><b>配合方式：</b>加载时 worker 的 <code>start_load_kv</code> 用 mask <b>跳过本地 L1 已有的 prefix</b>，只加载缺失部分；adapter 要把 GPU block 与 LMCache chunk <b>边界对齐</b>。</div>
+      <div class="warn"><b>冲突/坑：</b>当 GPU block 大小 ≠ LMCache chunk 大小、或「部分命中的 chunk」与本地 prefix cache 重叠时，历史上出现过<b>静默输出错误</b>的 bug。所以是「<b>能配合、但要小心对齐</b>」，不是零成本叠加。</div>
+    </div>
+  </div>
+
+  <!-- Step 1 -->
+  <div class="step">
+    <div class="sh sh-1">Step 1 · Prefill 计算，产出 KV Cache</div>
+    <div class="sb">
+      <div class="do"><b>这一步干什么：</b>Prefill 实例跑前向，注意力层输出 <code>Key</code>/<code>Value</code>。KV 大小 ≈ <code>层数 × KV 头数 × 头维 × 序列长度 × 2(K/V) × 精度</code>。</div>
+      <p>这一步是「计算」而非「通信」，但它是后续所有搬运的<b>货的源头</b>。PD 分离的价值在于：Prefill 是<b>算力密集</b>，Decode 是<b>访存密集</b>，拆到不同硬件上各用最合适的机器。</p>
+    </div>
+  </div>
+
+  <!-- Step 2 -->
+  <div class="step">
+    <div class="sh sh-2">Step 2 · KV Cache 落位与内存池化</div>
+    <div class="sb">
+      <div class="do"><b>这一步干什么：</b>决定 KV 落在哪一层介质（HBM / DRAM / SSD），以及用「内存语义（load/store 统一编址）」还是「对象语义（Put/Get）」来管理。</div>
+
+      <h4>存储分层</h4>
+      <div class="tiers">
+        <div class="tier t-hbm"><b>L1 · HBM（显存）</b><span>最快最贵</span></div>
+        <div class="tier-arrow">→</div>
+        <div class="tier t-dram"><b>L2 · DRAM（主机内存）</b><span>大而慢</span></div>
+        <div class="tier-arrow">→</div>
+        <div class="tier t-ssd"><b>L3 · SSD / NVMe</b><span>超大最慢</span></div>
+      </div>
+      <p>池化就是把这三层拼成一个统一大缓存，按热度迁移。</p>
+
+      <h4>内存池化 / 统一编址（地址层）</h4>
+      <table>
+        <thead><tr><th>方案</th><th>语义</th><th>一句话</th><th>生态</th></tr></thead>
+        <tbody>
+          <tr><td><b>MemFabric</b></td><td>统一编址内存语义（load/store）</td><td>把跨节点跨介质内存映射成全局虚拟地址 GVA，像访问本地内存一样访问远端</td><td>昇腾（MemCache 底座）</td></tr>
+          <tr><td><b>CXL</b></td><td>load/store 内存语义（PCIe PHY）</td><td>CPU/GPU 通过 CXL 交换机访问共享内存池，接近本地访存延迟</td><td>通用</td></tr>
+          <tr><td><b>Fabric Memory</b></td><td>远端物理内存映射模式</td><td>把远端物理内存「导出/导入/映射」进本地地址空间</td><td>昇腾</td></tr>
+        </tbody>
+      </table>
+      <div class="note"><b>MemFabric 与 Fabric Memory 不是同一个东西：</b><code>VMM</code>（局部机制：本进程 VA/物理页/权限）→ <code>Fabric Memory</code>（系统策略：发现/映射远端容量）→ <code>MemFabric</code>（完整池化系统）。三者共享「远端内存 + 统一编址」思想，但产品边界不同。</div>
+
+      <h4>KV 对象存储引擎（应用层 Put/Get）</h4>
+      <table>
+        <thead><tr><th>组件</th><th>层级</th><th>独特特征</th><th>底座</th><th>生态</th></tr></thead>
+        <tbody>
+          <tr><td><b>MemCache</b></td><td>分布式 KV <b>存储引擎</b></td><td>MetaService+LocalService；OneCopy 跨机跨介质（RH2D/D2RH）；多副本</td><td>MemFabric</td><td>昇腾</td></tr>
+          <tr><td><b>Mooncake Store</b></td><td>分布式 KV <b>存储引擎</b></td><td>原生 RDMA、零拷贝、多副本元数据；为 PD 分离设计</td><td>TransferEngine</td><td>通用</td></tr>
+          <tr><td><b>LMCache</b></td><td>KV <b>管理层</b>（缓存策略层）</td><td>前缀复用、分层缓存、淘汰策略、多节点 P2P 共享；后端可插拔</td><td>Redis/S3/Mooncake Store</td><td>通用</td></tr>
+        </tbody>
+      </table>
+      <div class="note"><b>区别与联系：</b><code>MemCache</code> 与 <code>Mooncake Store</code> 是<b>同一层（存储底座）不同生态</b>。<code>LMCache</code> 是<b>更高一层的「缓存管理」</b>，它不一定自己存数据，而是把多种后端接起来做前缀复用与调度，常「骑在」Mooncake Store 之上。</div>
+    </div>
+  </div>
+
+  <!-- Step 3 -->
+  <div class="step">
+    <div class="sh sh-3">Step 3 · 选择通信语义</div>
+    <div class="sb">
+      <div class="do"><b>这一步干什么：</b>把「搬运 KV / 梯度 / 专家 token」表达成某一种通信语义。语义分三大类 + 一个 MoE 专用。</div>
+      <table>
+        <thead><tr><th>语义</th><th>代表</th><th>出发点（一句话）</th><th>对端参与</th><th>何时选它</th></tr></thead>
+        <tbody>
+          <tr><td><b>集合通信</b></td><td><code>NCCL</code> / <code>HCCL</code></td><td>整组完成哪个 collective（AllReduce/AllGather/AllToAll）</td><td>双边（全组参与）</td><td>数据并行梯度 AllReduce、张量/流水线并行</td></tr>
+          <tr><td><b>单边 buffer 传输</b></td><td><code>TransferEngine</code> / <code>HiXL</code></td><td>哪批 buffer 从 A 搬到 B</td><td>单边（对端不参与）</td><td>PD 分离 KV 搬运、RL 权重 P2P、参数服务器推送</td></tr>
+          <tr><td><b>PGAS RMA</b></td><td><code>NVSHMEM</code> / <code>cann/shmem</code></td><td>访问哪个 PE 的哪个地址</td><td>单边</td><td>多卡共享参数、MoE 专家通信、算子内协同</td></tr>
+          <tr><td><b>MoE all-to-all</b></td><td><code>DeepEP</code></td><td>MoE 的 dispatch / combine</td><td>双边（EP 组）</td><td>MoE/EP 训练与推理</td></tr>
+        </tbody>
+      </table>
+
+      <h4>单边 buffer vs PGAS：更清晰的区分</h4>
+      <div class="do"><b>最本质的一句话：</b>单边 buffer 是「<b>搬一整箱货</b>」（一次性大块搬迁）；PGAS 是「<b>共享货架，随时伸手拿任意格子</b>」（持续的全局地址空间 + 细粒度/原子访问）。</div>
+      <table>
+        <thead><tr><th>维度</th><th>单边 buffer（TransferEngine/HiXL）</th><th>PGAS（SHMEM/NVSHMEM）</th></tr></thead>
+        <tbody>
+          <tr><td><b>数据单位</b></td><td>一批<b>连续 buffer</b>（大块）</td><td>一个<b>可寻址地址</b>（可细到 cache line/一个变量）</td></tr>
+          <tr><td><b>全局地址空间</b></td><td>没有；每次显式给 src/dst+长度</td><td>有（对称堆，PE号+偏移），一次建立长期复用</td></tr>
+          <tr><td><b>访问模式</b></td><td>块级「搬」一次就结束</td><td>反复 put/get + 原子（AMO）+ fence/barrier</td></tr>
+          <tr><td><b>原子/锁</b></td><td>一般不做</td><td>能（atomic add/swap、搭锁）</td></tr>
+          <tr><td><b>语义本质</b></td><td>更像「传输/消息」（memcpy/快递）</td><td>更像「内存/load-store」（共享内存）</td></tr>
+        </tbody>
+      </table>
+      <div class="note"><b>判断口诀：</b>「我要<b>一次性把一整块</b>送过去」→ 单边 buffer；「我要<b>建立一个能反复、随机、细粒度读写</b>的共享地址空间，甚至要原子操作」→ PGAS。</div>
+
+      <div class="warn"><b>关键澄清：</b>三者是<b>并列的编程模型</b>，不是谁包含谁。<code>SHMEM</code> 能自己拼出 collective，但不能说它包含 <code>NCCL</code>。<code>DeepEP</code> 本质是「为 MoE 优化的 all-to-all」——落在「集合通信」与「单边传输」之间的专用点，针对 MoE 的稀疏、不均衡做了专用优化，比通用 <code>NCCL AllToAll</code> 更合适。</div>
+    </div>
+  </div>
+
+  <!-- Step 4 -->
+  <div class="step">
+    <div class="sh sh-4">Step 4 · 建立地址与内存注册</div>
+    <div class="sb">
+      <div class="do"><b>这一步干什么：</b>让发起方能「命名」并「访问」远端内存。不同语义对「地址怎么建立」的要求不同。</div>
+      <table>
+        <thead><tr><th>机制</th><th>生态</th><th>干什么</th></tr></thead>
+        <tbody>
+          <tr><td><b>内存注册 MR</b></td><td>英伟达 / RDMA 通用</td><td>把参与传输的内存 pin 住并登记，拿到 <code>key</code>，配 <code>QP/CQ</code>，远端才能写</td></tr>
+          <tr><td><b>VMM</b></td><td>昇腾</td><td>Reserve / Physical / Map / SetAccess，管理 VA、物理页、权限</td></tr>
+          <tr><td><b>IPC</b></td><td>昇腾</td><td>导出/打开「设备内存句柄」，让另一进程看见同一块 NPU 内存</td></tr>
+          <tr><td><b>对称堆</b></td><td>SHMEM 系</td><td>每个 PE 分配同样大小/布局的内存，地址对称，才能用「PE 号 + 偏移」寻址</td></tr>
+          <tr><td><b>Fabric Memory</b></td><td>昇腾</td><td>把远端物理内存映射进本地地址空间（统一编址模式）</td></tr>
+          <tr><td><b>CXL load/store</b></td><td>通用</td><td>用 load/store 语义直接访问，<b>无需显式注册</b></td></tr>
+        </tbody>
+      </table>
+
+      <div class="warn"><b>消息语义 vs 内存语义「注册」的最大区别：</b>消息语义（RDMA）必须先<b>注册内存</b>（pin + 拿 key）、再建 <b>QP/CQ</b>，远端凭 key 才能写——控制面重；内存语义（CXL）通过<b>地址映射</b>（页表/MMU）直接建立可访问地址，之后 load/store 直接访问——<b>免注册、免 key、免队列</b>，控制面轻。</div>
+
+      <h4>QP / CQ 机制（RDMA 消息语义的核心）</h4>
+      <table>
+        <thead><tr><th>缩写</th><th>全称</th><th>是什么</th></tr></thead>
+        <tbody>
+          <tr><td><b>QP</b></td><td>Queue Pair（队列对）</td><td>一对工作队列：<b>SQ</b>（Send Queue）+ <b>RQ</b>（Receive Queue）</td></tr>
+          <tr><td><b>WQE</b></td><td>Work Queue Element（工作队列元素）</td><td>一次请求：<code>SEND</code> / <code>RDMA WRITE</code> / <code>RDMA READ</code></td></tr>
+          <tr><td><b>CQ</b></td><td>Completion Queue（完成队列）</td><td>完成通知的 FIFO 队列</td></tr>
+          <tr><td><b>CQE</b></td><td>Completion Queue Entry（完成元素）</td><td>一条「已完成」记录，应用轮询它</td></tr>
+          <tr><td><b>MR</b></td><td>Memory Region（内存区域）</td><td>注册(pin)后得到的内存及其 key</td></tr>
+          <tr><td><b>RNIC / HCA</b></td><td>RDMA Network Interface Controller / Host Channel Adapter</td><td>RDMA 网卡：维护 QP/CQ/MR 表、响应 doorbell、DMA 读 WQE、直接读写远端内存、写 CQE</td></tr>
+          <tr><td><b>doorbell</b></td><td>门铃（通知机制）</td><td>写完 WQE 后敲门铃，通知 RNIC 去取</td></tr>
+        </tbody>
+      </table>
+
+      <div class="fig">
+        <svg viewBox="0 0 980 660" role="img" aria-label="RDMA 建连与传输时序图">
+          <defs><marker id="ah" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth"><path d="M0,0 L8,3 L0,6 Z" fill="currentColor"/></marker></defs>
+          <g font-size="13" font-weight="700">
+            <rect x="20" y="18" width="170" height="54" rx="8" fill="#2563eb"/><text x="105" y="42" fill="#fff" text-anchor="middle">Host CPU</text><text x="105" y="60" fill="#dbeafe" text-anchor="middle" font-size="11" font-weight="400">应用 / 驱动</text>
+            <rect x="210" y="18" width="170" height="54" rx="8" fill="#16a34a"/><text x="295" y="42" fill="#fff" text-anchor="middle">Host 内存</text><text x="295" y="60" fill="#dcfce7" text-anchor="middle" font-size="11" font-weight="400">MR / QP 缓冲 / CQ</text>
+            <rect x="400" y="18" width="170" height="54" rx="8" fill="#d97706"/><text x="485" y="42" fill="#fff" text-anchor="middle">RNIC / HCA</text><text x="485" y="60" fill="#fef3c7" text-anchor="middle" font-size="11" font-weight="400">RDMA 网卡</text>
+            <rect x="590" y="18" width="170" height="54" rx="8" fill="#64748b"/><text x="675" y="42" fill="#fff" text-anchor="middle">网络链路</text><text x="675" y="60" fill="#e2e8f0" text-anchor="middle" font-size="11" font-weight="400">RoCE / IB</text>
+            <rect x="780" y="18" width="180" height="54" rx="8" fill="#9333ea"/><text x="870" y="42" fill="#fff" text-anchor="middle">对端</text><text x="870" y="60" fill="#f3e8ff" text-anchor="middle" font-size="11" font-weight="400">RNIC + 内存</text>
+          </g>
+          <g class="life" stroke-dasharray="4 4" stroke-width="1.5">
+            <line x1="105" y1="72" x2="105" y2="640"/><line x1="295" y1="72" x2="295" y2="640"/><line x1="485" y1="72" x2="485" y2="640"/><line x1="675" y1="72" x2="675" y2="640"/><line x1="870" y1="72" x2="870" y2="640"/>
+          </g>
+          <g stroke="currentColor" stroke-width="2" font-size="12" fill="currentColor">
+            <line x1="105" y1="110" x2="295" y2="110" marker-end="url(#ah)"/><text x="200" y="100" text-anchor="middle">① 注册 MR，得 lkey/rkey</text>
+            <line x1="105" y1="172" x2="485" y2="172" marker-end="url(#ah)"/><text x="295" y="162" text-anchor="middle">② 建 QP/CQ，配置 context</text>
+            <line x1="485" y1="234" x2="870" y2="234" marker-end="url(#ah)"/><text x="677" y="224" text-anchor="middle">③ 交换 QP号 / GID / rkey</text>
+            <line x1="105" y1="296" x2="295" y2="296" marker-end="url(#ah)"/><text x="200" y="286" text-anchor="middle">④ post WQE 到 SQ</text>
+            <line x1="105" y1="358" x2="485" y2="358" marker-end="url(#ah)"/><text x="295" y="348" text-anchor="middle">⑤ 敲 doorbell 通知</text>
+            <line x1="485" y1="420" x2="295" y2="420" marker-end="url(#ah)"/><text x="390" y="410" text-anchor="middle">⑥ RNIC DMA 读 WQE</text>
+            <line x1="485" y1="482" x2="870" y2="482" marker-end="url(#ah)"/><text x="677" y="472" text-anchor="middle">⑦ RDMA Write/Read（远端 CPU 不参与）</text>
+            <line x1="485" y1="544" x2="295" y2="544" marker-end="url(#ah)"/><text x="390" y="534" text-anchor="middle">⑧ 写 CQE 到 CQ</text>
+            <line x1="295" y1="606" x2="105" y2="606" marker-end="url(#ah)"/><text x="200" y="596" text-anchor="middle">⑨ 轮询 CQ 得完成</text>
+          </g>
+        </svg>
+        <div class="figcap">图 1：RDMA 建连与一次传输的时序。①~③ 是「建连」阶段（控制面），④~⑨ 是「传输 + 完成」阶段（数据面，两端 CPU 不参与搬运）。</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Step 5 -->
+  <div class="step">
+    <div class="sh sh-5">Step 5 · 提交任务与异步重叠</div>
+    <div class="sb">
+      <div class="do"><b>这一步干什么：</b>决定「谁把搬运任务提交给硬件」，以及「搬运能不能和计算重叠」。</div>
+      <table>
+        <thead><tr><th>方式</th><th>谁提交</th><th>特点</th></tr></thead>
+        <tbody>
+          <tr><td><b>Host 提交</b></td><td>Host CPU 逐项下发（TS 调度器）</td><td>简单，但每步要 CPU 参与，控制路径长</td></tr>
+          <tr><td><b>AIV 直驱</b>（昇腾）</td><td>Device 侧 Vector Core</td><td>把细粒度任务提交下沉到设备侧，CPU 不逐项指挥</td></tr>
+          <tr><td><b>GPU-initiated / 异步</b>（英伟达）</td><td>GPU 侧（GDR / async copy）</td><td>NCCL 通信-计算重叠、DeepEP 低延迟异步 dispatch</td></tr>
+        </tbody>
+      </table>
+      <p class="muted">同步骤区别：核心是「控制路径」的归属——由 CPU 逐步指挥，还是由设备侧直驱。异步 + 重叠（overlap）是隐藏通信延迟的关键：算第 N 层的同时，第 N-1 层的数据在后台搬。</p>
+    </div>
+  </div>
+
+  <!-- Step 6 -->
+  <div class="step">
+    <div class="sh sh-6">Step 6 · 搬运数据与物理链路</div>
+    <div class="sb">
+      <div class="do"><b>这一步干什么：</b>真正把字节搬过去。分两件事：<b>谁搬</b>（搬运引擎）+ <b>走哪条路</b>（物理链路）。</div>
+      <h4>搬运引擎（谁搬字节）</h4>
+      <table>
+        <thead><tr><th>引擎</th><th>生态</th><th>干什么</th></tr></thead>
+        <tbody>
+          <tr><td><b>Copy Engine / DMA</b></td><td>英伟达</td><td>GPU 内 DMA 单元，绕开 CUDA core 搬数据</td></tr>
+          <tr><td><b>MTE</b></td><td>昇腾</td><td>AI Core 内 Memory Transfer Engine，Global↔Local 搬运 + 随路格式转换</td></tr>
+          <tr><td><b>SDMA</b></td><td>昇腾</td><td>系统级 DMA，节点内大块搬运</td></tr>
+          <tr><td><b>RDMA</b></td><td>通用</td><td>远程直接访存，远端 CPU 不参与</td></tr>
+          <tr><td><b>UDMA</b></td><td>昇腾（950/UB）</td><td>统一 DMA 后端，带队列/远端注册/完成通知</td></tr>
+          <tr><td><b>GPUDirect RDMA</b></td><td>英伟达</td><td>网卡直接读写 GPU 显存，零拷贝、免 CPU 中转</td></tr>
+          <tr><td><b>GPUDirect Storage (GDS)</b></td><td>英伟达</td><td>GPU 直接读写 NVMe/存储</td></tr>
+        </tbody>
+      </table>
+      <h4>物理链路（字节走哪条路）</h4>
+      <table>
+        <thead><tr><th>范围</th><th>链路</th><th>生态</th></tr></thead>
+        <tbody>
+          <tr><td rowspan="3">节点内</td><td><b>NVLink / NVSwitch</b></td><td>英伟达（GPU 直连）</td></tr>
+          <tr><td><b>HCCS</b></td><td>昇腾（华为缓存一致性系统）</td></tr>
+          <tr><td><b>PCIe / UALink</b></td><td>通用 / UALink（新开放 scale-up 标准）</td></tr>
+          <tr><td rowspan="3">节点间</td><td><b>InfiniBand</b></td><td>英伟达 / 通用（原生 IB）</td></tr>
+          <tr><td><b>RoCEv2 / eRDMA</b></td><td>通用（RDMA over Ethernet）</td></tr>
+          <tr><td><b>UB / 灵衢</b></td><td>昇腾（UnifiedBus 超节点互联）</td></tr>
+          <tr><td>内存扩展</td><td><b>CXL</b></td><td>通用（PCIe PHY 上的 load/store 内存池）</td></tr>
+        </tbody>
+      </table>
+      <div class="note"><b>同步骤区别：</b>「搬运引擎」回答「谁搬字节」，「链路」回答「字节走哪条路」，二者正交——同一个 <code>RDMA</code> 引擎可跑在 <code>InfiniBand</code> 或 <code>RoCE</code> 上。<code>RDMA ≠ RoCE</code>：RDMA 是能力/队列语义，RoCE 是把它承载在以太网上的具体协议。</div>
+    </div>
+  </div>
+
+  <!-- Step 7 -->
+  <div class="step">
+    <div class="sh sh-7">Step 7 · 完成、一致性与可见性</div>
+    <div class="sb">
+      <div class="do"><b>这一步干什么：</b>确认「数据真的搬完、对端真的能安全读」。这是最容易被忽略、也最容易出错的最后一步。</div>
+      <ul>
+        <li><b>完成通知</b>：RDMA 的 <code>CQ/CQE</code>、DMA 的完成记录、SHMEM 的 <code>quiet/fence</code>。</li>
+        <li><b>同步原语</b>：<code>barrier</code>、<code>put-with-signal</code>、原子操作 + <code>fence</code>，建立「先放货、后翻 ready 标志」的发布-消费关系。</li>
+      </ul>
+      <div class="warn"><b>两个关键不等式：</b><code>Completion ≠ Visibility</code>（本地完成 ≠ 远端能安全消费）；<code>Coherence ≠ Consistency</code>（缓存一致 ≠ 跨地址强一致）。</div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= §4 ================= -->
+<section id="map">
+  <h2><span class="no">§4</span>跨栈对照大表（英伟达 / 昇腾 / 开源通用）</h2>
+  <table>
+    <thead><tr><th>职责（对应步骤）</th><th>英伟达 NVIDIA</th><th>华为昇腾 Ascend</th><th>开源 / 通用</th></tr></thead>
+    <tbody>
+      <tr><td>集合通信库（Step 3/6）</td><td><code>NCCL</code></td><td><code>HCCL</code>（含 <code>HCOMM</code>）</td><td>Gloo（CPU）等</td></tr>
+      <tr><td>单边点对点传输（Step 3/6）</td><td>NCCL P2P / <code>GPUDirect RDMA</code></td><td><code>HiXL</code></td><td><code>Mooncake TransferEngine</code></td></tr>
+      <tr><td>PGAS 共享内存（Step 3/4）</td><td><code>NVSHMEM</code></td><td><code>cann/shmem</code></td><td>OpenSHMEM 标准</td></tr>
+      <tr><td>MoE all-to-all（Step 3）</td><td><code>DeepEP</code>（NVIDIA 绑定）</td><td>DeepEP-Ascend（社区移植）/ HCCL AllToAll</td><td><code>DeepEP</code></td></tr>
+      <tr><td>节点内互联（Step 6）</td><td><code>NVLink / NVSwitch</code></td><td><code>HCCS</code></td><td><code>PCIe</code> / <code>UALink</code>（新）</td></tr>
+      <tr><td>节点间互联（Step 6）</td><td><code>InfiniBand / RoCEv2</code></td><td><code>RoCE / UB（灵衢）</code></td><td><code>InfiniBand / RoCE / eRDMA</code></td></tr>
+      <tr><td>内存池化 / 统一编址（Step 2）</td><td>NVLink-C2C / CXL 生态</td><td><code>MemFabric / Fabric Memory</code></td><td><code>CXL</code></td></tr>
+      <tr><td>KV 对象存储引擎（Step 2）</td><td>（靠 vLLM / LMCache 承载）</td><td><code>MemCache</code></td><td><code>Mooncake Store / LMCache</code></td></tr>
+      <tr><td>零拷贝（Step 5/6）</td><td><code>GPUDirect RDMA / GDS</code></td><td>OneCopy / D2D / D2H / H2D</td><td>RDMA / GPUDirect</td></tr>
+      <tr><td>设备侧直驱（Step 5）</td><td>GPU-initiated / GDR async</td><td><code>AIV 直驱</code></td><td>—</td></tr>
+      <tr><td>内存注册 / 地址（Step 4）</td><td><code>MR</code>（IB Verbs）/ UVM</td><td><code>VMM / IPC / 对称堆</code></td><td>CXL（load/store，免注册）</td></tr>
+      <tr><td>搬运引擎（Step 6）</td><td>Copy Engine（DMA）</td><td><code>MTE / SDMA / RDMA / UDMA</code>（xDMA family）</td><td>—</td></tr>
+    </tbody>
+  </table>
+  <p class="muted">注意：这是「概念职责」的映射，不是严格的产品等价。同一行两侧实现机制可能不同（例如 CXL 的 load/store 与 RDMA 的消息语义本质不同）。</p>
+</section>
+
+<!-- ================= §5 ================= -->
+<section id="glossary">
+  <h2><span class="no">§5</span>术语速查表</h2>
+  <table>
+    <thead><tr><th>缩写</th><th>全称</th><th>类别</th><th>一句话</th></tr></thead>
+    <tbody>
+      <tr><td>RDMA</td><td>Remote Direct Memory Access</td><td>网络</td><td>远程直接访存，远端 CPU 不参与</td></tr>
+      <tr><td>RNIC</td><td>RDMA Network Interface Controller</td><td>网络</td><td>RDMA 网卡（RoCE/iWARP 语境）</td></tr>
+      <tr><td>HCA</td><td>Host Channel Adapter</td><td>网络</td><td>RDMA 网卡（InfiniBand 语境）</td></tr>
+      <tr><td>QP</td><td>Queue Pair</td><td>网络</td><td>队列对 = SQ（发送队列）+ RQ（接收队列）</td></tr>
+      <tr><td>WQE</td><td>Work Queue Element</td><td>网络</td><td>工作队列元素（一次 SEND/WRITE/READ 请求）</td></tr>
+      <tr><td>CQ / CQE</td><td>Completion Queue / Entry</td><td>网络</td><td>完成队列 / 完成元素</td></tr>
+      <tr><td>MR</td><td>Memory Region</td><td>网络</td><td>注册(pin)后的内存区域及其 key</td></tr>
+      <tr><td>IB</td><td>InfiniBand</td><td>网络</td><td>高性能 RDMA 网络</td></tr>
+      <tr><td>RoCE</td><td>RDMA over Converged Ethernet</td><td>网络</td><td>以太网上的 RDMA（v2 用 UDP/IP）</td></tr>
+      <tr><td>eRDMA</td><td>Elastic RDMA</td><td>网络</td><td>阿里云的 RDMA over Ethernet</td></tr>
+      <tr><td>GPUDirect RDMA</td><td>—</td><td>英伟达</td><td>网卡直接读写 GPU 显存，免 CPU 中转</td></tr>
+      <tr><td>GDS</td><td>GPUDirect Storage</td><td>英伟达</td><td>GPU 直接读写 NVMe/存储</td></tr>
+      <tr><td>NCCL</td><td>NVIDIA Collective Communications Library</td><td>英伟达</td><td>英伟达集合通信库</td></tr>
+      <tr><td>NVLink / NVSwitch</td><td>—</td><td>英伟达</td><td>节点内 GPU 直连 / 交换</td></tr>
+      <tr><td>NVSHMEM</td><td>—</td><td>英伟达</td><td>英伟达 PGAS 库（OpenSHMEM 兼容）</td></tr>
+      <tr><td>HCCS</td><td>Huawei Cache Coherence System</td><td>昇腾</td><td>华为缓存一致性系统（节点内互联）</td></tr>
+      <tr><td>HCCL</td><td>Huawei Collective Communication Library</td><td>昇腾</td><td>昇腾集合通信库</td></tr>
+      <tr><td>HCOMM</td><td>Huawei Communication</td><td>昇腾</td><td>HCCL 的通信基础库（控制面/数据面解耦）</td></tr>
+      <tr><td>HiXL</td><td>Hierarchical Interconnect Library</td><td>昇腾</td><td>昇腾单边通信库</td></tr>
+      <tr><td>cann/shmem</td><td>—</td><td>昇腾</td><td>昇腾共享内存库（PGAS / OpenSHMEM）</td></tr>
+      <tr><td>MTE</td><td>Memory Transfer Engine</td><td>昇腾</td><td>AI Core 内搬运引擎（Global↔Local）</td></tr>
+      <tr><td>SDMA</td><td>System DMA</td><td>昇腾</td><td>系统级 DMA（节点内大块搬运）</td></tr>
+      <tr><td>UDMA</td><td>Unified DMA</td><td>昇腾</td><td>Ascend 950/UB 的统一 DMA 后端</td></tr>
+      <tr><td>xDMA</td><td>DMA family</td><td>昇腾</td><td>SDMA/RDMA/UDMA 的统称（非第四个引擎）</td></tr>
+      <tr><td>AIV</td><td>AI Vector Core</td><td>昇腾</td><td>Device 侧向量核（可做通信任务直驱）</td></tr>
+      <tr><td>UB</td><td>UnifiedBus（灵衢）</td><td>昇腾</td><td>超节点互联体系</td></tr>
+      <tr><td>UBMEM</td><td>UB Memory Semantics</td><td>昇腾</td><td>UB 内存语义路径</td></tr>
+      <tr><td>URMA</td><td>Unified Remote Memory Access</td><td>昇腾</td><td>UB 上的统一远程内存访问模型</td></tr>
+      <tr><td>VMM</td><td>Virtual Memory Management</td><td>昇腾</td><td>CANN Runtime 虚拟内存管理</td></tr>
+      <tr><td>IPC</td><td>Inter-Process Communication</td><td>昇腾</td><td>跨进程共享设备内存句柄</td></tr>
+      <tr><td>Fabric Memory</td><td>—</td><td>昇腾</td><td>远端物理内存映射模式</td></tr>
+      <tr><td>MemFabric</td><td>—</td><td>昇腾</td><td>统一编址的内存池化系统（MemCache 底座）</td></tr>
+      <tr><td>MemCache</td><td>—</td><td>昇腾</td><td>昇腾分布式 KV Cache 存储引擎</td></tr>
+      <tr><td>CXL</td><td>Compute Express Link</td><td>通用</td><td>PCIe PHY 上的 load/store 内存池互连</td></tr>
+      <tr><td>UALink</td><td>Ultra Accelerator Link</td><td>通用</td><td>开放的 scale-up 互联标准</td></tr>
+      <tr><td>FAM</td><td>Fabric-Attached Memory</td><td>通用</td><td>互联附加内存（内存池化）</td></tr>
+      <tr><td>DeepEP</td><td>—</td><td>开源</td><td>DeepSeek 的 MoE dispatch/combine 通信库</td></tr>
+      <tr><td>Mooncake</td><td>—</td><td>开源</td><td>Moonshot 的 KV-centric 分离推理平台</td></tr>
+      <tr><td>TransferEngine</td><td>—</td><td>开源</td><td>Mooncake 的传输引擎（TCP/RDMA/GPUDirect/NVMe-of）</td></tr>
+      <tr><td>Mooncake Store</td><td>—</td><td>开源</td><td>Mooncake 的分布式 KV 存储引擎</td></tr>
+      <tr><td>LMCache</td><td>—</td><td>开源</td><td>KV cache 管理层（多级缓存 + 跨实例共享）</td></tr>
+      <tr><td>vLLM / SGLang</td><td>—</td><td>开源</td><td>LLM 推理引擎</td></tr>
+      <tr><td>PD 分离</td><td>Prefill-Decode Disaggregation</td><td>概念</td><td>把 Prefill 与 Decode 拆到不同硬件</td></tr>
+      <tr><td>KV Cache</td><td>Key-Value Cache</td><td>概念</td><td>注意力层的 K/V 缓存</td></tr>
+      <tr><td>GVA</td><td>Global Virtual Address</td><td>概念</td><td>统一编址的全局虚拟地址</td></tr>
+      <tr><td>PGAS</td><td>Partitioned Global Address Space</td><td>概念</td><td>分区全局地址空间编程模型</td></tr>
+      <tr><td>RMA / AMO</td><td>Remote Memory Access / Atomic Memory Operation</td><td>概念</td><td>远程内存访问 / 原子内存操作</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- ================= §6 ================= -->
+<section id="src">
+  <h2><span class="no">§6</span>权威来源</h2>
+  <ol class="srcs">
+    <li>Mooncake 架构与 Transfer Engine（TCP / RDMA / GPUDirect / NVMe-of）：<a href="https://github.com/kvcache-ai/Mooncake">kvcache-ai/Mooncake</a> · <a href="https://github.com/kvcache-ai/Mooncake/blob/5821a195/docs/source/design/transfer-engine/index.md?plain=1">Transfer Engine 设计文档</a></li>
+    <li>Mooncake Store 与 vLLM / SGLang / LMCache 集成：<a href="https://kvcache-ai.github.io/Mooncake/index.html">Mooncake 官方文档</a> · <a href="https://blog.lmcache.ai/zh/2026/05/26/">LMCache × Mooncake 双向奔赴</a></li>
+    <li>DeepEP（MoE dispatch/combine 通信库）：<a href="https://github.com/deepseek-ai/DeepEP">deepseek-ai/DeepEP</a></li>
+    <li>NCCL 节点内/节点间通信（PCIe/NVLink/GPUDirect RDMA）：<a href="https://crad.ict.ac.cn/cn/article/id/c26ce8e5-3229-4e8f-9fcd-8e253119faad">高性能智算中心网络：现状、挑战与趋势</a></li>
+    <li>CXL 内存池化（Beluga / KV Cache）：<a href="https://ieeexplore.ieee.org/document/11459268">Evaluating CXL Memory Pooling for Scalable LLM Inference</a> · <a href="https://ui.adsabs.harvard.edu/abs/2025arXiv251120172Y/abstract">Beluga</a></li>
+    <li>RDMA 机制（MR / QP / CQ / doorbell）：<a href="https://github.com/llm-infra-atlas/llm-infra-atlas.github.io/blob/main/docs/hpc/03_rdma_ib_verbs.md">llm-infra-atlas：RDMA / IB Verbs</a></li>
+    <li>vLLM disaggregated prefill 与 KV connector：<a href="https://docs.vllm.ai/en/latest/examples/offline_inference/disaggregated_prefill.html">vLLM Disaggregated Prefill</a> · <a href="https://docs.vllm.ai/en/v0.15.1/features/nixl_connector_usage/">NixlConnector</a></li>
+    <li>昇腾官方：MemFabric / MemCache（<a href="https://www.hiascend.com/developer/techArticles/20251203-5">百TB级内存语义池化</a> · <a href="https://github.com/Ascend/memcache">Ascend/memcache</a>）；HCCL（<a href="https://www.hiascend.com/document/detail/zh/CANNCommunityEdition/910beta1/API/hcclug/hcclug_000001.html">简介</a>）；HIXL（<a href="https://www.hiascend.com/document/detail/zh/CANNCommunityEdition/920beta1/commlib/hixlug/docs/zh/guide/cpp/introduction.md">单边通信库</a>）</li>
+    <li>昇腾通信栈独立严谨梳理：<a href="https://shaojiemike.top/1-ai-systems/2026/08/26/Ascend-Communication-Stack/">Ascend Communication Stack</a> · <a href="https://shaojiemike.top/2026/08/27/Work/Artificial%20Intelligence/AIInfra/Ascend-Data-Movement-Evolution/">Ascend Data Movement Evolution</a></li>
+  </ol>
+</section>
+
+</main>
+
+<footer>
+  <div class="wrap">大模型端到端数据流 × 内存与通信技术栈（系统整合版）· 生成于 2026-09-07 · 跨英伟达 / 昇腾 / 开源生态</div>
+</footer>
+
+</body>
+</html>
