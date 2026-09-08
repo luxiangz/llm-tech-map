@@ -94,6 +94,15 @@
   .t-hbm{background:var(--tier-hbm-bg);border-color:var(--tier-hbm-border)} .t-dram{background:var(--tier-dram-bg);border-color:var(--tier-dram-border)} .t-ssd{background:var(--tier-ssd-bg);border-color:var(--tier-ssd-border)}
   .tier-arrow { align-self:center; color:var(--muted); font-size:20px; }
 
+  /* layers */
+  .layers { display:flex; flex-direction:column; gap:8px; margin:14px 0; }
+  .lbox { border:1px solid var(--line); border-radius:10px; padding:11px 14px; background:var(--card); }
+  .lbox b { font-size:14.5px; }
+  .lbox span { color:var(--muted); font-size:13px; }
+  .l-app { border-left:5px solid #db2777; }
+  .l-exe { border-left:5px solid #2563eb; }
+  .l-inf { border-left:5px solid #16a34a; }
+
   .fig { margin:18px 0; text-align:center; }
   .fig svg { max-width:100%; height:auto; color:var(--svg-ink); }
   .fig svg .life { stroke:var(--svg-line); }
@@ -125,11 +134,12 @@
     <ol>
       <li><a href="#tldr">§0 摘要与阅读方式</a></li>
       <li><a href="#base">§1 基础概念：三类语义 + 概念分类法</a></li>
-      <li><a href="#flow">§2 端到端数据流总览</a></li>
-      <li><a href="#steps">§3 逐步展开（Step 0~7）</a></li>
-      <li><a href="#map">§4 跨栈对照大表</a></li>
-      <li><a href="#glossary">§5 术语速查表</a></li>
-      <li><a href="#src">§6 权威来源</a></li>
+      <li><a href="#layers">§2 分层视角：基础设施层 / 执行层 / 应用层</a></li>
+      <li><a href="#flow">§3 端到端数据流总览</a></li>
+      <li><a href="#steps">§4 逐步展开（Step 0~7）</a></li>
+      <li><a href="#map">§5 跨栈对照大表</a></li>
+      <li><a href="#glossary">§6 术语速查表</a></li>
+      <li><a href="#src">§7 权威来源</a></li>
     </ol>
   </nav>
 </div>
@@ -144,7 +154,7 @@
     <b>算出来 → 存到哪 → 选什么语义搬 → 怎么找到对方 → 谁下单 → 谁搬字节 → 走哪条链路 → 怎么确认搬完了</b>。
     本文把这串步骤抽象成 8 个 Step（0~7），把 <code>MemFabric / MemCache / Mooncake / TransferEngine / DeepEP / NCCL / NVLink / GPUDirect RDMA / CXL / LMCache / SHMEM / HiXL</code> 等概念，按「它属于哪个步骤、在该步骤里回答什么问题」归位。
   </div>
-  <p><b>阅读路径：</b>先读 <a href="#base">§1</a> 建立三类基础语义的认知 → 再读 <a href="#flow">§2</a> 看数据流总览 → 然后按 <a href="#steps">§3</a> 的 Step 0~7 逐个展开 → 最后用 <a href="#map">§4</a> 跨栈对照和 <a href="#glossary">§5</a> 术语速查兜底。</p>
+  <p><b>阅读路径：</b>先读 <a href="#base">§1</a> 建立三类基础语义的认知 → 再看 <a href="#layers">§2</a> 的分层视角（基础设施层 / 执行层 / 应用层）→ 然后读 <a href="#flow">§3</a> 数据流总览，按 <a href="#steps">§4</a> 的 Step 0~7 逐个展开 → 最后用 <a href="#map">§5</a> 跨栈对照和 <a href="#glossary">§6</a> 术语速查兜底。</p>
   <p><b>核心观察：</b>同一个技术名词常常只覆盖这串流程里的某 1~2 步。例如 <code>NCCL</code> 主要管「选语义 + 走链路」，<code>Mooncake TransferEngine</code> 主要管「单边传输语义 + 走 RDMA/TCP」。把不同步骤的概念放在一起比「谁快谁慢」，往往会比错对象。</p>
 </section>
 
@@ -197,8 +207,48 @@
 </section>
 
 <!-- ================= §2 ================= -->
+<section id="layers">
+  <h2><span class="no">§2</span>分层视角：基础设施层 / 执行层 / 应用层</h2>
+  <p>除了按「数据流」走一遍，还可以按「<b>解决什么问题</b>」把整条栈切成三层。以昇腾内存池化栈为典型（英伟达 / 开源生态有对应物），理解会更清晰：</p>
+
+  <div class="layers">
+    <div class="lbox l-app"><b>应用层</b> · 对象语义 Put/Get<br><span>MemCache（昇腾）· Mooncake Store · LMCache</span></div>
+    <div class="lbox l-exe"><b>执行层</b> · 通信语义 / 搬运<br><span>shmem + hixl（昇腾双引擎）· HCCL · NCCL · NVSHMEM · TransferEngine · DeepEP</span></div>
+    <div class="lbox l-inf"><b>基础设施层</b> · 统一编址 / 寻址<br><span>MemFabric · Fabric Memory · VMM（昇腾）· CXL（通用）</span></div>
+  </div>
+
+  <table>
+    <thead><tr><th>层</th><th>回答的问题</th><th>昇腾</th><th>英伟达 / 开源通用</th></tr></thead>
+    <tbody>
+      <tr><td><b>应用层</b></td><td>应用怎么用（对象 Put/Get）</td><td>MemCache</td><td>Mooncake Store / LMCache</td></tr>
+      <tr><td><b>执行层</b></td><td>怎么搬（通信语义）</td><td>shmem + hixl + HCCL</td><td>NCCL / NVSHMEM / TransferEngine / DeepEP</td></tr>
+      <tr><td><b>基础设施层</b></td><td>数据在哪（统一编址）</td><td>MemFabric / Fabric Memory / VMM</td><td>CXL</td></tr>
+    </tbody>
+  </table>
+
+  <div class="note"><b>三层怎么协作：</b>基础设施层定「地址」（统一编址 GVA）→ 执行层选「搬运方式」（shmem 细粒度 / hixl 大块 / NCCL 集合）→ 应用层把结果包装成「对象 Put/Get」给上层框架用。<b>上层依赖下层，但同层的 shmem 和 hixl 是并列关系，不是上下级。</b></div>
+
+  <h3>2.1 执行层的双引擎：shmem vs hixl</h3>
+  <p>这是昇腾执行层里最容易被混淆的两个库。先记住一句话：<b>shmem 是「内存池」，hixl 是「快递员」</b>。</p>
+  <table>
+    <thead><tr><th>维度</th><th>shmem（共享内存库）</th><th>hixl（单边通信库）</th></tr></thead>
+    <tbody>
+      <tr><td><b>定位</b></td><td>把多卡 HBM 抽象成「一块全局内存」</td><td>面向集群的单边数据传输</td></tr>
+      <tr><td><b>编程模型</b></td><td>PGAS（分区全局地址空间），OpenSHMEM 兼容</td><td>单边通信（One-Sided）</td></tr>
+      <tr><td><b>出发点</b></td><td>「访问哪个 PE 的哪个地址」</td><td>「把哪段数据从 A 搬到 B」</td></tr>
+      <tr><td><b>核心操作</b></td><td><code>shmem_put</code> / <code>shmem_get</code> / <code>shmem_atomic</code> / <code>shmem_barrier</code></td><td><code>hixl_put</code> / <code>hixl_get</code>（异步）</td></tr>
+      <tr><td><b>粒度</b></td><td>细粒度、随机地址读写</td><td>大块、连续 buffer</td></tr>
+      <tr><td><b>特点</b></td><td>低延迟（HCCS 约 2.3μs、同步纳秒级）</td><td>高带宽（最高约 119GB/s，KV 传输 12ms→1.8ms）</td></tr>
+      <tr><td><b>主要链路</b></td><td>节点内 HCCS（也支持 PCIe/RDMA）</td><td>HIXL Engine：HCCS / RDMA / PCIe / FabricMem，D2D / D2H / H2D</td></tr>
+      <tr><td><b>场景</b></td><td>多卡共享参数、MoE 专家通信、算子内协同、计算通信融合</td><td>PD 分离 KV Cache 传递、RL 参数切换、参数缓存、流水线并行</td></tr>
+    </tbody>
+  </table>
+  <div class="warn"><b>关系（关键，避免误解）：</b>shmem 和 hixl 是<b>并列的两个引擎</b>，不是「谁构建于谁之上」；两者都基于<b>单边通信 + 零拷贝</b>，共同建立在基础设施层 MemFabric 的统一编址（GVA）之上。工程上的典型分工是<b>节点内细粒度用 shmem、跨节点大块用 hixl</b>。</div>
+</section>
+
+<!-- ================= §3 ================= -->
 <section id="flow">
-  <h2><span class="no">§2</span>端到端数据流总览</h2>
+  <h2><span class="no">§3</span>端到端数据流总览</h2>
   <p>主线是<b>推理 Prefill/Decode（PD）分离 + KV Cache 池化</b>——<code>MemFabric / MemCache / Mooncake / LMCache</code> 共同瞄准的场景。训练是并行支线，在 Step 3/5/6 汇入同一套底层机制。</p>
 
   <div class="pipeline">
@@ -230,9 +280,9 @@
   <div class="warn"><b>训练支线（并行，不重复画）：</b>反向传播产出<b>梯度</b> → Step 3 选 <code>NCCL/HCCL</code> 的 <code>AllReduce</code>（或 MoE 用 <code>DeepEP</code> 的 <code>all-to-all</code> dispatch/combine）→ Step 4~7 复用同一套地址/提交/搬运/链路/完成机制。</div>
 </section>
 
-<!-- ================= §3 ================= -->
+<!-- ================= §4 ================= -->
 <section id="steps">
-  <h2><span class="no">§3</span>逐步展开：每个步骤的概念干了啥、同步骤内的区别与联系</h2>
+  <h2><span class="no">§4</span>逐步展开：每个步骤的概念干了啥、同步骤内的区别与联系</h2>
 
   <!-- Step 0 -->
   <div class="step">
@@ -477,9 +527,9 @@
   </div>
 </section>
 
-<!-- ================= §4 ================= -->
+<!-- ================= §5 ================= -->
 <section id="map">
-  <h2><span class="no">§4</span>跨栈对照大表（英伟达 / 昇腾 / 开源通用）</h2>
+  <h2><span class="no">§5</span>跨栈对照大表（英伟达 / 昇腾 / 开源通用）</h2>
   <table>
     <thead><tr><th>职责（对应步骤）</th><th>英伟达 NVIDIA</th><th>华为昇腾 Ascend</th><th>开源 / 通用</th></tr></thead>
     <tbody>
@@ -500,9 +550,9 @@
   <p class="muted">注意：这是「概念职责」的映射，不是严格的产品等价。同一行两侧实现机制可能不同（例如 CXL 的 load/store 与 RDMA 的消息语义本质不同）。</p>
 </section>
 
-<!-- ================= §5 ================= -->
+<!-- ================= §6 ================= -->
 <section id="glossary">
-  <h2><span class="no">§5</span>术语速查表</h2>
+  <h2><span class="no">§6</span>术语速查表</h2>
   <table>
     <thead><tr><th>缩写</th><th>全称</th><th>类别</th><th>一句话</th></tr></thead>
     <tbody>
@@ -557,9 +607,9 @@
   </table>
 </section>
 
-<!-- ================= §6 ================= -->
+<!-- ================= §7 ================= -->
 <section id="src">
-  <h2><span class="no">§6</span>权威来源</h2>
+  <h2><span class="no">§7</span>权威来源</h2>
   <ol class="srcs">
     <li>Mooncake 架构与 Transfer Engine（TCP / RDMA / GPUDirect / NVMe-of）：<a href="https://github.com/kvcache-ai/Mooncake">kvcache-ai/Mooncake</a> · <a href="https://github.com/kvcache-ai/Mooncake/blob/5821a195/docs/source/design/transfer-engine/index.md?plain=1">Transfer Engine 设计文档</a></li>
     <li>Mooncake Store 与 vLLM / SGLang / LMCache 集成：<a href="https://kvcache-ai.github.io/Mooncake/index.html">Mooncake 官方文档</a> · <a href="https://blog.lmcache.ai/zh/2026/05/26/">LMCache × Mooncake 双向奔赴</a></li>
