@@ -1,0 +1,434 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>EPLB · UltraEP · MoonEP 源码级对比分析（附本地代码与研读路线图）</title>
+<style>
+  :root{
+    --ink:#1a2332; --ink2:#3d4a5c; --sub:#6b7887;
+    --bg:#f6f8fb; --card:#ffffff; --line:#dfe6ef;
+    --accent:#0f62fe; --tag-v:#0b7a43; --tag-r:#9a6700; --tag-u:#b4232c;
+    --code:#0d1b2a; --codebg:#f0f4f9;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei","Noto Sans CJK SC",sans-serif;
+    color:var(--ink);background:var(--bg);line-height:1.75;font-size:16px}
+  .wrap{max-width:1120px;margin:0 auto;padding:0 22px}
+  header.hero{background:linear-gradient(135deg,#0b1e2e 0%,#123a63 50%,#0f62fe 120%);color:#fff;padding:44px 0 38px}
+  header.hero h1{margin:0 0 10px;font-size:28px;line-height:1.4;letter-spacing:.5px}
+  header.hero p.sub{margin:0;opacity:.93;font-size:15px;max-width:940px}
+  .meta-chip{display:inline-block;background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.25);
+    border-radius:999px;padding:2px 12px;margin:6px 6px 0 0;font-size:12.5px}
+  .meta-chip.g{background:rgba(11,122,67,.45);border-color:rgba(183,227,200,.6)}
+  nav.toc{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px 22px;margin:26px auto}
+  nav.toc h2{margin:0 0 8px;font-size:16px;color:var(--accent)}
+  nav.toc ol{margin:0;padding-left:22px;columns:2;column-gap:38px}
+  nav.toc li{break-inside:avoid;margin:3px 0;font-size:14px}
+  nav.toc a{color:var(--ink2);text-decoration:none}
+  nav.toc a:hover{color:var(--accent);text-decoration:underline}
+  main{padding:6px 0 30px}
+  section{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:24px 28px;margin:20px 0}
+  h2.sec{font-size:22px;border-left:5px solid var(--accent);padding-left:12px;margin:0 0 12px}
+  h2.sec .no{color:var(--accent);font-weight:800;margin-right:8px}
+  h3{font-size:18px;color:#123a63;margin:22px 0 8px}
+  h4{font-size:15.5px;color:#1d4f91;margin:16px 0 6px}
+  p{margin:8px 0;text-align:justify}
+  ul,ol{margin:8px 0;padding-left:25px}
+  li{margin:3px 0}
+  a{color:var(--accent);text-decoration:none;word-break:break-all}
+  a:hover{text-decoration:underline}
+  table{border-collapse:collapse;width:100%;margin:12px 0;font-size:13px;background:#fff}
+  th,td{border:1px solid var(--line);padding:6px 8px;vertical-align:top;text-align:left}
+  th{background:#eef3fa;color:#123a63;font-weight:600}
+  tr:nth-child(even) td{background:#fafcff}
+  .tbl-scroll{overflow-x:auto}
+  code{font-family:"JetBrains Mono",Consolas,"Cascadia Code",monospace;background:var(--codebg);border:1px solid #e3e9f2;
+    padding:1px 6px;border-radius:5px;font-size:12.5px;color:var(--code)}
+  pre{background:var(--code);color:#d7e3f4;border-radius:10px;padding:12px 15px;overflow-x:auto;font-size:12.5px;line-height:1.6}
+  pre code{background:none;border:none;color:inherit;padding:0;font-size:12.5px}
+  blockquote{margin:10px 0;padding:9px 15px;background:#f2f7ff;border-left:4px solid var(--accent);border-radius:0 8px 8px 0;color:#28405e}
+  blockquote p{margin:3px 0}
+  .callout{border-radius:10px;padding:11px 15px;margin:12px 0;font-size:14px}
+  .callout.warn{background:#fff8e6;border:1px solid #f0dfae}
+  .callout.info{background:#eef6ff;border:1px solid #c9defa}
+  .callout.ok{background:#eefaf1;border:1px solid #c3e8cf}
+  .callout .t{font-weight:700;display:block;margin-bottom:2px}
+  .pill{display:inline-block;border-radius:999px;padding:1px 9px;font-size:12px;background:#eef3fa;color:#123a63;border:1px solid #d4dfee;margin:1px 3px 1px 0}
+  .src-note{font-size:12.5px;color:var(--sub)}
+  .filetag{font-family:Consolas,monospace;font-size:12px;background:#eef4fb;border:1px solid #d4e0ee;border-radius:5px;padding:0 5px;color:#0b4f8a;white-space:nowrap}
+  .to-top{position:fixed;right:18px;bottom:18px;background:var(--accent);color:#fff;border-radius:50%;width:44px;height:44px;
+    display:flex;align-items:center;justify-content:center;text-decoration:none;font-size:20px;box-shadow:0 4px 14px rgba(15,98,254,.35);z-index:9}
+  .to-top:hover{background:#0b4fd0;text-decoration:none}
+  footer{background:#0d1b2a;color:#aebbd0;padding:24px 0;font-size:13px}
+  footer a{color:#8fc1ff}
+  @media (max-width:760px){ nav.toc ol{columns:1} section{padding:18px 14px} header.hero h1{font-size:21px} th,td{white-space:normal} }
+  @media print{ .to-top{display:none} body{background:#fff} section{border:none;page-break-inside:avoid} a{color:var(--ink)} }
+</style>
+</head>
+<body>
+
+<header class="hero">
+  <div class="wrap">
+    <h1>EPLB · UltraEP · MoonEP 源码级对比分析</h1>
+    <p class="sub">在《方案深度解析 v2.0》之上更进一步：把三个仓库的<b>完整源码下载到本地</b>，逐文件精读其算法、内核、API、测试与工程取舍，给出「实现技术 / 规划算法 / 均衡保证 / 通信层 / 集成面 / 测试完备度」六维对比与研读路线图。</p>
+    <div>
+      <span class="meta-chip">分析对象：src/EPLB · src/UltraEP · src/MoonEP</span>
+      <span class="meta-chip">固定 commit：EPLB d52c72d5 / UltraEP 94cab099 / MoonEP 0f385f03</span>
+      <span class="meta-chip g">方法：静态精读 + EPLB 实际运行验证</span>
+    </div>
+  </div>
+</header>
+
+<div class="wrap">
+  <nav class="toc" id="toc">
+    <h2>目录</h2>
+    <ol>
+      <li><a href="#s1">导览：本地代码、分析报告与本文档的关系</a></li>
+      <li><a href="#s2">三仓库“骨架”一览（规模 / 技术栈 / 依赖 / 测试）</a></li>
+      <li><a href="#s3">EPLB：164 行纯 PyTorch 的放置算法</a></li>
+      <li><a href="#s4">UltraEP：配额规划 + RSN 原生通信的全栈 C++/CUDA 运行时</a></li>
+      <li><a href="#s5">MoonEP：CuTe DSL 规划内核 + 对称内存通信库</a></li>
+      <li><a href="#s6">六维源码级对比表</a></li>
+      <li><a href="#s7">规划算法本质对比（伪代码级）</a></li>
+      <li><a href="#s8">从代码看三种设计哲学与选型启示</a></li>
+      <li><a href="#s9">研读路线图与验证建议</a></li>
+      <li><a href="#s10">附：文件索引与参考</a></li>
+    </ol>
+  </nav>
+</div>
+
+<main class="wrap">
+
+<section id="s1">
+  <h2 class="sec"><span class="no">1</span>导览：本地代码、分析报告与本文档的关系</h2>
+  <p>本份工作把此前「方案深度解析 v2.0」（<code>MoE专家并行方案深度解析_EPLB_UltraEP_MoonEP.html</code>）的机制描述下沉到<b>代码行级</b>。本地产物如下（均在 <code>E:\Desktop\业务\EP\</code> 下）：</p>
+  <div class="tbl-scroll">
+  <table>
+    <tr><th>路径</th><th>内容</th></tr>
+    <tr><td><code>src/EPLB</code></td><td>DeepSeek EPLB 完整源码（固定 commit d52c72d5；共 5 个文件）</td></tr>
+    <tr><td><code>src/UltraEP</code></td><td>UltraEP v1.0.0 完整源码（94cab099；71 文件，Python + C++/CUDA + docs/examples）</td></tr>
+    <tr><td><code>src/MoonEP</code></td><td>MoonEP 完整源码（0f385f03；39 文件，Python/CuTe DSL + 少量 CUDA + tests + figure）</td></tr>
+    <tr><td><code>src/_analysis/EPLB_code_analysis.md</code></td><td>EPLB 代码级分析报告（已实测运行验证）</td></tr>
+    <tr><td><code>src/_analysis/UltraEP_code_analysis.md</code></td><td>UltraEP 代码级分析报告（含 C++/CUDA 关键路径）</td></tr>
+    <tr><td><code>src/_analysis/MoonEP_code_analysis.md</code></td><td>MoonEP 代码级分析报告（含规划内核 Phase A–D 拆解）</td></tr>
+    <tr><td><code>UltraEP_research_report.md</code></td><td>早期（联网前）UltraEP 网络检索底稿</td></tr>
+    <tr><td><code>_research/</code></td><td>12 份一手网页/论文全文抓取件（离线可查）</td></tr>
+  </table>
+  </div>
+  <div class="callout info"><span class="t">分析方法与可信度</span>
+  三份分析报告由独立子代理<b>逐文件通读</b>产出（UltraEP 约 7k 行 C++/CUDA + 2k 行 Python；MoonEP 约 1.1 万行；EPLB 164 行），全部结论带 <span class="filetag">文件:行号</span> 锚点。<b>EPLB 已实际运行验证</b>（torch 2.13 CPU 跑 README 示例，<code>phy2log</code> 与官方输出逐元素一致）；UltraEP / MoonEP 因需要 SM90/100 + NVLink 集群，本次为静态精读（未运行）。MoonEP 性能图里的绝对数值在本地 <code>src/MoonEP/figure/*.png</code> 中可直接查看。</div>
+</section>
+
+<section id="s2">
+  <h2 class="sec"><span class="no">2</span>三仓库“骨架”一览</h2>
+  <div class="tbl-scroll">
+  <table>
+    <tr><th>维度</th><th>EPLB</th><th>UltraEP</th><th>MoonEP</th></tr>
+    <tr><td>规模</td><td>5 文件 / 算法仅 1 文件 164 行</td><td>71 文件 / ~10,043 代码行（Py ~2k，C++/CUDA ~7k）</td><td>39 文件 / ~11,168 代码行（Py 为主）</td></tr>
+    <tr><td>实现技术</td><td>纯 PyTorch（CPU），无 numpy、无内核</td><td>Python 编排 + C++ Manager + 手写 CUDA persistent 内核</td><td>Python + <b>CUTLASS CuTe DSL 内核（JIT）</b>；csrc 仅 478 行 VMM/multicast 驱动</td></tr>
+    <tr><td>硬依赖</td><td>torch（CPU-only 即可）</td><td>NVSHMEM（唯一）；SM90/SM100、NVLink 域</td><td>torch + <code>nvidia-cutlass-dsl==4.4.2</code>；NVLink + NVSwitch multicast、bf16</td></tr>
+    <tr><td>许可</td><td>MIT</td><td>MIT</td><td>仓库含 LICENSE（类型未逐字核实）</td></tr>
+    <tr><td>测试</td><td><b>无测试文件</b>；README 示例即回归锚点</td><td>单卡求解测试 + 分布式 e2e（bitwise 正确性断言）</td><td>8 卡 pytest（含参考实现逐元素比对）</td></tr>
+    <tr><td>运行形态</td><td>import 即算（部署期/周期调用）</td><td>每 EP group 一个 <code>Manager</code> 运行时（前向/后向 hook）</td><td>每 rank 一个 <code>Buffer</code> 通信对象（dispatch/combine 算子）</td></tr>
+    <tr><td>作用域</td><td>只出三张映射表（放置），不碰 token</td><td>放置 + 权重分发 + token reroute + 梯度归约（全栈）</td><td>通信 + 规划（dispatch/combine/prefetch/grad_reduce），由框架做 GEMM</td></tr>
+    <tr><td>是否需要改模型</td><td>否（离线消费负载统计）</td><td>否（前向后向各加 3 个恒等 autograd 钩子）</td><td>否（替换 dispatch/combine 为 Buffer API + 统一权重张量布局）</td></tr>
+  </table>
+  </div>
+  <p>一句话概括三者的代码面貌：<b>EPLB 是一个“算法即文档”的单文件参考实现；UltraEP 是一个以 NVSHMEM 对称堆为基础、全设备决策的工业级 C++/CUDA 运行时；MoonEP 是一个把内核用 CUTLASS Python DSL 写进 Python 库的“通信原语 + 内置规划器”。</b></p>
+</section>
+
+<section id="s3">
+  <h2 class="sec"><span class="no">3</span>EPLB：164 行纯 PyTorch 的放置算法</h2>
+  <p>详细报告：<code>src/_analysis/EPLB_code_analysis.md</code>。以下为代码级要点（行号以 <code>src/EPLB/eplb.py</code> 为准）。</p>
+
+  <h3>3.1 模块结构与入口</h3>
+  <ul>
+    <li>自底向上 4 个函数：<code>balanced_packing</code>（:5）→ <code>replicate_experts</code>（:44）→ <code>rebalance_experts_hierarchical</code>（:74）→ 入口 <code>rebalance_experts</code>（:131）；<code>__all__</code>（:164）。</li>
+    <li>入口把 <code>weight[L,E]</code> 强制 <code>.float().cpu()</code>（:149）——<b>算法整体在 CPU 执行</b>，输出三张 int64 表：
+      <ul>
+        <li><code>phy2log[L, num_replicas]</code>：物理专家 → 逻辑专家（编号约定：<b>节点主序、节点内每 GPU 连续 <code>num_replicas/num_gpus</code> 个槽位</b>）；</li>
+        <li><code>log2phy[L, E, maxlogcnt]</code>：逻辑专家 → 各副本所在物理专家（-1 填充的矩形表）；</li>
+        <li><code>logcnt[L, E]</code>：每逻辑专家副本数，行和恒 = <code>num_replicas</code>。</li>
+      </ul>
+    </li>
+  </ul>
+
+  <h3>3.2 两种策略其实是“一个函数的两组参数”</h3>
+  <pre>if num_groups % num_nodes == 0:            # eplb.py:150
+    phy2log, phyrank, logcnt = rebalance_experts_hierarchical(weight, num_replicas, num_groups, num_nodes, num_gpus)
+else:                                      # “global”策略没有独立代码：
+    phy2log, phyrank, logcnt = rebalance_experts_hierarchical(weight, num_replicas, 1, 1, num_gpus)   # :156</pre>
+  <p>global = 把“1 组、1 节点”喂给同一三层流水线（组=全部专家、节点=单点），层次结构塌缩为“全局复制 + 全 GPU 打包”。分层流水线（:74-129）：</p>
+  <ol>
+    <li><b>Step 1 组→节点</b>：按组 token 总量 <code>balanced_packing(…, num_nodes)</code>，构造 middle-logical 排列 <code>log2mlog/mlog2log</code>（:103-108）；</li>
+    <li><b>Step 2 节点内复制</b>：每 (layer, node) 行独立 <code>replicate_experts(…, num_replicas//num_nodes)</code>（:110-113），副本不跨节点（NVLink 域假设）；</li>
+    <li><b>Step 3 副本→GPU</b>：按“均摊后单副本负载”再 <code>balanced_packing(…, num_gpus//num_nodes)</code>，物理槽位号直接把 GPU 分块编进编号（:115-129）。</li>
+  </ol>
+
+  <h3>3.3 两个启发式的代码本质</h3>
+  <pre># 复制（LPT 式）：反复给“单副本负载最大”的专家加副本（eplb.py:66-70）
+for i in range(num_log, num_phy):
+    redundant_indices = (weight / logcnt).max(-1).indices   # weight/logcnt = 均摊到每个副本的负载
+    phy2log[:, i] = redundant_indices;  rank[:, i] = logcnt[…];  logcnt[…] += 1
+
+# 打包（eplb.py:27-40）：按权重降序，逐个放入“未装满且当前最轻”的桶（每桶恰好 n/m 项）
+indices = weight.float().sort(-1, descending=True).indices
+pack = min((i for i in range(num_packs) if pack_items[i] < groups_per_pack), key=pack_weights.__getitem__)</pre>
+  <p>两点隐含假设值得注意：① 副本间负载按 <code>weight/cnt</code> 均摊（依赖“副本间 round-robin 均分路由”这一引擎约定）；② 每专家副本数<b>无上限</b>，一个极端热专家可吃光全部冗余槽。算法<b>确定性</b>（无随机、平局取最小桶号），同输入必同输出。</p>
+
+  <h3>3.4 验证与移植结论</h3>
+  <ul>
+    <li>仓库<b>无测试文件</b>、无 CI；7 处 assert 全是整除性/结构性检查（:19/36/60/90/92/94/95）。</li>
+    <li>实测：torch 2.13 CPU 原样运行 README 示例 → <code>phy2log</code> 与官方输出<b>逐元素一致</b>；<code>logcnt</code> 每层和 = 16；global 分支（<code>num_groups=3, num_nodes=2</code>）不变式亦通过。</li>
+    <li><b>移植提示</b>：算法是纯 CPU 数值问题，任意语言重写只需三个纯函数；移植验证建议直接用 README 的 2×12 例子作 golden test，并保留“节点主序、GPU 连续槽位”的编号约定（否则 <code>log2phy</code> 的 scatter 重建会错位）。</li>
+  </ul>
+</section>
+<section id="s4">
+  <h2 class="sec"><span class="no">4</span>UltraEP：配额规划 + RSN 原生通信的全栈 C++/CUDA 运行时</h2>
+  <p>详细报告：<code>src/_analysis/UltraEP_code_analysis.md</code>（UltraEP v1.0.0，约 7k 行 C++/CUDA + 2k 行 Python）。行号指向 <code>src/UltraEP/</code> 下对应文件。</p>
+
+  <h3>4.1 四层架构与“状态即对称内存”</h3>
+  <ul>
+    <li>分层：<span class="filetag">ultra_ep/*.py</span> 只做编排（无算法）→ <span class="filetag">csrc/ultra_ep.hpp/.cpp</span>（Manager 状态/流/事件编排，cpp 1213 行）→ <span class="filetag">csrc/kernels/*.cu</span>（persistent 求解 + 通信内核）→ NVSHMEM 对称堆（跨卡直达，唯一硬依赖；<b>无 NCCL</b>，仅元数据集体可选 NCCL 后端）。</li>
+    <li><b>每 EP group 一个 Manager</b>；每 rank 预留 <code>R=num_local_redundant_experts</code> 个冗余物理槽，副本 weight/grad 缓冲全库只有<b>一个 <code>[R, expert_total_numel]</code> NVSHMEM blob、跨所有层复用</b>（这就是论文“冗余槽显存 9.9GB→108MB”的代码来源）。</li>
+    <li><b>master 指针池</b>：<code>construct_local_master_ptr_pool(real_layer, fc1/2 权重+梯度)</code> 把本 rank 各主专家独立张量的 <code>data_ptr()</code> 打包成 GPU int64 表（按 real layer 索引）。</li>
+    <li><b>虚拟层</b>：PP/VPP 下 <code>allocate_microbatch_slot(real_layer)</code> 返回 <code>virtual = real*max_mb + counter%max_mb</code>；placement/事件按 virtual 层隔离，指针池按 real 层取——一套放置语义复用到多个在飞微批。</li>
+  </ul>
+
+  <h3>4.2 前向四步 + 反向三钩子（不侵入 transformer）</h3>
+  <pre>前向（每 MoE 层）：update_placement(vid, routing_map)   # gating 后精确负载 → GPU 全量求解（异步）
+                → weight_sync(vid, async=True)          # master 权重分发到副本槽（comm_stream）
+                → reroute(vid, probs, routing_map)      # 逻辑路由展开到物理副本（藏在 weight_sync 下）
+                → ws_event.current_stream_wait()        # dispatch 前汇合
+反向（bwd-only 恒等 autograd.Function，fwd 恒等、bwd 动作）：
+   RestoreReplicaWeights.bwd → weight_sync(阻塞)         # 专家 Dgrad 前恢复本层副本权重（槽被跨层复用覆盖过）
+   StartGradReduce.bwd      → grad_reduce(async)        # 异步起副本→master 梯度归约
+   JoinGradReduce.bwd       → gr_event.wait()           # 藏在 attention backward 后汇合</pre>
+  <p>三个恒等函数使集成方<b>无需改写 transformer 的 backward 图</b>（Megatron 侧只加 3 个开关：<code>--moe-enable-ultraep</code> + 冗余专家数 + 让 token dispatcher 走 HybridEP）。</p>
+
+  <h3>4.3 规划：阈值二分 × 容量可行性 oracle（<span class="filetag">placement.cu</span>）</h3>
+  <p>内核 <code>quota_placement_solve_kernel</code>：<code>__launch_bounds__(128)</code>，grid = 每 NVL 域一个 block（域内独立求解），常量 <code>MAX_GPUS_PER_NVL=72, MAX_EXPERTS_PER_NVL=512, QUOTA_MIN_TOKENS_PER_REPLICA=1024, QUOTA_FAST_REPLICA_LIMIT=8</code>。简化伪码：</p>
+  <pre>T_lo = ⌈mean(rank_load)×balance_threshold⌉;  T_hi = max(rank_load)
+快速试探：从 T_lo×(1+eps) 起按 (T_hi−T_lo)/100 步进，最多 2 次重试找可行 T
+否则：4 warp 并行二分（每 warp 测一个阈值探针，保留最小可行缩界）
+
+feasible(T)（单 warp）:
+  excess[r]=max(rank_load[r]−T,0);  slack[r]=max(T−rank_load[r],0)
+  if Σexcess==0 → true;  if Σexcess>Σslack → false
+  对源 rank（负载降序）: need=excess[r]
+    对其专家（负载降序）:
+      available = loads[expert] − keep_on_master − 已导出
+      while need>0 and available>0:
+        min_tokens = max(1, ⌈need/可用目标数⌉)          # 动态下限防碎片
+        选 best target r': slack 最大（平手最小 id），槽未满(≤R)、且未放该专家的 master
+        q = min(need, slack[r'], available);  if q<min_tokens: break
+        导出 {expert, r', q}；更新 slack/slots_used/occ
+    若 need 未清 → false
+
+落盘：master_quota[e]=loads[e]−导出和；每导出填 p2l/l2p 下一空槽+quota；
+     lcnts[e]=实例数；quota_prefix[e]=前缀和（reroute 用）；
+     rank_quota_prefix[e] 按 locality 分解（同 host 先填满，再按远端容量+大余数法分）</pre>
+  <p>要点：<b>一次求解同时决定“复制谁、复制几份、每份多少 token（quota）”，把复制与重路由耦合</b>（对照 EPLB 只做放置、reroute 交给引擎的 round-robin）；纯 GPU、无跨 rank 协商（所有 rank 同输入 → 同结果，无需 broadcast）；CPU 版（<span class="filetag">csrc/kernels/legacy/placement_cpu.cpp</span>）仅兼容/对照。</p>
+
+  <h3>4.4 权重分发：direct / adaptive / force_relay（<span class="filetag">weight_sync.cu</span>）</h3>
+  <ul>
+    <li>决策 <code>should_use_weight_sync_relay</code>：<code>adaptive</code> 需副本数 ≥4 且收益 <code>(C−⌈(C−relay)/relay⌉) ≥ 2</code>；中继数 <code>relay_count = ⌊√C⌋</code>（上限 8）；<code>NVLink 域 ≤8 卡强制 direct</code>。</li>
+    <li><b>任务粒度</b>：权重按 shard（fc1/fc2/scale）→ chunk（8×32KB=256KB）→ tile（32KB）切分；stage-1（master→relay）+ stage-2（relay→leaves）两张任务表由单 block×32 内核在 GPU 上构建（中继/叶子选择也贪心在卡上做，按各 rank 累计出口字节摊流量）。</li>
+    <li><b>执行</b>：persistent 内核，CTA 数 = <code>SM×multiplier</code>（clamp 到总 tile 数），leader <code>atomicAdd</code> 抢 tile；<b>32KB smem 双缓冲</b>：tile N 的 TMA load 与 tile N−1 的 N 路 TMA store 重叠——本地读一次、多播写给所有副本；每 chunk 的 <code>ready flag</code> 用 <b>epoch 号</b>而非布尔（多步间免清零）；≤8 卡的域退化为整 block 向量化线程拷贝版。</li>
+    <li>效果：热专家出口流量从 O(C) 降到 O(√C)，chunk 级流式避免全局 barrier（论文/博客的 chunk-streaming relay，对应 §5.3 中的两阶段中继树）。</li>
+  </ul>
+
+  <h3>4.5 reroute 与 grad_reduce（<span class="filetag">reroute.cu / grad_reduce.cu</span>）</h3>
+  <ul>
+    <li><b>reroute fwd</b>：两遍（count → scatter）。quota 路径用 <code>upper_bound(rank_quota_prefix, ordinal)</code> 选副本；legacy/round-robin 用 <code>ordinal % C</code>；可选 <code>interleave</code>（先乘与总数互素的步长）把“同一 token 区间打在同一副本”的锯齿热点打散，降低后续 dispatch 拥塞。<b>reroute bwd</b> 用前向保留的 expanded 映射直接 gather（不复算、确定性）。</li>
+    <li><b>grad_reduce</b>：persistent 内核（默认 42 SM、须偶数 ≤ 设备 SM）。<b>deterministic 版</b>按任务表序做保序累加（每 (master,shard) 组首任务写、依序累加后整体写回）→ <b>bitwise 可复现</b>（e2e 用 bitwise_equal 验证）；atomic 版（<code>deterministic=false</code>）用 <code>atomicAdd</code> 后向量化清零副本槽。归约后副本槽清零、下轮复用。</li>
+    <li>token 搬运本身不在 UltraEP：demo/生产配方里 dispatch/combine 由（Hybrid）DeepEP 提供——UltraEP 只做“专家/副本状态 + 均衡”。</li>
+  </ul>
+
+  <h3>4.6 测试设计（读它的测试怎么验证）</h3>
+  <ul>
+    <li><span class="filetag">tests/utils.py</span>：合成负载 = <b>rank 级 Zipf × local Zipf</b>，<code>zipf_alpha_for_rank_ratio</code> 二分 α 命中目标 <b>rank max/mean 失衡比</b>；topk 用不放回 multinomial；支持高斯截断的可变 token 数（模拟 minibatch 抖动）。</li>
+    <li><span class="filetag">test_solving.py</span>（单卡）：对 ratios {1.0…3.0} × {quota, legacy} 求解；<code>assert_legal</code> 检查：master 不动、副本不跨 NVL 域、同专家同 rank 至多一份、冗余槽不超限、<code>lcnts==有效行数</code>；并报求解后失衡、物理下界、副本统计、内核耗时。</li>
+    <li><span class="filetag">test_e2e.py</span>（分布式）：weight_sync 用“确定性主权重 + 随机化副本”同步后<b>逐位比对</b>（覆盖 direct/relay/force_relay 与 FP8 scale）；grad_reduce deterministic 分支逐位相等 + 槽清零；可接 HybridEP 做端到端联通与带宽。</li>
+  </ul>
+
+  <h3>4.7 工程上值得警惕的点（来自代码）</h3>
+  <ul>
+    <li>NVSHMEM 环境件：<code>NVSHMEM_DISABLE_NVLS=1</code>、<code>CUMEM_GRANULARITY=2^29</code>；构建需 <code>-rdc</code> 且仅 SM90/SM100。</li>
+    <li>16B 对齐硬约束（fc1/fc2 shard 字节数必须 16B 对齐，否则整 tile 降级线程拷贝）；grad 仅支持 fp32；grad_reduce SM 数必须偶数。</li>
+    <li><code>nvl≤8</code> 强制 direct；relay 的正确性依赖 epoch 机制，切换 plan mode 会 <code>cudaDeviceSynchronize</code> + 全清 flags（有全局重排成本）。</li>
+    <li>CUDA graph：内核路径可捕获，但 <code>dense_reroute_*</code> 每次 <code>torch::empty</code> 分配输出（靠 caching allocator 摊平）；负载 profiler 明说与 CUDA graph 不兼容。</li>
+    <li>ready-flag 自旋依赖同域各 rank 如期 launch 同一层 weight_sync——同步训练模式成立，rank 掉队会 spin。</li>
+    <li>开源版反传的权重重分发在 Dgrad 前阻塞执行（与 Wgrad 真正 overlap 需侵入式改 fused grouped GEMM，博客脚注自述未开源）。</li>
+  </ul>
+</section>
+
+<section id="s5">
+  <h2 class="sec"><span class="no">5</span>MoonEP：CuTe DSL 规划内核 + 对称内存通信库</h2>
+  <p>详细报告：<code>src/_analysis/MoonEP_code_analysis.md</code>。行号指向 <code>src/MoonEP/</code> 下对应文件。</p>
+
+  <h3>5.1 先回答“用什么实现的”：CUTLASS Python DSL（不是 Triton，也不是手写 .cu）</h3>
+  <ul>
+    <li>全部通信/规划内核用 <b>NVIDIA CUTLASS Python DSL（CuTe DSL）</b>编写并 <b>JIT 编译</b>（host 侧 <code>functools.lru_cache</code> 缓存每个 (shape,配置) 的编译产物；shape 全部 constexpr 特化）；关键原语（<code>multimem.st</code> 多播写、<code>cp.async.bulk</code>、<code>match.any.sync</code>、<code>griddepcontrol</code>）用 inline-PTX 嵌入。</li>
+    <li><span class="filetag">csrc/</span> 只有 <b>478 行</b>（<code>bindings.cu</code> + <code>nvl_shared_buffer.cuh</code>）：封装 <code>cuMemCreate/Map/ExportToShareableHandle</code>（VMM 对称内存）与 <code>cuMulticastCreate/AddDevice/BindMem</code>（NVSwitch multicast），经 pybind11 暴露为 <code>moonep._C</code>。</li>
+    <li>唯一 pip 依赖 <code>nvidia-cutlass-dsl==4.4.2</code>；payload bf16（<code>H%8==0</code>、16B TMA 对齐）、权重/梯度 fp32；<code>H、H'</code> 需 128 的倍数（2D TMA tile）。</li>
+  </ul>
+
+  <h3>5.2 规划内核（<span class="filetag">moonep/planning.py</span>）：一个 cooperative grid 干完“完美均衡”</h3>
+  <p>入口 <code>launch_planning(ctx, topk_experts_flat, tokens_per_expert, cu_seqlens, plan)</code>，输入是<b>本 rank 真实路由</b>；输出就地写回 <code>dst[N]（规范编码）/ cu_seqlens[E+B] / experts_to_copy[R,B] / zero_fill / remote_stats</code>。单内核分阶段（num_sms×CTA、512 线程/CTA）：</p>
+  <pre>CAP = S×K（每 rank 实 token 容量）
+A0  各 rank 用 multimem 多播把 tpe/topk 汇聚到 rank0；rank0 算专家前缀和 tpe_cumsum 与每个 home 组总 token
+A1  组间迁移矩阵 z：bal[组]=group_tokens[组]−CAP（Σbal=0）
+    贪心：h=argmax bal；u=argmin bal；z[h,u]=−bal[u]；bal[h]+=bal[u]；bal[u]=0（受方一次补满）
+    直到 bal[h]≤0  ⇒  构造上保证【每个 rank 恰好收到 S×K 个实 token】且每个 dest 至多从一个远端 home 组接收
+A2  专家级过户 alloc[e,d]：每个 home 组把配额按“本地剩余最多的专家”逐块让给 argmax 配额的目标
+A3  每个 dest rank 选出 token 最多的 B 个远端专家(experts_to_copy)做预取槽；按组 0..E+B 扫出
+    cu_seqlens（pad 到 token_padding 的倍数）与 zero_fill；rank0 用 multimem_st_v4 一次广播整张规划表
+C1  各 rank 对本层 topk 做 expert 直方图 + 段前缀和 + warp 内 match_any 计数（排序为 O(1) 定位）
+C2  对每条目用 tpe_cumsum 算全局序号，再对 alloc_cumsum 做【固定趟数二分(LOG2_R)】得到目标 rank lo，
+    编码 dst = lo*NvS + expert_off[lo,e] + 组内偏移；同一 token 命中同 dest 的后续项编码为 −(raw)−1（负值保留 raw）
+D   本地化输出 + cross_rank_barrier 发布（全程设备端，无 host 往返）</pre>
+  <p>“完美均衡”的代码来源很干净：<b>每源 rank 恰输出 S×K 个条目、容量 CAP=S×K、贪心循环终态使每个 dest 恰收 S×K</b>——性质由构造保证（报告 §2.3 伪码）。规划的目标是<b>最小化迁移</b>（受方一次补满 → 迁移专家数少），冗余专家只在“某组溢出、需要远端接盘”时才出现。</p>
+
+  <h3>5.3 Dispatch/Combine：没有独立 permute 内核（<span class="filetag">dispatch.py / combine.py / epilogue / prologue</span>）</h3>
+  <ul>
+    <li><b>dispatch</b>：消费 warp 用 <code>cp.async.bulk</code> 把 token 行<b>直接写到远端 rank 的 expert-grouped 槽位</b>（<code>drow = dest_rank*NvS_padded + loff</code>，经对称映射即 NVLink 写）；同 token 命中同 dest 的 K 项被规划器合并为 1 次传输（dedup），zero warp 清 padding，builder warps（仅 fresh）用 per-warp <code>atomicAdd</code> 物化 <code>dup_groups/dup_loffs</code> 结构。</li>
+    <li><b>dispatch_epilogue</b>（本地）：把 primary 行扇出展开到全部重复槽位，供 group GEMM 直接读 <code>[NvS,H]</code>——<b>专家 permute 被“融”进通信本身</b>，而不是先搬回来再 permute。</li>
+    <li><b>combine_prologue</b>（本地反向规约）：重复行的输出先在 smem 里 fp32 累加回 primary；<b>combine</b> 只拉 primary 行（G2S→S2G）累加到 token-major <code>[S,H]</code>，独立 warp 把路由权重 gather 回 <code>[S,K]</code>。</li>
+    <li><b>无 host 同步</b>：自复位 grid/cross-rank barrier（DeepGEMM 血统，写侧 <code>fence.proxy.alias</code>、读侧 <code>fence.proxy.async.global</code> 桥接 multicast/unicast 与 generic/TMA）+ PDL（<code>pdl_trigger_dependents / pdl_wait_predecessor</code>）+ 设备端读 <code>dup_counts</code> + 全静态 shape。</li>
+    <li><b>zero_copy</b>：dispatch 返回 NVL shard 的<b>视图</b>（combine 端 <code>data_ptr()</code> 断言是同一块），专家 FFN 原地读写；代价是视图有别名生命周期约束（autograd 反向必须 <code>zero_copy=False</code>）。</li>
+  </ul>
+
+  <h3>5.4 对称内存与多播（<span class="filetag">csrc/nvl_shared_buffer.cuh</span> + <span class="filetag">moonep/buffer.py</span>）</h3>
+  <ul>
+    <li><code>nvl_dist_alloc</code>：<code>cuMemCreate</code>（PINNED/DEVICE/POSIX_FD）→ Map/SetAccess 建本地 keepalive 张量 → ExportToShareableHandle；<code>nvl_dist_map</code> 收齐各 rank 的 fd 后 <b>把 R 个 chunk 按 rank 序 map 进一段连续 VA、全部 RW</b>（注释明说与参考实现不同：dispatch 要写远端区）。</li>
+    <li><code>nvl_multicast_*</code>：root <code>cuMulticastCreate</code> + 全员 <code>AddDevice</code> + <code>BindMem</code>（注释：BindAddr 对 IPC 导入 VA 非法，故用 BindMem）；<code>multimem.st</code> 写 multicast VA = 硬件扇出到各 rank 同偏移。<b>fd 经 AF_UNIX SOCK_DGRAM + SCM_RIGHTS 传递</b>。</li>
+    <li>对齐是血泪教训集中地：每个 chunk 字节数必须对齐到 VMM 粒度与 multicast 粒度的 max（注释多处给出驱动报错/挂死的教训）。</li>
+    <li>预取/越界直读本质都是<b>对称映射上的 NVLink 远端读（内存语义）</b>，无需显式 RDMA——与 UltraEP 用 NVSHMEM 对称堆是同一哲学的两套实现。</li>
+  </ul>
+
+  <h3>5.5 B 槽机制：prefetch 与 grad_reduce（<span class="filetag">prefetch.py / grad_reduce.py</span>）</h3>
+  <ul>
+    <li>权重张量 <code>[E+B,H,H']</code>：行 <code>[0,E)</code> 是各 home rank 主专家参数（对称映射）；行 <code>[E,E+B)</code> 是本 rank 预取槽。<b>训练用 B=E/R</b>（规划器保证 group GEMM 只摸本地行），<b>推理推荐 B=3–4</b>，槽不够时按 cu_seqlens 直读 home 行（稍慢、正确）。</li>
+    <li><b>prefetch</b>：persistent 2 warp、2D TMA（128×128 bf16、stages 2–6 按 smem 预算选），把 <code>experts_to_copy</code> 指向的远端专家行拷入预取槽；槽物理内存在<b>进程全局池（跨层共享）</b>。</li>
+    <li><b>grad_reduce</b>：<code>[E+B]</code> 梯度行的 <code>[E,E+B)</code> 不是参数梯度，而是独立 <code>[R,B,H,H']</code> fp32 reduce buffer（复制专家梯度是临时值，不能污染框架自身梯度归约）；160 线程 persistent kernel（1 TMA warp + 4 ACC warp）把远端槽读到本地 fp32 参数梯度累加，<code>cross_rank_barrier</code> 后<b>只清自己消费的槽</b>（注释：曾试远端清零被否——同向 NVLink 读写共享带宽，本地清更快）。</li>
+  </ul>
+
+  <h3>5.6 测试与基准（怎么证明“对”和“快”）</h3>
+  <ul>
+    <li><b>正确性 = 与参考实现逐元素比对</b>：<span class="filetag">tests/planning_reference.py</span> 是纯 torch CPU 参考（模拟 A1 贪心/A2 过户/C2 searchsorted/去重）；<code>test_planning</code> 对 <code>dst/cu_seqlens/zero_fill/experts_to_copy</code> 跨 rank all_gather 后逐元素相等，并断言守恒（alloc 行和=expert_count）、容量（列和≤CAP）、padding 倍数、dst 解码界；dedup 结构因生产 <code>atomicAdd</code> 前缀顺序不稳定，<b>只比“group 集合”语义</b>。</li>
+    <li>路由生成器 <span class="filetag">tests/generate_topk_routing.py</span>：lognormal 热门度 + multinomial 不放回采样造可控 maxvio（seed 共享热门度、rank 控逐 token 采样），另有 <code>solve_sigma_for_maxvio</code> 二分 σ 精确命中目标 maxvio。</li>
+    <li><b>性能 = 与 DeepEP v2 elastic 对齐对拍</b>（<span class="filetag">benchmarks/bench_vs_deepep.py</span>）：同路由矩阵（seed 1234）、同 hidden/权重、同计时框架（warmup20/iters50）、同 SM=32、同 alignment/padding=128；逐 op 报 <code>plan / d_f / d_b / c_f / c_b / pf</code>；带宽公式 <code>S·K·H·2/t</code> 两侧一致。<b>grad_reduce 不计入</b>（可被后续计算重叠）。</li>
+    <li>编码契约严谨：<code>RANK_BITS=7（R≤128）、KIDX_BITS=7（K≤127）</code>、跨 2^31 地址运算显式 i64。</li>
+  </ul>
+
+  <h3>5.7 局限（代码级可见）</h3>
+  <ul>
+    <li>单节点 NVLink（EP = world size，bench 即如此跑）；依赖 NVSwitch <b>multicast 硬件能力</b>；bf16 + H/H′ 对齐约束；rank0 承担全局规划（汇聚 + 广播 + 单 warp 贪心）是串行热点；<code>atomicAdd</code> 前缀使 dedup 结构跨次顺序不稳定（测试只比语义）。</li>
+  </ul>
+</section>
+<section id="s6">
+  <h2 class="sec"><span class="no">6</span>六维源码级对比表</h2>
+  <div class="tbl-scroll">
+  <table>
+    <tr><th style="min-width:110px">维度</th><th>EPLB（eplb.py）</th><th>UltraEP（csrc + ultra_ep/）</th><th>MoonEP（moonep/ + csrc/）</th></tr>
+    <tr><td>① 实现技术</td><td>纯 PyTorch / CPU，单文件 164 行，无内核</td><td>Python 编排 + C++ Manager + 手写 CUDA persistent 内核（~7k 行 C++/CUDA），NVSHMEM 对称堆</td><td>CUTLASS Python DSL（CuTe）JIT 内核 + 478 行 VMM/multicast C++ 驱动；无 Triton</td></tr>
+    <tr><td>② 规划算法</td><td>LPT 式贪心复制（argmax weight/logcnt）+ 降序最轻桶打包；无搜索</td><td>容量可行性 oracle + 阈值二分（4 warp 并行探针）；<b>复制与 reroute 联合优化（quota 耦合）</b></td><td>贪婪组均衡（argmax/argmin 互填到 CAP）→ 专家过户 → 固定趟二分落位；一次性解出“迁移最少 + 每 rank 恰 S×K”</td></tr>
+    <tr><td>③ 均衡保证</td><td>启发式：尽量均衡（无硬保证；依赖负载预测准确与路由均摊假设）</td><td>可控近似：oracle eps=0.01，实测终值失衡 1.01–1.04（论文）；目标 T 显式等于 mean×balance_threshold</td><td><b>构造性精确</b>：每 rank 恒收 S×K 实 token（容量约束 + 贪心终态），与失衡无关</td></tr>
+    <tr><td>④ 通信层</td><td>无（只出放置表，token 搬运交给引擎）</td><td>自带：tile(32KB) 双缓冲 TMA 多播流水 + chunk(256KB) 两阶段 relay 树 + epoch ready-flag；NVSHMEM 直读直写（无 NCCL）</td><td>自带：dispatch 直写远端 expert-grouped 槽位（融合 permute）、combine 只拉 primary（融合 unpermute）、multimem 广播规划表、PDL/设备端 barrier 无 host 同步</td></tr>
+    <tr><td>⑤ 与框架集成面</td><td>import 调用返回 3 张映射表（phy2log/log2phy/logcnt）；零侵入</td><td>每层 3 个恒等 autograd 钩子 + <code>Manager</code>；Megatron 3 开关；token 搬运仍由 DeepEP/HybridEP 提供</td><td><code>Buffer</code> API 取代 dispatch/combine；要求权重为连续 <code>[E+B,H,H']</code> 对称张量 + cu_seqlens 寻址（与现有框架布局深度耦合，vLLM 集成走 backend PoC）</td></tr>
+    <tr><td>⑥ 测试完备度</td><td>无测试文件（README 示例经实测与代码一致，可作 golden）</td><td>单卡求解合法性断言 + 分布式 e2e（weight_sync 逐位比对、grad_reduce bitwise、失衡/下界报告）；合成 Zipf 精确命中目标失衡</td><td>CPU 参考实现逐元素比对 + 守恒/容量/padding 不变量 + 全链路 e2e；dedup 语义化比较；与 DeepEP v2 对齐基准</td></tr>
+  </table>
+  </div>
+  <p>一句话总结差异本质：<b>EPLB 把“均衡”当放置期的一次性数值优化；UltraEP 把“均衡”当每个 microbatch×层的控制面问题（GPU 求解 + 数据面原生通信）；MoonEP 把“均衡”当通信层的结构性保证（布局直接让每 rank 恒载 S×K）</b>——三者的“均衡强度”和“工程代价”正是沿这个方向递增的。</p>
+</section>
+
+<section id="s7">
+  <h2 class="sec"><span class="no">7</span>规划算法本质对比（伪代码级）</h2>
+  <p>三者求解的是同一个“最小化最大 rank 负载”问题，但建模与求解路径完全不同：</p>
+  <div class="tbl-scroll">
+  <table>
+    <tr><th></th><th>EPLB</th><th>UltraEP</th><th>MoonEP</th></tr>
+    <tr><td>输入负载</td><td>估计值 <code>weight[L,E]</code>（外部预测，如滑动平均）</td><td>gating 后精确 <code>loads[G,L]</code>（fcollect 汇聚）</td><td>本步真实 <code>tokens_per_expert</code> + <code>topk</code>（多播汇聚）</td></tr>
+    <tr><td>决策变量</td><td>副本份数 + 副本→(节点,GPU) 放置</td><td>阈值 T（隐式）+ 每个 (expert,target) 的 quota q</td><td>组间迁移量 z + 专家级 alloc + 预取专家集合(B)</td></tr>
+    <tr><td>求解方法</td><td>贪心：每步加副本给 argmax(weight/logcnt)；打包用最轻可行桶</td><td>二分 T × 可行性 oracle（excess≤slack、动态 min-tokens、occ 防重复）；4 warp 并行探针</td><td>贪心互填（argmax 超载 → argmin 空余）→ 过户 → 前缀和二分落位</td></tr>
+    <tr><td>输出</td><td>phy2log / log2phy / logcnt（放置 + 反查 + 计数）</td><td>p2l / l2p / lcnts / quota / quota_prefix / rank_quota_prefix（含 reroute 分片信息）</td><td>dst / cu_seqlens / experts_to_copy / zero_fill（含布局与预取清单）</td></tr>
+    <tr><td>与 token 执行关系</td><td>解耦（引擎按表 round-robin 分发）</td><td>耦合：quota_prefix 直接驱动 reroute（upper_bound 选实例）</td><td>耦合：dst 编码直接驱动 dispatch 直写</td></tr>
+    <tr><td>复杂度量级</td><td>O(冗余数 × 行 × 专家) 向量化 + O(L·E·桶) Python 循环</td><td>域内一个 block 并行；<100µs（EP64 求解，博客）</td><td>单 cooperative grid + 固定趟数二分（LOG2_R），开销“可忽略”</td></tr>
+    <tr><td>副本负载假设</td><td>weight/cnt 均摊（round-robin）</td><td>按 quota 精确分片（不再依赖均摊）</td><td>由 alloc 精确过户（不依赖均摊）</td></tr>
+  </table>
+  </div>
+  <p>可以这样记忆三者的进化关系：<b>EPLB 是“先定放置、分发靠引擎”；UltraEP 是“放置与分发一次性联合解出（quota）”；MoonEP 是“连 token 槽位都预先排布好，分发即直写”</b>——控制粒度从“专家级”下沉到“token 槽位级”。</p>
+</section>
+
+<section id="s8">
+  <h2 class="sec"><span class="no">8</span>从代码看三种设计哲学与选型启示</h2>
+  <h3>8.1 三种哲学</h3>
+  <ul>
+    <li><b>EPLB：策略即参数、贪心 × 分层、纯函数交付</b>。把“全局均衡”实现为“层次均衡的退化输入”（同一函数两组参数）；复制与打包都用最朴素 LPT/贪心，靠“组→节点→GPU”的拓扑分层逼近均衡；对外只交三张映射表，算法内部只吃一个 fp32 负载向量——是<b>可移植参考实现</b>的教科书写法。</li>
+    <li><b>UltraEP：全设备决策、状态即对称内存、控制/数据面分离</b>。求解、任务构建、通信全在 GPU（host 只 launch）；跨卡访问一律 NVSHMEM 对称内存普通读写 + TMA，免 IPC 管理；placement/quota（&lt;100µs 控制面）与 weight/grad 传输（数据面）由各自的 persistent 内核承担、SM 预算可调——是<b>为“每步都要重算”而生的工业运行时</b>。</li>
+    <li><b>MoonEP：均衡进入数据布局、零拷贝是融合终点、全套设施服务“无 host 同步”</b>。不提供 permute_in/out，而是把 permute 融进通信（直写 expert-grouped 槽位）、把 unpermute 融进 combine（prologue 预规约 + 只拉 primary）；对称内存 + 多播 + PDL + 设备端 barrier 全部为“每层零 host 往返”服务——是<b>把系统性能细节做到极致的通信库</b>（也因此与引擎的内存布局深度耦合）。</li>
+  </ul>
+  <h3>8.2 若要在自己的引擎里借鉴（按你的目标选）</h3>
+  <div class="tbl-scroll">
+  <table>
+    <tr><th>你的场景</th><th>建议借鉴</th><th>具体条目（附文件）</th></tr>
+    <tr><td>想先低成本做“负载均衡”止血</td><td>EPLB 算法</td><td>移植 3 个纯函数（balanced_packing / replicate_experts / 外壳）；golden = README 示例</td></tr>
+    <tr><td>训练栈（Megatron 系）且要实时均衡</td><td>UltraEP 集成面 + 规划思路</td><td>3 开关接入（examples/*.sh）；quota 二分+可行性 oracle 思路（placement.cu）；autograd 三钩子模式（manager.py）</td></tr>
+    <tr><td>自研推理引擎、想换“均衡的 dispatch/combine”</td><td>MoonEP 通信层</td><td>Buffer API 契约与零拷贝视图（api.py）；B 槽/对称内存设计（buffer.py/csrc）</td></tr>
+    <tr><td>想理解“如何把负载做成测试”</td><td>两家测试方法论</td><td>UltraEP：Zipf 精确命中目标失衡（tests/utils.py）；MoonEP：CPU 参考 + 逐元素比对 + 语义化 dedup（planning_reference.py）</td></tr>
+  </table>
+  </div>
+</section>
+
+<section id="s9">
+  <h2 class="sec"><span class="no">9</span>研读路线图与验证建议</h2>
+  <h3>9.1 最短理解路径（由浅入深）</h3>
+  <ol>
+    <li><b>先读 EPLB 全文件</b>（<code>src/EPLB/eplb.py</code>，20 分钟）——它是“均衡问题”的最小定义与参照系。</li>
+    <li><b>再读 MoonEP 参考实现与 README</b>（<code>src/MoonEP/tests/planning_reference.py</code> → <code>README.md</code> → <code>moonep/api.py</code> 模块 docstring）——理解“通信库形态”的均衡。</li>
+    <li><b>然后读 UltraEP 的 README + 博客</b>（<code>src/UltraEP/docs/blog_v1_zh.md</code>）与 <code>csrc/ultra_ep.hpp</code> 类字段（即架构图），再进 <code>placement.cu</code> 的 oracle/二分与 <code>weight_sync.cu</code> 的双缓冲/relay（全库最难 500 行）。</li>
+    <li>最后对比三家对同一个问题的接口设计（映射表 vs quota 前缀 vs dst 编码）。</li>
+  </ol>
+  <h3>9.2 想亲手验证什么（在你有 GPU 的机器上）</h3>
+  <div class="tbl-scroll">
+  <table>
+    <tr><th>验证项</th><th>命令 / 方式</th><th>预期</th></tr>
+    <tr><td>EPLB 输出与官方一致</td><td><code>python</code> 跑 README 示例</td><td>phy2log 与 README 逐元素一致（本分析已验）</td></tr>
+    <tr><td>EPLB 移植正确性</td><td>自写 golden：logcnt 行和=num_replicas；log2phy 反查无 -1 冲突</td><td>两条不变式恒真</td></tr>
+    <tr><td>UltraEP 求解（单卡）</td><td><code>python tests/test_solving.py</code>（无需集群）</td><td>ratio 1.0–3.0 → 终值失衡贴 1.01，assert_legal 全过</td></tr>
+    <tr><td>UltraEP 分布式正确性</td><td><code>tests/test_e2e.py</code>（SM90/100 + NVLink + NVSHMEM）</td><td>weight_sync 逐位、grad_reduce bitwise</td></tr>
+    <tr><td>MoonEP 规划与参考一致</td><td><code>torchrun --nproc_per_node=8 -m pytest tests/test_planning.py</code></td><td>dst/cu_seqlens 与参考逐元素相等</td></tr>
+    <tr><td>MoonEP vs DeepEP v2 通信</td><td><code>torchrun --nproc_per_node=8 benchmarks/bench_vs_deepep.py --plot r.png</code></td><td>复现 README 曲线（数值见本地 figure/*.png）</td></tr>
+  </table>
+  </div>
+  <div class="callout warn"><span class="t">诚实声明</span>
+  ① 本分析为<b>静态代码精读</b>；除 EPLB（CPU 可跑，已实测）外，UltraEP/MoonEP 需要 SM90/100+NVLink+（MoonEP 还需 NVSwitch multicast）集群，本次未运行——所有相关数字转引自仓库/论文自述。② MoonEP 性能图的绝对数值位于 <code>src/MoonEP/figure/comm_vs_deepep.png</code> 与 <code>e2e_vs_deepep.png</code>，建议直接打开查看。③ 三个仓库均为其文档所述 commit 的快照，后续版本可能演进。</div>
+</section>
+
+<section id="s10">
+  <h2 class="sec"><span class="no">10</span>附：文件索引与参考</h2>
+  <ul class="src-list">
+    <li><b>本地代码</b>：<code>src/EPLB</code>（算法 <code>eplb.py</code>）、<code>src/UltraEP</code>（<code>ultra_ep/manager.py</code>、<code>csrc/ultra_ep.hpp/.cpp</code>、<code>csrc/kernels/{placement,weight_sync,reroute,grad_reduce}.cu</code>、<code>docs/blog_v1_zh.md</code>、<code>tests/</code>）、<code>src/MoonEP</code>（<code>moonep/planning.py</code>、<code>moonep/api.py</code>、<code>moonep/dispatch.py</code>、<code>moonep/combine.py</code>、<code>moonep/prefetch.py</code>、<code>moonep/grad_reduce.py</code>、<code>csrc/nvl_shared_buffer.cuh</code>、<code>tests/planning_reference.py</code>、<code>benchmarks/bench_vs_deepep.py</code>）。</li>
+    <li><b>本地分析报告</b>：<code>src/_analysis/EPLB_code_analysis.md</code>、<code>UltraEP_code_analysis.md</code>、<code>MoonEP_code_analysis.md</code>。</li>
+    <li><b>关联文档</b>：<code>MoE专家并行方案深度解析_EPLB_UltraEP_MoonEP.html</code>（方案级 v2.0，联网一手复核）；<code>UltraEP_research_report.md</code>、<code>_research/</code>（早期检索与全文抓取件）。</li>
+    <li><b>上游</b>：<a href="https://github.com/deepseek-ai/EPLB">deepseek-ai/EPLB</a> · <a href="https://github.com/Dots-Infra/UltraEP">Dots-Infra/UltraEP</a>（+ <a href="https://github.com/Dots-Infra/Megatron-LM-UltraEP">Megatron fork</a>）· <a href="https://github.com/MoonshotAI/MoonEP">MoonshotAI/MoonEP</a>；论文 <a href="https://arxiv.org/abs/2606.04101">arXiv:2606.04101</a>（UltraEP）。</li>
+  </ul>
+  <p class="src-note">下载与精读时间：2026-08；代码快照 commit：EPLB <code>d52c72d5</code>、UltraEP <code>94cab099</code>、MoonEP <code>0f385f03</code>。</p>
+</section>
+
+</main>
+
+<a href="#toc" class="to-top" title="回目录">↑</a>
+
+<footer>
+  <div class="wrap">
+    <p><b>EPLB · UltraEP · MoonEP 源码级对比分析</b> —— 附完整本地源码与三份逐文件分析报告</p>
+    <p>方法：源码全量下载（经本机代理）→ 独立子代理逐文件静态精读 → EPLB 实测运行验证；所有结论均带 <span class="filetag">文件:行号</span> 锚点，可回原文核对。单文件离线 HTML。</p>
+  </div>
+</footer>
+
+</body>
+</html>

@@ -1,0 +1,611 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>大规模 MoE 专家并行（EP）负载均衡与加速方案深度解析：EPLB · UltraEP · MoonEP（联网一手复核版）</title>
+<style>
+  :root{
+    --ink:#1a2332; --ink2:#3d4a5c; --sub:#6b7887;
+    --bg:#f6f8fb; --card:#ffffff; --line:#dfe6ef;
+    --accent:#0f62fe; --tag-v:#0b7a43; --tag-r:#9a6700; --tag-u:#b4232c;
+    --code:#0d1b2a; --codebg:#f0f4f9;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei","Noto Sans CJK SC",sans-serif;
+    color:var(--ink);background:var(--bg);line-height:1.75;font-size:16px}
+  .wrap{max-width:1080px;margin:0 auto;padding:0 22px}
+  header.hero{background:linear-gradient(135deg,#0d1b2a 0%,#123a63 55%,#0f62fe 130%);color:#fff;padding:44px 0 38px}
+  header.hero h1{margin:0 0 10px;font-size:29px;line-height:1.4;letter-spacing:.5px}
+  header.hero p.sub{margin:0;opacity:.93;font-size:15px;max-width:900px}
+  .meta-chip{display:inline-block;background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.25);
+    border-radius:999px;padding:2px 12px;margin:6px 6px 0 0;font-size:12.5px}
+  .meta-chip.g{background:rgba(11,122,67,.45);border-color:rgba(183,227,200,.6)}
+  nav.toc{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px 22px;margin:26px auto}
+  nav.toc h2{margin:0 0 8px;font-size:16px;color:var(--accent)}
+  nav.toc ol{margin:0;padding-left:22px;columns:2;column-gap:38px}
+  nav.toc li{break-inside:avoid;margin:3px 0;font-size:14px}
+  nav.toc a{color:var(--ink2);text-decoration:none}
+  nav.toc a:hover{color:var(--accent);text-decoration:underline}
+  main{padding:6px 0 30px}
+  section{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:26px 30px;margin:22px 0}
+  h2.sec{font-size:23px;border-left:5px solid var(--accent);padding-left:12px;margin:0 0 14px}
+  h2.sec .no{color:var(--accent);font-weight:800;margin-right:8px}
+  h3{font-size:18.5px;color:#123a63;margin:24px 0 8px}
+  h4{font-size:16px;color:#1d4f91;margin:18px 0 6px}
+  p{margin:9px 0;text-align:justify}
+  ul,ol{margin:8px 0;padding-left:26px}
+  li{margin:4px 0}
+  a{color:var(--accent);text-decoration:none;word-break:break-all}
+  a:hover{text-decoration:underline}
+  table{border-collapse:collapse;width:100%;margin:14px 0;font-size:13.5px;background:#fff}
+  th,td{border:1px solid var(--line);padding:7px 9px;vertical-align:top;text-align:left}
+  th{background:#eef3fa;color:#123a63;font-weight:600;white-space:nowrap}
+  tr:nth-child(even) td{background:#fafcff}
+  .tbl-scroll{overflow-x:auto}
+  code{font-family:"JetBrains Mono",Consolas,"Cascadia Code",monospace;background:var(--codebg);border:1px solid #e3e9f2;
+    padding:1px 6px;border-radius:5px;font-size:13px;color:var(--code)}
+  pre{background:var(--code);color:#d7e3f4;border-radius:10px;padding:13px 16px;overflow-x:auto;font-size:13px;line-height:1.6}
+  pre code{background:none;border:none;color:inherit;padding:0;font-size:13px}
+  blockquote{margin:12px 0;padding:10px 16px;background:#f2f7ff;border-left:4px solid var(--accent);border-radius:0 8px 8px 0;color:#28405e}
+  blockquote p{margin:4px 0}
+  .ev{display:inline-block;font-size:11.5px;font-weight:700;border-radius:4px;padding:0 6px;vertical-align:1px;margin-left:2px}
+  .ev.v{background:#e3f5e9;color:var(--tag-v);border:1px solid #b7e3c8}
+  .ev.r{background:#fdf3dd;color:var(--tag-r);border:1px solid #ecd9a8}
+  .ev.u{background:#fde8e8;color:var(--tag-u);border:1px solid #f2c3c5}
+  .callout{border-radius:10px;padding:12px 16px;margin:14px 0;font-size:14.5px}
+  .callout.warn{background:#fff8e6;border:1px solid #f0dfae}
+  .callout.info{background:#eef6ff;border:1px solid #c9defa}
+  .callout.danger{background:#fdf0f0;border:1px solid #f0c9c9}
+  .callout.ok{background:#eefaf1;border:1px solid #c3e8cf}
+  .callout .t{font-weight:700;display:block;margin-bottom:2px}
+  .legend{display:flex;flex-wrap:wrap;gap:10px;margin:10px 0 4px;font-size:13px}
+  .legend span{background:#f1f5fa;border:1px solid #dbe4ef;border-radius:8px;padding:3px 10px}
+  .src-list{font-size:13px}
+  .src-list li{margin:3px 0}
+  .formula{background:#f4f7fb;border:1px dashed #b9c8dc;border-radius:8px;padding:10px 16px;font-family:Georgia,"Times New Roman",serif;font-style:italic;font-size:15.5px;margin:10px 0;overflow-x:auto;text-align:center}
+  .to-top{position:fixed;right:18px;bottom:18px;background:var(--accent);color:#fff;border-radius:50%;width:44px;height:44px;
+    display:flex;align-items:center;justify-content:center;text-decoration:none;font-size:20px;box-shadow:0 4px 14px rgba(15,98,254,.35);z-index:9}
+  .to-top:hover{background:#0b4fd0;text-decoration:none}
+  footer{background:#0d1b2a;color:#aebbd0;padding:26px 0;font-size:13px}
+  footer a{color:#8fc1ff}
+  .src-note{font-size:12.5px;color:var(--sub)}
+  @media (max-width:760px){
+    nav.toc ol{columns:1}
+    section{padding:20px 16px}
+    header.hero h1{font-size:22px}
+    th,td{white-space:normal}
+  }
+  @media print{
+    .to-top{display:none}
+    body{background:#fff}
+    section{border:none;box-shadow:none;page-break-inside:avoid}
+    a{color:var(--ink)}
+  }
+</style>
+</head>
+<body>
+
+<header class="hero">
+  <div class="wrap">
+    <h1>大规模 MoE 专家并行（EP）负载均衡与加速方案深度解析</h1>
+    <p class="sub">以「动机 → 方案设计 → 实现 → 验证」为主线，系统拆解四个研究对象：<b>arXiv:2606.04101（UltraEP 论文）</b>、<b>Dots-Infra/UltraEP</b>、<b>MoonshotAI/MoonEP</b>、<b>deepseek-ai/EPLB</b>；本版为 <b>v2.0（联网一手复核版）</b>，关键结论已对照仓库 README、源码与论文原文核实。</p>
+    <div>
+      <span class="meta-chip">研究主题：MoE · 专家并行 EP · 负载均衡</span>
+      <span class="meta-chip">一手资料直连抓取：2026-08（经本机代理）</span>
+      <span class="meta-chip g">v2.0：核心结论多数已升为 V（一手原文）</span>
+    </div>
+  </div>
+</header>
+
+<div class="wrap">
+  <nav class="toc" id="toc">
+    <h2>目录</h2>
+    <ol>
+      <li><a href="#s1">阅读导览：四个对象、证据体系与本版说明</a></li>
+      <li><a href="#s2">背景与动机：为什么 MoE 大模型离不开专家并行</a></li>
+      <li><a href="#s3">问题形式化与解决空间总览</a></li>
+      <li><a href="#s4">方案一：DeepSeek EPLB（静态专家放置负载均衡器）</a></li>
+      <li><a href="#s5">方案二：UltraEP（机柜级精确负载实时均衡，训练 + 服务 Prefill）</a></li>
+      <li><a href="#s6">方案三：MoonEP（动态冗余专家 + S×K 完美均衡的 EP 通信库）</a></li>
+      <li><a href="#s7">横向对比：设计维度 × 三个方案</a></li>
+      <li><a href="#s8">如何验证：实验方法、指标与复现指南</a></li>
+      <li><a href="#s9">生态演进、学术批判与启示</a></li>
+      <li><a href="#s10">仍待核实事项与一手核实清单</a></li>
+      <li><a href="#s11">参考资料</a></li>
+    </ol>
+  </nav>
+</div>
+
+<main class="wrap">
+
+<section id="s1">
+  <h2 class="sec"><span class="no">1</span>阅读导览：四个对象、证据体系与本版说明</h2>
+  <p>用户给出的四个链接实际对应<b>三个独立系统</b>：<b>arXiv:2606.04101 就是 Dots-Infra/UltraEP 的论文</b>（<i>UltraEP: Unleash MoE Training and Inference on Rack-Scale Nodes with Near-Optimal Load Balancing</i>，小红书「Dots-Infra」× 北京大学）。</p>
+  <div class="tbl-scroll">
+  <table>
+    <tr><th>链接</th><th>系统</th><th>出品方</th><th>一句话定位</th></tr>
+    <tr><td><code>arxiv.org/abs/2606.04101</code></td><td><b>UltraEP</b>（论文）</td><td>小红书（Dots-Infra）× 北大</td><td>面向机柜级（rack-scale）节点的 MoE <b>训练 + 服务 Prefill</b>「精确负载、实时（每个 microbatch × 层）」近最优均衡</td></tr>
+    <tr><td><code>github.com/Dots-Infra/UltraEP</code></td><td><b>UltraEP</b>（代码 v1.0.0）</td><td>同上</td><td>独立 Python/CUDA 运行时：配额驱动规划 + RSN 原生专家状态传输内核（已用于其生产 MoE 训练）</td></tr>
+    <tr><td><code>github.com/MoonshotAI/MoonEP</code></td><td><b>MoonEP</b></td><td>月之暗面 Moonshot AI</td><td>「动态冗余专家」保证每个 rank 恰好 S×K token 的 <b>EP 通信库</b>（训练/推理），正在以 “balanced EP backend” 形态集成进 vLLM</td></tr>
+    <tr><td><code>github.com/deepseek-ai/EPLB</code></td><td><b>EPLB</b></td><td>深度求索 DeepSeek</td><td>推理服务专家并行负载均衡器：<b>复制热专家 + 启发式打包</b>到 GPU，Hierarchical / Global 两种策略（V3/R1 服务配套）</td></tr>
+  </table>
+  </div>
+
+  <div class="callout info"><span class="t">v2.0 版本说明（本次调研如何取得一手资料）</span>
+  <b>阶段一（v1.0）</b>：检索环境无网络直连，只能靠搜索引擎标题/片段，结论分三级标注——<span class="ev v">V</span> 有片段证据 / <span class="ev r">R</span> 多源重构推断 / <span class="ev u">U</span> 未核实。<br>
+  <b>阶段二（v2.0）</b>：诊断发现本机开了系统代理（WinINET <code>127.0.0.1:7890</code>，Clash 类 fake-ip 模式）而沙箱 shell 未继承代理环境变量，导致此前裸请求全失败；改为<b>显式 <code>-Proxy http://127.0.0.1:7890</code></b> 后直连成功，抓取了 12 份一手来源全文：三份仓库 README、UltraEP arXiv 摘要页 + ar5iv 论文全文（346KB）、TEMPO 论文全文、<code>eplb.py</code>、MoonEP 的 <code>planning.py / api.py / bench_vs_deepep.py</code>、UltraEP 的 <code>manager.py / placement.cu</code>。<br>
+  <b>因此</b>：本文 §4–§6 的方案描述与数字基本都改为对一手原文的转述（逐条仍可回链原文）；少数无法核实处继续标 <span class="ev u">U</span>，集中在 §10。</div>
+</section>
+
+<section id="s2">
+  <h2 class="sec"><span class="no">2</span>背景与动机：为什么 MoE 大模型离不开专家并行</h2>
+
+  <h3>2.1 MoE 架构的“稀疏”本质</h3>
+  <p>混合专家（MoE）把 Transformer FFN 层替换为「一个门控 router + 一组专家 FFN」：每个 token 经 router 打分后只激活其中<b>少数专家</b>。以 DeepSeek-V3 为例（<a href="https://arxiv.org/abs/2412.19437">技术报告 arXiv:2412.19437</a>）：总参数 671B、每 token 激活约 37B；每 MoE 层 1 个共享专家 + 256 个路由专家、每 token 激活其中 top-8 路由专家。<span class="ev v">V</span>（UltraEP 论文也确认其训练采样为 “DeepSeek-V3 (top-8 activated of 256 experts)”）</p>
+  <p>“稀疏”带来两个天然后果：<b>权重体量大、激活量小</b>（数百 B 参数基本都在各层专家 FFN 上）；<b>路由分布不均匀</b>（真实负载下少量“热专家”承接大量 token）。</p>
+
+  <h3>2.2 并行选择：TP / DP / EP</h3>
+  <ul>
+    <li><b>TP</b>：切分单个算子，通信随专家数爆炸，不适合大 MoE；<b>DP/流水</b>：各放一份完整权重，显存翻倍。</li>
+    <li><b>EP</b>：把专家本身打散到多卡，每卡只持部分专家；token 选中异卡专家时须<b>跨卡搬运</b>（每 MoE 层一次 All-to-All dispatch/combine）。EP 暴露并行度大、算术强度高，是百 B 级 MoE 训练与服务的必然选择——UltraEP 论文的原话：large-EP（32/64 路）已成为训练与服务数百 B MoE 模型的必备手段。<span class="ev v">V</span></li>
+  </ul>
+  <blockquote><p>DeepSeek 官方《DeepSeek-V3/R1 推理系统概览》：大规模<b>跨节点专家并行（EP）</b>用于增大 batch size、隐藏传输耗时（<a href="https://raw.githubusercontent.com/deepseek-ai/open-infra-index/56d86855fcf6e08fdfd45ce6280bd24322c93351/202502OpenSourceWeek/day_6_one_more_thing_deepseekV3R1_inference_system_overview.md">open-infra-index 原文</a>）。<span class="ev v">V</span></p></blockquote>
+
+  <h3>2.3 为什么 EP 高效却又“难”：三个痛点</h3>
+  <h4>痛点 A：专家负载不均衡 → “短板卡”拖慢整层</h4>
+  <p>UltraEP 论文（§1）对失衡的三种显式表述：失衡放大为 <b>① 专家计算 straggler、② token All-to-All 瓶颈、③ 过载设备的激活显存尖峰</b>；且“EP 度数越大，效应越复合，实际与理想吞吐的差距越大”。<span class="ev v">V</span> TEMPO 论文则概括为“EP 服务中<b>每一层都以最慢 GPU 同步</b>”（<a href="https://ar5iv.labs.arxiv.org/html/2608.13057">arXiv:2608.13057</a> 摘要）。<span class="ev v">V</span></p>
+  <p>失衡为什么在<b>推理/服务</b>中无法靠训练解决：DeepSeek-V3/R1 采用 <b>aux-loss-free</b> 训练（去掉辅助均衡损失，改为路由 bias + 序列级互补损失的 DeepSeek 配方，见 <a href="https://arxiv.org/abs/2412.19437">V3 报告</a>）——训练时的均衡手段<b>不保证</b>推理流量均衡；且 prefill 阶段专家热度随「语义域 × 层 × 步」剧烈漂移（UltraEP §3 的实测观察），静态放置必然滞后。<span class="ev v">V</span></p>
+  <h4>痛点 B：跨节点 All-to-All 与专家状态搬运的通信成本</h4>
+  <p>EP 每层 dispatch/combine，且热专家复制/权重分发本身就是大流量（详见 §5 的 relay 设计背景）；跨节点只有慢速 scale-out 网络（UltraEP 论文：标准 RDMA 集群里高速 scale-up 仅限单台 4/8-GPU 服务器内）。<span class="ev v">V</span> 因此 DeepSeek 先开源 <b>DeepEP</b>（低延迟 All-to-All 通信库），vLLM 亦把 DeepEP/NIXL 等作为可插拔 EP 通信后端。<span class="ev v">V</span></p>
+  <h4>痛点 C：机柜级（rack-scale）整柜系统改变了设计空间</h4>
+  <p>NVL72 / Atlas SuperPoD 一类的机柜级系统把 scale-up 高速域从“单台 4/8 GPU”扩到“整柜 64+ GPU”，使“整组 EP 待在一个高带宽域内”成为可能——这是 UltraEP 论文点明的范式转变：<b>hot-path 实时均衡在物理上第一次可行</b>（§5 详述）。机器之心报道概括为“互连够快之后，算力空转成为整柜系统新的浪费重灾区”。<span class="ev v">V</span></p>
+
+  <h3>2.4 三个系统在“问题地图”上的位置（本版更新）</h3>
+  <div class="tbl-scroll">
+  <table>
+    <tr><th>类别</th><th>作用时机</th><th>代表</th><th>典型做法（一手确认）</th></tr>
+    <tr><td>① 通信内核优化</td><td>每次 All-to-All / 专家状态传输</td><td>DeepEP、DeepEP v2 elastic、NIXL、MoonEP、UltraEP 内核</td><td>低延迟 dispatch/combine、NVLink/IB 双轨、tile 级流水</td></tr>
+    <tr><td>② 静态专家放置均衡</td><td>部署期（按历史负载周期性重算）</td><td><b>EPLB</b>（§4）</td><td>复制热专家 + 启发式打包；Hierarchical（prefill）与 Global（decode）两策略；依赖负载预测（常用历史滑动平均）</td></tr>
+    <tr><td>③ 精确负载实时均衡</td><td>每个 microbatch × 每层（训练 & 服务 prefill）</td><td><b>UltraEP</b>（§5）</td><td>配额驱动规划（复制 + token reroute 联合优化）+ RSN 原生 tile 流式传输 + 中继树扇出缓解</td></tr>
+    <tr><td>④ 通信层 + 在线规划均衡</td><td>每个 MoE 步（训练 & 推理）</td><td><b>MoonEP</b>（§6）</td><td>在线规划内核强制 S×K 均衡 + 动态冗余专家（NVLink 对称内存 + 零拷贝缓冲）</td></tr>
+  </table>
+  </div>
+  <p>四个位置不是互斥而是<b>互补/继承</b>：EPLB 是 UltraEP 的直接思想源头之一（UltraEP README 致谢 “EPLB and LPLB for pioneering expert-balancing schemes”），MoonEP 又同时借鉴 DeepEP/UltraEP/Echo/AcclEP（其 README 致谢）。§4–§6 逐个展开。</p>
+</section>
+
+<section id="s3">
+  <h2 class="sec"><span class="no">3</span>问题形式化与解决空间总览</h2>
+
+  <h3>3.1 统一问题模型</h3>
+  <p>把三个系统放进同一张“图纸”上：</p>
+  <ul>
+    <li><b>E</b>：某层逻辑专家数（如 V3 的 256 路由专家 + 共享专家）；<b>M</b>：EP 世界大小；<b>S</b>：每 rank 输入 token 数；<b>K</b>：每 token 路由的 top-k 数（MoonEP 记号）；</li>
+    <li><b>物理实例</b>：逻辑专家 e 可被复制到多个 rank（宿主集 ℋ(e)，UltraEP 记号），副本数 |ℋ(e)| 由“冗余/复制”决定；</li>
+    <li><b>负载</b>：某步中专家 e 承接的 token 数（S×K 摊到各专家）；</li>
+    <li><b>reroute 量</b>：把源 rank 上属于 e 的 token 分给 e 的某个物理实例 t∈ℋ(e)——UltraEP 的 quota q<sub>e,t</sub> 即“实例 t 的最终 token 负载配额”。</li>
+  </ul>
+  <div class="formula">目标：min&nbsp; max<sub>t</sub> Load(t)；约束：Σ<sub>t∈ℋ(e)</sub> q<sub>e,t</sub> = 供给<sub>e</sub>、副本数 ≤ 冗余预算 R、q 可为切分粒度</div>
+  <p>三方案差异化为：</p>
+  <ul>
+    <li><b>EPLB</b>：负载取<b>预测/历史值</b>，离线求解“复制哪些专家 + 副本放哪”，reroute 交给引擎侧独立启发式（如 round-robin）；周期性重算。<span class="ev v">V</span>（UltraEP 论文对 EPLB 的这一描述）</li>
+    <li><b>UltraEP</b>：取<b>gating 后的精确负载</b>，在每个 microbatch × 每层实时求解 quota（复制与 reroute 联合优化），再用 RSN 原生通信执行复制与 token 重定向。<span class="ev v">V</span></li>
+    <li><b>MoonEP</b>：先按真实路由做<b>在线规划</b>决定把各专家的 S×K 流量发给哪些动态冗余副本，保证每 rank 恰好 S×K token，然后零拷贝执行。<span class="ev v">V</span></li>
+  </ul>
+
+  <h3>3.2 两个贯穿性权衡</h3>
+  <ul>
+    <li><b>冗余 vs 显存/带宽</b>：副本提供调度自由度，但占显存（UltraEP 用跨层复用把单副本槽位压到 MB 级，§5.4）；EPLB 时代对副本显存的粗放管理正是 UltraEP 的改进点之一。<span class="ev v">V</span></li>
+    <li><b>预测/周期 vs 精确/实时</b>：EPLB 靠“历史滑动平均 + 周期重算”摊薄开销，但负载非平稳时滞后（UltraEP §3 实测：专家热度在 microbatch/层/数据域间剧烈漂移，DeepSeek 式路由补偿只削整体失衡、反而放大短期摆动）；精确实时方案把开销压进 hot path（UltraEP <300µs、MoonEP “negligible overhead”）。<span class="ev v">V</span></li>
+  </ul>
+
+  <h3>3.3 时间线（一手更新）</h3>
+  <div class="tbl-scroll">
+  <table>
+    <tr><th>时间</th><th>事件</th><th>说明</th></tr>
+    <tr><td>2024-12 / 2025-01</td><td>DeepSeek-V3 / R1 发布（aux-loss-free MoE、group-limited routing）</td><td>失衡问题源头；EPLB 的 README 明确其复制策略源自 V3 论文</td></tr>
+    <tr><td>2025-02-25~27</td><td>DeepSeek 开源周：DeepEP → <b>EPLB</b> + DualPipe + Profile-data</td><td>先通信层后放置层；EPLB 为 MIT 单文件工具</td></tr>
+    <tr><td>2025 下半年</td><td>SGLang / vLLM / vLLM-Ascend / 华为 CloudMatrix384 移植 EPLB</td><td>EPLB 成为事实标准静态放置器</td></tr>
+    <tr><td>2025-12 ~ 2026-06</td><td>LPLB（线性规划）、Waterfill（在线分发）、DeepEP v2 elastic 出现</td><td>静态 → 在线调度演进（SGLang/LMSYS）</td></tr>
+    <tr><td>2026-06</td><td><b>UltraEP 论文</b> arXiv:2606.04101</td><td>小红书×北大；RSN 精确实时均衡（训练 + prefill）</td></tr>
+    <tr><td>2026-07-15</td><td><b>UltraEP v1.0.0 发布</b>（已用于生产 MoE 训练）</td><td>仓库 News 原文确认</td></tr>
+    <tr><td>2026-07-20 / 07-29</td><td>UltraEP 中文媒体报道（300µs / 94.3% 头条）</td><td>机器之心等</td></tr>
+    <tr><td>2026-07-28 前后</td><td>Kimi K3 开放日；<b>MoonEP</b> 进入媒体视野；vLLM 出现 Kimi K3 MoonEP 集成 RFC</td><td>MoonEP 为通信库形态的“balanced EP backend”</td></tr>
+    <tr><td>2026-08</td><td>TEMPO（2608.13057）等服务侧论文复盘各方案</td><td>指出 token 计数式均衡在 decode 内存受限域的局限</td></tr>
+  </table>
+  </div>
+</section>
+<section id="s4">
+  <h2 class="sec"><span class="no">4</span>方案一：DeepSeek EPLB —— 静态专家放置负载均衡器</h2>
+
+  <h3>4.1 身份与时间线</h3>
+  <ul>
+    <li><b>仓库</b>：<a href="https://github.com/deepseek-ai/EPLB">deepseek-ai/EPLB</a>（Expert Parallelism Load Balancer），核心实现单文件 <code>eplb.py</code>，<b>MIT 许可</b>。<span class="ev v">V</span>（README 与 LICENSE 原文）</li>
+    <li><b>发布</b>：2025-02-27（DeepSeek 开源周第 4 天），与 DualPipe 同日，多数复盘同日第三项为 DeepSeek-Infra Profile-data；梁文锋参与开发见媒体报道（techweb 等）。<span class="ev v">V</span></li>
+    <li><b>定位</b>：DeepSeek V3/R1 服务技术栈的「放置/均衡层」，与 DeepEP（通信层）互补；DeepEP 官网设 <a href="https://www.deepep.org/en/eplb">EPLB 页面</a>。<span class="ev v">V</span></li>
+    <li><b>README 自述（原文要点）</b>：“As described in the DeepSeek-V3 paper, we adopt a <b>redundant experts</b> strategy that duplicates heavy-loaded experts. Then, we heuristically pack the duplicated experts to GPUs … thanks to the <b>group-limited expert routing</b> used in DeepSeek-V3, we also attempt to place the experts of the same group to the same node to reduce inter-node data traffic, whenever possible.”<span class="ev v">V</span></li>
+  </ul>
+
+  <h3>4.2 动机：推理期专家负载倾斜 + 负载预测的“尽力而为”</h3>
+  <p>EPLB 面对的问题：EP 下不同专家热度不同（与当前 workload 相关），若 GPU 间负载失衡，最忙 GPU 决定整层步长。其解法<b>不修改模型与 router</b>，而是<b>在服务部署期按“估计的专家负载”计算一个均衡的专家复制与放置方案</b>。README 明确两点边界：<span class="ev v">V</span></p>
+  <ol>
+    <li>“the exact method to predict the loads of experts is <b>out of this repo's scope</b>. A common method is to use <b>moving average of historical statistics</b>”；</li>
+    <li>因此 EPLB 是<b>对负载估计器 agnostic</b> 的（UltraEP 论文亦评述：常见部署用近期路由历史 + 周期性 rebalance 来摊薄规划与重排开销）。<span class="ev v">V</span></li>
+  </ol>
+  <p>这条“预测 + 周期”路线的软肋正是 UltraEP §3 的批判点：真实流量下专家热度非平稳漂移，预测过期 → 放置不准 → 残差失衡（§5.2）。</p>
+
+  <h3>4.3 方案设计：两种策略（Hierarchical / Global）</h3>
+  <p>注意一个重要更正：v1.0 版把“two types of strategies”理解为「复制算法 + 打包算法」，读到 README 原文后确认它指的是<b>两种适用场景不同的放置策略</b>：<span class="ev v">V</span></p>
+  <div class="tbl-scroll">
+  <table>
+    <tr><th>策略</th><th>适用条件 / 场景</th><th>做法（README 原文要点）</th></tr>
+    <tr><td><b>Hierarchical Load Balancing</b>（分层）</td><td>服务器节点数能整除专家组数时；可用于 <b>prefill</b>（专家并行度较小）</td><td>① 先把<b>专家组</b>均匀打包到<b>节点</b>（利用 group-limited routing，均衡各节点负载）→ ② 在节点<b>内</b>复制专家 → ③ 把副本打包到各 GPU（均衡卡间负载）</td></tr>
+    <tr><td><b>Global Load Balancing</b>（全局）</td><td>其他情况；可用于 <b>decode</b>（专家并行度较大）</td><td>无视专家组、全局复制热专家，再把副本打包到各 GPU</td></tr>
+  </table>
+  </div>
+  <h4>接口与示例（README 原文）</h4>
+  <p>主入口 <code>eplb.rebalance_experts</code>，输入为逐层负载矩阵与放置规模参数，输出 <code>phy2log / log2phy / logcnt</code>（物理↔逻辑专家映射与副本计数）：</p>
+  <pre>import torch, eplb
+weight = torch.tensor([[90,132,40,61,104,165,39,4,73,56,183,86],   # 每行=一层，每列=该层 12 个专家
+                       [20,107,104,64,19,197,187,157,172,86,16,27]])
+num_replicas = 16; num_groups = 4; num_nodes = 2; num_gpus = 8
+phy2log, log2phy, logcnt = eplb.rebalance_experts(weight, num_replicas, num_groups, num_nodes, num_gpus)
+# 示例：2 层 MoE × 每层 12 专家，每层引入 4 个冗余专家，16 个副本放 2 节点 × 每节点 4 GPU</pre>
+  <p>该接口与映射术语在生态中广泛沿用：SGLang 移植版逐行复制该文件并注释“not a pypi package”<span class="ev v">V</span>；GitHub <a href="https://github.com/deepseek-ai/EPLB/issues/22">issue #22</a> 讨论 phy2log 中出现同一 rank 重复热专家 id；<a href="https://github.com/deepseek-ai/EPLB/issues/14">issue #14</a> 讨论 decode 阶段副本语义（与 Global 策略对应）。<span class="ev v">V</span></p>
+
+  <h3>4.4 特性与代价</h3>
+  <ul>
+    <li><b>离线、非关键路径</b>：在负载估计上计算，运行时零开销；负载画像变化时才重算（各引擎通常周期性/按需触发，如 vLLM-Ascend 曾为其重算耗时加 profiling）。<span class="ev v">V</span></li>
+    <li><b>无需辅助损失</b>：作用在已训练模型上（V3/R1 本就用 bias/序列级损失的 DeepSeek 配方而非辅助均衡损失）。<span class="ev v">V</span></li>
+    <li><b>代价 1——副本显存</b>：热专家副本额外占显存（“256 逻辑 + 32 冗余 = 288 物理”这类形态见社区 H20 部署笔记）。<span class="ev v">V</span></li>
+    <li><b>代价 2——与 reroute 解耦</b>：UltraEP 论文指出 EPLB 只做放置，<b>副本间的 token 分发（reroute）由独立启发式（如 round-robin）处理</b>，未与放置联合优化；其效果取决于负载的平稳性。<span class="ev v">V</span></li>
+    <li><b>工程成本低</b>：纯 Python 数值计算，无 NCCL/GPU 依赖；任何引擎可复制算法自行适配。<span class="ev v">V</span></li>
+  </ul>
+
+  <h3>4.5 生态集成（均为一手/可链接证据）</h3>
+  <div class="tbl-scroll">
+  <table>
+    <tr><th>引擎 / 平台</th><th>形态</th><th>参考</th></tr>
+    <tr><td>SGLang</td><td><code>sglang/srt/eplb/</code>：向量化移植 deepseek 算法并扩展 FusedMoE/MTP/TopK 映射等</td><td><a href="https://github.com/sgl-project/sglang/pull/5295">PR #5295</a>、<a href="https://github.com/sgl-project/sglang/pull/8398">#8398</a>、<a href="https://github.com/sgl-project/sglang/pull/7510">#7510</a></td></tr>
+    <tr><td>vLLM（上游）</td><td><code>vllm/distributed/eplb/</code>（eplb_state/eplb_utils/rebalance_algo）+ fused_moe EPLB manager</td><td><a href="https://docs.vllm.ai/en/v0.27.1/api/vllm/distributed/eplb/eplb_state/">API 文档</a>、<a href="https://github.com/vllm-project/vllm/pull/24573">PR #24573</a></td></tr>
+    <tr><td>vLLM-Ascend / 昇腾</td><td>移植 + 自研 “SWIFT balancer”</td><td><a href="https://github.com/vllm-project/vllm-ascend/blob/17f14dd4c194375b619fe1b348a4f0d71ef0e33b/docs/source/developer_guide/Design_Documents/eplb_swift_balancer.md">设计文档</a></td></tr>
+    <tr><td>华为 CloudMatrix384 / xDeepServe</td><td>作为服务流程显式阶段 “Step 2: EPLB Algorithm &amp; Assignment”（384 NPU die）</td><td><a href="https://arxiv.org/html/2508.02520v6">arXiv:2508.02520</a></td></tr>
+    <tr><td>ai-dynamo</td><td>SGLang 后端 EPLB 专家分布路径文档</td><td><a href="https://github.com/ai-dynamo/dynamo/blob/62c7eb4dd1c27a5bfb980640c4babbbba4224776/docs/backends/sglang/expert-distribution-eplb.md">expert-distribution-eplb.md</a></td></tr>
+  </table>
+  </div>
+
+  <h3>4.6 如何验证（一手状态）</h3>
+  <ul>
+    <li><b>EPLB 自带无官方 benchmark</b>（README 无性能表）<span class="ev v">V</span>；其“验证”来自生产实战与第三方测评。</li>
+    <li><b>最强第三方测评其实藏在 UltraEP 论文里</b>（EPLB 作为基线）：训练（3 模型平均）EPLB 相对 Megatron-LM 提升 <b>+20%</b>（同期 LPLB +12%、EPLB++ +29%、UltraEP +42%）；服务 prefill 场景 UltraEP 相对 EPLB 高 <b>1.29×</b>；<b>DeepSeek-V3 训练场景 EPLB/LPLB 甚至与 Megatron-LM 相当或更差</b>（负载短期摆动大，静态方案滞后）。<span class="ev v">V</span>（<a href="https://arxiv.org/abs/2606.04101">2606.04101</a> §8.2）</li>
+    <li><b>SGLang PR #5295 基准</b>：可见 “Total token throughput (tok/s): 33320.48” 一行，上下文对照值需开 PR 看全表。<span class="ev v">V</span></li>
+    <li><b>规模级采用</b>：华为 CloudMatrix384 论文（2508.02520）把 EPLB 写为正式服务阶段。<span class="ev v">V</span></li>
+  </ul>
+
+  <h3>4.7 局限与后续</h3>
+  <ul>
+    <li><b>依赖平稳性</b>：预测过期 → 残差失衡（UltraEP §3/§8 的实证：DeepSeek-V3 上 EPLB 输给不均衡基线 Megatron-LM 的对照组）。<span class="ev v">V</span></li>
+    <li><b>显存开销 + 次优启发式</b>：副本占显存；打包贪心；reroute 与放置解耦。后续工作：DeepSeek <b>LPLB</b>（线性规划，<a href="https://github.com/deepseek-ai/LPLB">repo</a>）、社区 <b>IPLB</b>（整数规划）、SGLang <b>Waterfill</b>（在线分发，<a href="https://www.lmsys.org/blog/2026-06-26-waterfill-lplb">LMSYS 博客</a>）。<span class="ev v">V</span></li>
+    <li>学术界对“按 token 数均衡”的批判（TEMPO：decode 内存受限域应按<b>被激活的副本数</b>而非 token 数建模，详见 §9）。<span class="ev v">V</span></li>
+  </ul>
+  <p class="src-note">本节一手来源：<a href="https://raw.githubusercontent.com/deepseek-ai/EPLB/main/README.md">EPLB README 全文</a>（67 行，建议直接读）；运行示例见 §8.2。</p>
+</section>
+
+<section id="s5">
+  <h2 class="sec"><span class="no">5</span>方案二：UltraEP —— 机柜级精确负载实时均衡（训练 + 服务 Prefill）</h2>
+
+  <h3>5.1 身份与产物</h3>
+  <ul>
+    <li><b>论文</b>：<a href="https://arxiv.org/abs/2606.04101">arXiv:2606.04101</a>；作者 Xinming Wei, Chao Jin, Tuo Dai, Yinmin Zhong, Shan Yu, Chengxu Yang, Bingyang Wu, Zili Zhang, Jing Mai, Qianchao Zhu, Zhouyang Li, Yuliang Liu, Guojie Luo 等（小红书 Dots-Infra × 北大）。<span class="ev v">V</span>（论文 bibtex 原文）</li>
+    <li><b>代码</b>：<a href="https://github.com/Dots-Infra/UltraEP">Dots-Infra/UltraEP</a>（MIT），2026-07-15 发布 <b>v1.0.0</b>，News 原文：“has been deployed in our production MoE training”。<span class="ev v">V</span> 配套 Megatron-LM 参考集成 <a href="https://github.com/Dots-Infra/Megatron-LM-UltraEP">Megatron-LM-UltraEP</a>（含 8×Hopper 可跑 demo 与 Qwen3-235B 配方）；官方博客 <a href="https://dots-infra.github.io/UltraEP">dots-infra.github.io/UltraEP</a>。SGLang 推理集成“experimental，production-ready 后发布”。<span class="ev v">V</span></li>
+    <li><b>定位一句话（README 原文）</b>：“rebalances on the <b>exact post-gating load in real time</b> … replicates hot experts and reroutes tokens <b>within every layer of every microbatch</b>, to achieve <b>near-optimal</b> end-to-end performance.”<span class="ev v">V</span></li>
+  </ul>
+
+  <h3>5.2 动机：从“预测 + 周期”到“精确 + 实时”</h3>
+  <p>论文 §1 的论证链条（全部原文可引）：</p>
+  <ol>
+    <li>large-EP（32/64 路）把失衡放大为 straggler / All-to-All 瓶颈 / 激活显存尖峰，EP 度数越高实际-理想差距越大；</li>
+    <li>既有方案（EPLB 等）<b>预测</b>负载并调整放置，但生产负载<b>非平稳</b>——论文实测“专家热度在 microbatch、层、数据域之间剧烈漂移”（Qwen3-235B top-8/128 专家、EP64 采样），陈旧预测 → 残差失衡；</li>
+    <li>精确负载只有 gating 之后才可知 → 均衡被迫上关键路径（hot path）→ 需要“规划求解 + 专家状态重排”都足够快；</li>
+    <li><b>机柜级 RSN</b>（scale-up 域从单台 4/8-GPU 扩到整柜 64+ GPU）让“整组 EP 处于一个高带宽域、热路径搬专家状态”在物理上可行——但 RSN 只是必要条件：控制面要在 gating→dispatch 的窗口内算好方案，数据面要用 RSN 带宽执行“不规则、易变的专家状态传输”。<span class="ev v">V</span></li>
+  </ol>
+  <p>因此 UltraEP 的落点明确为 <b>训练</b>（贯穿所有阶段）与<b>服务 prefill</b>（论文：“practical balancing target is prefill, where throughput is prioritized to reduce TTFT”）；<b>decode 不在其服务范围</b>（decode 为 memory-bound，后续 TEMPO 论文另作分析）。<span class="ev v">V</span></p>
+
+  <h3>5.3 方案设计：两大创新</h3>
+  <h4>创新一：配额驱动规划器（Quota-driven Planner，联合优化复制与 reroute）</h4>
+  <ul>
+    <li>每个 quota 定义<b>一个专家物理实例的最终 token 负载</b>；quota 把“副本创建”与“token reroute”耦合成一个优化问题：“副本只在携带有效负载时才被物化；reroute 按 locality 实现解出的 quota 切分”。<span class="ev v">V</span></li>
+    <li>求解用<b>高效的阈值二分（threshold-based binary search）</b>，直接优化 reroute 后的负载而非中间放置；对比原话：“Unlike EPLB, which rebalances on stale load and leaves reroute to a separate heuristic (e.g., round-robin), UltraEP directly optimizes the post-reroute load”。<span class="ev v">V</span></li>
+    <li>GPU-resident 内核：<code>update_placement</code> 每 microbatch×层根据精确负载算方案（README 实测 <b>0.067–0.078 ms</b>），产出“实例上的累积配额”（prefix scan）供 reroute 使用。<span class="ev v">V</span></li>
+  </ul>
+  <h4>创新二：RSN 原生专家状态通信（tile 流式 + 中继树扇出缓解）</h4>
+  <ul>
+    <li>权重/梯度按<b>固定大小 tile</b>切分，编译为 GPU 常驻的传输任务（persistent kernel），避免 host 往返与静态集合通信的带宽浪费；weight_sync（主专家权重 → 副本）与 grad_reduce（副本梯度 → 主专家）共用同一执行单元。<span class="ev v">V</span></li>
+    <li><b>Chunk-streaming relay（分块流式中继）</b>：对副本数 &gt; 4 的热专家构建<b>两阶段中继树</b>：源 rank 先播种少量 relay，relay 再转发到叶子；中继前沿约取 √(|ℋ(e)|−1) 以均衡两阶段；按 tile 块流水（relay 收到一块即可转发，per-chunk ready flag 驱动 stage-II）。<span class="ev v">V</span></li>
+    <li><b>Load-Aware Relay Scheduling 内核</b>：按“各 rank 待发字节量”贪心选择 relay 与叶子，均衡所有 rank 的出口流量（README 的 <code>weight_sync</code> 三模式 <code>direct / adaptive / force_relay</code> 与 <code>ULTRA_EP_WEIGHT_SYNC_RELAY_*</code> 旋钮即此实现）。<span class="ev v">V</span></li>
+    <li><b>显存集约</b>：冗余专家槽位<b>跨层复用权重/梯度缓冲、无优化器状态</b>（优化器只作用于主专家）。以 Qwen3-235B-A22B（94 MoE 层 × 128 专家）为例：单个冗余槽由 3.3GB 权重 + 6.6GB 梯度降到<b>每 rank 36MB/72MB</b>。<span class="ev v">V</span></li>
+    <li><b>训练等价性</b>：backward 先重物化副本权重（restore）再做专家 Dgrad，副本 Wgrad 经 <code>grad_reduce</code> 异步归约回主专家并与后续算子重叠；PP/VPP 用 microbatch 槽位管理。<span class="ev v">V</span></li>
+  </ul>
+
+  <h3>5.4 实现与调优面</h3>
+  <ul>
+    <li>独立 Python/CUDA 运行时（非框架插件）：<code>ultra_ep.Manager(group, num_layers, num_local_master_experts, num_local_redundant_experts=R, …)</code>；注册各层主专家指针池，暴露每 rank 冗余槽缓冲。<span class="ev v">V</span></li>
+    <li>要求：SM90/SM100、PyTorch ≥ 2.10、CUDA ≥ 12.3/12.9、节点内 NVLink；唯一第三方依赖 <b>NVSHMEM</b>（<code>nvidia-nvshmem-cu13==3.4.5</code>，计划未来切换 NCCL GIN）。<span class="ev v">V</span></li>
+    <li>兼容 DP/PP/VPP、激活检查点、低精度（FP8 专家含 scale）、CUDA graph。<span class="ev v">V</span></li>
+    <li>可观测性：<code>ULTRA_EP_LOAD_PROFILING</code> 逐 microbatch×专家记录均衡前后负载，配套 HTML <b>load viewer</b> 可视化。<span class="ev v">V</span></li>
+  </ul>
+
+  <h3>5.5 验证（论文 + README，全部一手数字）</h3>
+  <h4>论文实验设置</h4>
+  <ul>
+    <li>公有云 RSN 集群：<b>每 rack 64 GPU（16 台服务器）</b>，scale-up 带宽为 scale-out RDMA 的 8–10×；prefill 用 1 rack，训练用 2–4 rack，最大 <b>256 GPU</b>。<span class="ev v">V</span></li>
+    <li>模型：训练 GLM4.5-106B-A12B（128 GPU）、Qwen3-235B-A22B 与 DeepSeek-V3-671B-A37B（各 256 GPU）；服务 prefill Qwen3-235B 与 GLM4.7-358B（EP64/EP40 + DP attention）；生产训练为内部模型 RefMoE-288B-A16B（EP32）。bf16。<span class="ev v">V</span></li>
+    <li>指标：训练用 TFLOPS/GPU（续跑晚期 checkpoint 的短窗口）；服务用 <b>RPS–平均 TTFT</b>；负载均衡质量用逐层逐批 max/mean 失衡比；为保证负载公平，服务评测记录 SGLang 满载路由轨迹并在其他方案上回放。<span class="ev v">V</span></li>
+    <li>基线：无均衡、force-balanced ideal、Megatron-LM、SGLang、EPLB、LPLB、<b>EPLB++</b>（喂给 EPLB 精确负载的加强版静态方案）。<span class="ev v">V</span></li>
+  </ul>
+  <h4>核心结果</h4>
+  <ul>
+    <li><b>摘要口径</b>：训练 + 服务平均达到 <b>94.3%</b> 的 force-balanced ideal 吞吐，相对无均衡 <b>1.49×</b>；失衡比从 1.30–4.01 降到 <b>1.01–1.04</b>。<span class="ev v">V</span></li>
+    <li><b>分模式</b>：训练 <b>94.6%</b>、服务 prefill <b>93.9%</b>（106B–671B 模型、≤256 GPU）；训练相对 Megatron-LM 平均 <b>1.42×</b>、prefill 相对 SGLang 平均 <b>1.56×</b>；相对 EPLB <b>1.29×</b>、相对 EPLB++ <b>5%–24%</b>；专家复制通信相对主流通信后端 <b>3.1×–5.5×</b>。<span class="ev v">V</span></li>
+    <li><b>训练对比</b>：3 模型平均相对 Megatron-LM——EPLB +20%、LPLB +12%、EPLB++ +29%、UltraEP <b>+42%</b>；DeepSeek-V3（路由补偿放大短期摆动）上 EPLB/LPLB 与 Megatron-LM 相当或更差，UltraEP 仍 &gt;96% ideal。<span class="ev v">V</span></li>
+    <li><b>开销分解</b>（Qwen3-235B-A22B 训练，per MoE 层平均）：相对 ideal 的额外前向时延 <b>0.33ms、仅占总时延 1.8%</b>，后向可忽略；暴露开销 README 口径为<b>大规模 EP 下 &lt;300µs、通常占 step 1%–2%</b>。<span class="ev v">V</span></li>
+    <li><b>显存</b>：无均衡时 MoE 激活峰值比 ideal 高 <b>2×（训练）/ 11×（服务）</b>；UltraEP 压回近 ideal。<span class="ev v">V</span></li>
+    <li><b>生产</b>：RefMoE-288B 多 rack 生产训练持续 &gt;92% ideal、相对无均衡平均 +9.6%，收敛不受影响。<span class="ev v">V</span></li>
+    <li><b>README 自带 EP64 单测表</b>（256 专家、每 rank 4 master + 2 冗余、topk=8、8k token/rank、bf16）：初始失衡 1.51/2.01/3.03 → 终值均 <b>1.01</b>；update_placement 0.067–0.078ms、reroute ~0.04ms、weight_sync（direct）0.21–0.32ms /（adaptive relay）~0.19ms、关键路径带宽 ~706–715 GB/s、grad_reduce（overlap）1.9–2.4ms、副本数最高 6/专家、合计 ≤51。<span class="ev v">V</span></li>
+  </ul>
+
+  <h3>5.6 局限与第三方评述</h3>
+  <ul>
+    <li><b>范围</b>：训练 + 服务 prefill；decode 迭代（memory-bound）不在其目标（§5.2）。<span class="ev v">V</span></li>
+    <li><b>硬件前提</b>：方法依赖 RSN 级 scale-up 域（NVLink 域 ≥ EP 组）；README 自陈“当 NVLink 域小于 EP 组时，可达失衡下限略高于理想 1.0”。<span class="ev v">V</span></li>
+    <li><b>TEMPO 评述</b>：2608.13057 相关工作把 UltraEP 与 LLEP/TAOT 并列为训练侧均衡器，称其“无法在服务栈端到端复现——它们利用了权重/训练侧特性”（原文片段 “Training-side balancers (LLEP, TAOT, UltraEP) cannot be reproduced end-to-end on a serving stack — they exploit wei…”）；其摘要亦把 EPLB/LPLB/UltraEP 归入“按 token 数做均衡”的一类，指出 decode 受限域该模型失效（§9）。<span class="ev v/u">V/U</span></li>
+    <li><b>继承关系</b>：README 致谢——低层通信内核借鉴 DeepEP 与 HybridEP；均衡设计受 EPLB/LPLB 启发。<span class="ev v">V</span></li>
+  </ul>
+</section>
+
+<section id="s6">
+  <h2 class="sec"><span class="no">6</span>方案三：MoonEP —— 动态冗余专家 + S×K 完美均衡的 EP 通信库</h2>
+
+  <h3>6.1 身份与定位（README 一手）</h3>
+  <ul>
+    <li><b>仓库</b>：<a href="https://github.com/MoonshotAI/MoonEP">MoonshotAI/MoonEP</a>；标题：“MoonEP: A Perfectly Balanced Expert Parallelism Library via Dynamic Redundant Experts”；引用信息：Yutian Chen, Cong Li, Yucheng Wang, Ming Wei, 2026。<span class="ev v">V</span></li>
+    <li><b>自述定位</b>：“MoonEP is an <b>Expert Parallelism communication library</b> that keeps token loads <b>perfectly balanced across ranks</b> via <b>dynamic redundant experts</b>.”——注意它是<b>通信库</b>（与 DeepEP 同类、可被引擎调用），而非完整引擎；其「完美均衡」指<b>每个 rank 恰好收到 S×K 个 token</b>，与路由倾斜无关。<span class="ev v">V</span></li>
+    <li><b>时间</b>：媒体集中 2026-07-28~08-02（Kimi K3 开放日 2026-07-28 同期，K3 技术报告 <a href="https://arxiv.org/html/2607.24653">arXiv:2607.24653</a>）；“MoonEP 是否为 K3 三大 Infra 技术之一”<b>未证实</b>。<span class="ev u">U</span></li>
+    <li><b>设备</b>：NVIDIA GPU；真武 PPU“under review, coming soon”。<span class="ev v">V</span></li>
+  </ul>
+
+  <h3>6.2 与 vLLM 的集成（进行中）</h3>
+  <p>vLLM 侧三条证据：<b>RFC #52095</b>（Kimi K3 MoonEP integration roadmap）、<b>PR #52101</b>（BF16 PoC：MoonEP 作为 “balanced EP backend”）、<b>PR #54147</b>（Pin and build MoonEP in tools/ep_kernels，与 DeepEP/NIXL 同通道）。当前处于 PoC/路线图阶段，是否合入未核实。<span class="ev v/u">V/U</span>（链接见 §11）</p>
+
+  <h3>6.3 设计要点（README 一手，三条承诺）</h3>
+  <blockquote><p>Notation：S = 每 rank 输入 token 数，K = 每 token 的 top-k 数。① <b>Perfect balance</b>：无论路由多倾斜，每 rank 恰好收到 S×K token；一小批冗余专家由<b>在线规划</b>从当前 router 输出决定并在专家计算前<b>预取</b>，其梯度在 backward 归约回“家 rank”。② <b>Online planning</b>：近最优 GPU 规划内核、开销可忽略。③ <b>Zero copy &amp; static shapes</b>：融合 permute/unpermute——token 直接写入远端专家分组位置、把缓冲视图交给计算；只需固定 S×K 缓冲，静态形状消除逐层 MoE 的 host 同步。</p></blockquote>
+  <h4>6.3.1 内存模型：NVLink 对称内存上的统一权重张量</h4>
+  <ul>
+    <li>与框架的契约（README 原文要点）：<b>每个专家投影（gate/up/down）每层一个连续对称内存权重张量 <code>[E+B, H, H']</code></b>，各 rank 布局相同；<b>行 [0,E) = 各 rank 本地主专家</b>（每 rank E/R 行，物理上就是主 rank 的参数内存，经对称内存在全局可见）；<b>行 [E,E+B) = 本 rank 的预取槽</b>，由 <code>prefetch_weight</code> 填充，规划器经 <code>cu_seqlens</code> 把“被复制专家的 token 段”指向这些槽。<span class="ev v">V</span></li>
+    <li>物理内存来自<b>跨层共享的进程级池</b>：额外成本是每个投影总共 B 份专家权重，而非每层 B 份（跨层复用，与 UltraEP 同思路）。<span class="ev v">V</span></li>
+    <li><b>B（预取槽数）怎么设</b>：训练必须 <code>B = E/R</code>（规划器最多从每个 rank 的一个远端主组复制 ≤E/R 个专家，保证 group GEMM 触碰的专家全部本地）；推理（只预取、无梯度）允许 <code>B &lt; E/R</code>，<b>推荐 B = 3–4</b>——槽不够时 group GEMM 通过对称内存映射直接读主 rank 权重（稍慢、不影响正确性）。<span class="ev v">V</span></li>
+    <li><b>梯度缓冲（训练）</b>：fp32 <code>[E+B,H,H']</code>；预取槽梯度放在<b>独立 reduce buffer</b>（每 rank 一组，全局拼成 <code>[R,B,H,H']</code> 视图），<code>reduce_grad</code> 让每个主 rank 经 NVLink 远端读回自己专家的梯度、累加并清零槽位。<span class="ev v">V</span></li>
+  </ul>
+  <h4>6.3.2 API 与数据流（dispatch / combine / prefetch / reduce）</h4>
+  <pre>buf = moonep.Buffer(S=4096, H=7168, K=8, E=256, num_ep_ranks=8, num_sms=32, token_padding=128)
+hidden_nvsh, route_w, cu_seqlens, plan = buf.dispatch(hidden_sh, route_weights_sk, topk_experts_sk, tokens_per_expert,
+                                                       zero_copy=True)   # plan = MoonEPCommPlan（前后向复用）
+buf.prefetch_weight(plan, full_gate_weight, full_up_weight, full_down_weight)  # 行[E,E+B)为预取槽
+…  # 框架侧按 cu_seqlens 选中的 VM 组行做 group GEMM（FFN）
+output_sh, _, _ = buf.combine(plan, expert_output_nvsh, zero_copy=True)  # 反 permute + 按路由权重加权
+# backward: combine bwd 用保存的 plan 重新 dispatch（跳过规划、无需预取）；reduce_grad 归约副本梯度</pre>
+  <p>VM 组（VM group）GEMM 通过单一 <code>[E+B,H,H']</code> 张量按行寻址专家（“contiguity is a hard requirement”），这是它与常规“每专家独立张量”框架不兼容的原因（也正是 vLLM 侧需专门适配的点）。<span class="ev v">V</span></p>
+
+  <h3>6.4 性能主张：与 DeepEP v2（elastic）的对拍（README 一手）</h3>
+  <p>基准均跑在 <b>H20、EP=8</b>，扫路由失衡度 <code>maxvio = max_e(T_e/T̄) − 1</code>（0 = 完美均衡）：<span class="ev v">V</span></p>
+  <ul>
+    <li><b>通信单点</b>：MoonEP 的 comm 时间在每个失衡水平都低于 DeepEP v2；且随 maxvio 增大<b>几乎持平</b>，而 DeepEP v2（时延由最热 rank 决定）持续恶化——“perfect balance makes it immune to imbalance”。<span class="ev v">V</span></li>
+    <li><b>对比口径公平性</b>：MoonEP 的规划 + 权重预取内核（DeepEP 没有）已计入柱状图；即便如此，“总 dispatch 时间 ≈ DeepEP v2 的 dispatch 单独耗时，失衡下领先；combine 在各水平显著更快”。<span class="ev v">V</span></li>
+    <li><b>端到端训练</b>：DeepEP 随失衡 iteration 时间攀升，且动态激活形状导致显存碎片化、高失衡下<b>训练 OOM</b>；MoonEP 每 rank 恒定计算 S×K token、形状完全静态，<b>时间持平且从不 OOM</b>。<span class="ev v">V</span></li>
+    <li><b>绝对数值</b>在仓库 figure 图片中（comm_vs_deepep.png / e2e_vs_deepep.png），README 正文未给表——引用绝对吞吐前需看图。<span class="ev u">U</span></li>
+    <li><b>基准公平性细节</b>（bench docstring）：唯一 apples-to-apples 对照是 DeepEP <b>v2 elastic、do_expand=True（expanded dispatch）+ reduced combine</b>——因为 MoonEP 把 expert permute 熔进 comm（fused permute），DeepEP v1 的 recv_x 按源 rank 分组、permute 在外层未熔，故不比 v1。双方共享同一路由矩阵（seed 1234）、同一 hidden/权重张量、同一计时框架（warmup=20 iters=50）、同一 SM 预算（32）与 token_padding（128）；带宽公式 S×K×H×2/t。<span class="ev v">V</span></li>
+  </ul>
+
+  <h3>6.5 验证与复现</h3>
+  <ul>
+    <li><b>官方测试</b>：<code>torchrun --nproc_per_node=8 -m pytest tests/test_{planning,dispatch,combine,e2e,grad_reduce,prefetch}.py</code>（需多卡 + NVLink）；对拍基准 <code>torchrun --nproc_per_node=8 benchmarks/bench_vs_deepep.py [--out r.csv]</code>。<span class="ev v">V</span></li>
+    <li><b>第三方复现</b>：Saipien（Planner-Enforced S×K Token Balance + Zero-Copy Buffers）、ThakiCloud（busiest rank sets step time）等已实际运行其规划代码并撰文。<span class="ev v">V</span></li>
+    <li><b>血缘</b>：README Acknowledgments——启发自 DeepEP、<a href="https://arxiv.org/abs/2603.07685">Echo</a>、<b>UltraEP</b>、AcclEP（阿里 EP 通信库）。<span class="ev v">V</span> 即 MoonEP 与 UltraEP 同源共振，但分工不同：UltraEP 是「规划+复制+通信」全栈独立运行时，MoonEP 是「以均衡为卖点」的通信库（dispatch/combine 由自身提供、planning 内嵌）。</li>
+  </ul>
+
+  <h3>6.6 与 v1.0 文档的差异说明</h3>
+  <p>v1.0 曾基于片段推断“规划内核/CommPlan/零拷贝/冗余因子 R”等要素——读 README 后<b>全部得到证实并精确化</b>（R 实为每 rank 冗余槽/EP 通信规模语境下的副本参数、B 为预取槽参数）；同时也修正了几处：MoonEP 是<b>通信库</b>而非引擎级框架；「无损 top-1 部署」旧叙事<b>始终未检索到任何一手出处</b>，本文不采信；AI Wiki 词条不可靠、不引用。<span class="ev v/u">V/U</span></p>
+</section>
+<section id="s7">
+  <h2 class="sec"><span class="no">7</span>横向对比：设计维度 × 三个方案</h2>
+
+  <div class="tbl-scroll">
+  <table>
+    <tr><th style="min-width:120px">维度</th><th>DeepSeek EPLB</th><th>UltraEP</th><th>MoonEP</th></tr>
+    <tr><td>出品方 / 时间</td><td>DeepSeek；2025-02-27</td><td>小红书×北大；论文 2026-06，v1.0.0 2026-07-15（生产训练在用）</td><td>Moonshot AI；媒体 2026-07 末（Kimi K3 同期）</td></tr>
+    <tr><td>形态</td><td>纯 Python 放置算法（单文件）</td><td>独立 Python/CUDA 运行时（全栈）</td><td>EP <b>通信库</b>（Python + CuTe/CUDA 内核）</td></tr>
+    <tr><td>目标场景</td><td>推理服务（prefill/decode 均适用，两策略分别对应）</td><td><b>训练 + 服务 prefill</b>（decode 不覆盖）</td><td><b>训练 + 推理</b>（含梯度归约路径与推理预取路径）</td></tr>
+    <tr><td>负载来源</td><td><b>预测/历史统计</b>（滑动平均；仓库不负责预测）</td><td><b>gating 后精确负载</b>（无预测）</td><td><b>本步真实路由</b>（在线规划）</td></tr>
+    <tr><td>均衡时机 / 频率</td><td>部署期 + 周期性重算（离线）</td><td><b>每个 microbatch × 每层</b>（实时，规划 ~0.07ms）</td><td><b>每个 MoE 步</b>（在线规划内核，开销“可忽略”）</td></tr>
+    <tr><td>均衡机制</td><td>复制热专家 + 启发式打包（Hierarchical / Global）</td><td>配额驱动：复制 + token reroute <b>联合优化</b>（阈值二分）</td><td>动态冗余专家 + 规划器把 S×K 流量分配到副本；每 rank 恰好 S×K</td></tr>
+    <tr><td>副本/显存策略</td><td>副本直接占显存（粗放）</td><td>冗余槽<b>跨层复用</b>、无优化器状态（Qwen3-235B 槽 3.3GB→36MB）</td><td>预取槽 B（跨层进程级池）；训练 B=E/R，推理 B=3–4 推荐</td></tr>
+    <tr><td>通信层</td><td>不提供（配合 DeepEP 等）</td><td>自带：tile 流式传输 + chunk-streaming 中继树 + load-aware relay（NVSHMEM）</td><td>自带：fused permute dispatch/combine（NVLink 对称内存，零拷贝）</td></tr>
+    <tr><td>并发兼容</td><td>引擎侧决定</td><td>DP/PP/VPP、检查点、低精度、CUDA graph</td><td>异步（comm stream + CUDA event）；显式释放 VMM/NVLink 资源</td></tr>
+    <tr><td>生态集成</td><td>SGLang / vLLM / vLLM-Ascend / CloudMatrix384 已用</td><td>Megatron-LM fork 参考集成；SGLang 推理集成 experimental</td><td>vLLM “balanced EP backend” RFC/BF16 PoC（进行中）；自对拍 DeepEP v2</td></tr>
+    <tr><td>公开量化结果</td><td>官方无表；作为基线被第三方测：训练 +20%（vs Megatron）、prefill 被 UltraEP 超 1.29×</td><td>94.3% ideal（训练+prefill 平均）、训练 1.42×/prefill 1.56× vs 主流引擎基线、失衡 1.01–1.04、热路径 +0.33ms（1.8%）</td><td>H20/EP8：comm 全程低于 DeepEP v2 且对失衡免疫；训练高失衡不 OOM（数值在仓库图中）</td></tr>
+    <tr><td>主要局限</td><td>依赖平稳性；与 reroute 解耦；次优启发式</td><td>需 RSN 级 NVLink 域；decode 不覆盖；服务栈可移植性受 TEMPO 质疑</td><td>对称内存/VM 组内存契约与现有引擎深度耦合；合入 vLLM 尚在 PoC</td></tr>
+    <tr><td>许可证</td><td>MIT</td><td>MIT</td><td>以仓库 LICENSE 为准（引用为 GitHub 收录）</td></tr>
+  </table>
+  </div>
+
+  <h3>7.1 一句话选型视角（v2 更新）</h3>
+  <ul>
+    <li>想在<b>现有推理引擎上快速止血</b>（热度相对稳定）：EPLB 路线仍是零模型改动、生态最全（SGLang/vLLM 现成）。</li>
+    <li>在做<b>整柜级 MoE 训练</b>（或 prefill 优先的服务）、能接受新运行时：UltraEP 是目前唯一有生产训练背书 + 开源代码的“精确实时”方案（先看 Megatron-LM fork 的 8×Hopper demo）。</li>
+    <li>要的是<b>均衡的通信原语</b>（自研引擎/框架集成）：MoonEP 提供 dispatch/combine/prefetch/reduce 全套均衡通信 API，并可直接与 DeepEP v2 对拍评估。</li>
+  </ul>
+</section>
+
+<section id="s8">
+  <h2 class="sec"><span class="no">8</span>如何验证：实验方法、指标与复现指南</h2>
+
+  <h3>8.1 推荐指标（结合三篇一手材料的口径）</h3>
+  <div class="tbl-scroll">
+  <table>
+    <tr><th>层</th><th>指标</th><th>口径出处/说明</th></tr>
+    <tr><td>机制</td><td>失衡比 imbalance = max/mean（逐 rank 或逐专家，逐层逐批平均）</td><td>EPLB/UltraEP/MoonEP 均用；MoonEP 用 maxvio=max_e(T_e/T̄)−1（0=完美）</td></tr>
+    <tr><td>机制</td><td>规划/调度开销</td><td>UltraEP：update_placement 0.067–0.078ms、总暴露 &lt;300µs（1–2% step）；MoonEP：planning 计入对比柱</td></tr>
+    <tr><td>机制</td><td>副本冗余度与显存增量</td><td>UltraEP 报每 rank 槽位字节（36/72MB）；注意 memory-bound 阶段语义（§9）</td></tr>
+    <tr><td>收益</td><td>训练吞吐 TFLOPS/GPU（同 checkpoint 续跑窗口对比）</td><td>UltraEP 论文 §8 方法；报相对无均衡/相对理想的比例</td></tr>
+    <tr><td>收益</td><td>服务吞吐与延迟：RPS–TTFT 曲线、TPOT、分位数</td><td>UltraEP 用 RPS–平均 TTFT；对比应在同一路由轨迹回放下进行（控制变量）</td></tr>
+    <tr><td>收益</td><td>相对 force-balanced ideal 的比例</td><td>“94.3%/94.6%/93.9%”的分母是<b>强制均衡实测最优</b>而非理论值</td></tr>
+    <tr><td>质量</td><td>收敛/输出质量回归</td><td>UltraEP 生产训练保持收敛；服务评测用 STEM/Mixed（GPQA/OpenScience/LongBench）</td></tr>
+    <tr><td>稳定性</td><td>跨 batch/时段的吞吐抖动（std/oscillation）</td><td>静态方案滞后 → 可见振荡；实时方案应更平稳</td></tr>
+  </table>
+  </div>
+
+  <h3>8.2 各方案复现步骤（按仓库原文整理）</h3>
+  <h4>EPLB（算法层 1 分钟可跑通）</h4>
+  <pre>git clone https://github.com/deepseek-ai/EPLB && cd EPLB
+# 读 README（67 行）；跑示例：2 层×12 专家、4 冗余/层、2 节点×4 GPU
+python - <<'PY'
+import torch, eplb
+w = torch.tensor([[90,132,40,61,104,165,39,4,73,56,183,86],[20,107,104,64,19,197,187,157,172,86,16,27]])
+phy2log, log2phy, logcnt = eplb.rebalance_experts(w, num_replicas=16, num_groups=4, num_nodes=2, num_gpus=8)
+print(phy2log)
+PY
+# 引擎级端到端：SGLang 启用 EPLB（--expert-parallel-size + 相关参数，参照 PR #5295 与 dynamo 文档）
+# 或 vLLM 的 vllm/distributed/eplb 路径（eplb_state）
+# 对照实验：同负载开关 EPLB，测失衡比与 tok/s；负载用真实/倾斜合成流量</pre>
+  <h4>UltraEP（需要 SM90/SM100 + NVLink + NVSHMEM）</h4>
+  <pre>git clone https://github.com/Dots-Infra/UltraEP && cd UltraEP
+pip install "nvidia-nvshmem-cu13==3.4.5"     # 唯一第三方依赖；CUDA12 用 nvshmem-cu12
+python setup.py install                       # TORCH_CUDA_ARCH_LIST=9.0/10.0 兜底
+# 单卡放置/reroute 仿真（合成 Zipf 负载，目标失衡比可设）：
+python tests/test_solving.py
+# 分布式端到端（256 专家示例，报 final imbalance、placement/reroute/weight_sync 时延）：
+torchrun --nproc_per_node=$GPUS_PER_NODE --nnodes=$NNODES --node_rank=$NODE_RANK \
+  --master_addr=$MASTER_ADDR --master_port=$MASTER_PORT \
+  tests/test_e2e.py --num-experts 256
+# 训练端到端：用官方 Megatron-LM-UltraEP fork 的 8×Hopper demo / Qwen3-235B 配方（examples/README.md）
+# 诊断：ULTRA_EP_LOAD_PROFILING=1 出 trace，python -m ultra_ep.load_viewer 看均衡前后负载</pre>
+  <h4>MoonEP（多卡 + NVLink）</h4>
+  <pre>git clone https://github.com/MoonshotAI/MoonEP && cd MoonEP && pip install -e .
+# 官方测试：
+torchrun --nproc_per_node=8 -m pytest tests/test_planning.py tests/test_dispatch.py \
+  tests/test_combine.py tests/test_e2e.py tests/test_grad_reduce.py tests/test_prefetch.py
+# 与 DeepEP v2（elastic, do_expand=True）对齐对拍（H20/EP8 复现 README 曲线）：
+torchrun --nproc_per_node=8 benchmarks/bench_vs_deepep.py --out r.csv --plot r.png
+# 端到端推理/训练集成按 README 的 Buffer API 契约（[E+B,H,H'] 权重 + cu_seqlens）；
+# vLLM 侧跟踪 RFC #52095 / PR #52101 是否合入后按 backend 启用</pre>
+
+  <h3>8.3 严谨性要点（重要）</h3>
+  <ul>
+    <li><b>控制变量</b>：同负载同模型同集群，只切均衡策略；服务对比最好像 UltraEP 那样<b>回放同一路由轨迹</b>。</li>
+    <li><b>prefill 与 decode 分开测</b>：EPLB 两策略分别服务两者；TEMPO 指出 decode 内存受限域与 prefill 的最优目标不同（§9）。</li>
+    <li><b>明确“理想”分母</b>：报 relative-to-ideal 时必须说明 ideal = 强制均衡实测（force-balanced），不是理论峰值。</li>
+    <li><b>数字横比无效</b>：EPLB 的 +20%（vs Megatron-LM 训练）、UltraEP 的 1.56×（vs SGLang prefill）、MoonEP 的 comm 曲线（vs DeepEP v2）分母各不相同，不要跨表直接相除。</li>
+    <li><b>测量热路径开销</b>：实时方案要单独报 planning/weight_sync/reroute 的时延与重叠情况（UltraEP 给了 0.33ms/1.8% 的可比口径）。</li>
+  </ul>
+</section>
+
+<section id="s9">
+  <h2 class="sec"><span class="no">9</span>生态演进、学术批判与启示</h2>
+
+  <h3>9.1 演进主线（一手时间线见 §3.3）</h3>
+  <ul>
+    <li><b>2025-02</b>：DeepSeek 补“通信层（DeepEP）+ 放置层（EPLB）”；EPLB 依赖负载预测与周期重算。</li>
+    <li><b>2025 末~2026 中</b>：LPLB（LP 放置）、Waterfill（在线分发）、DeepEP v2 elastic（弹性副本）——均衡走向在线（<a href="https://www.lmsys.org/blog/2026-06-26-waterfill-lplb">LMSYS 博客</a>）。</li>
+    <li><b>2026-06~08</b>：UltraEP（精确实时、RSN、训练+prefill）与 MoonEP（均衡通信库、进 vLLM 路线图）把“在线均衡”工程化；TEMPO 等服务侧论文进入批判复盘期。</li>
+  </ul>
+
+  <h3>9.2 TEMPO 的批判：token 计数式均衡在 decode 受限域的局限（对三方案都适用）</h3>
+  <p>TEMPO（<a href="https://ar5iv.labs.arxiv.org/html/2608.13057">arXiv:2608.13057</a>，2026-08）摘要的核心论证：<span class="ev v">V</span></p>
+  <blockquote>
+    <p>EP 服务中每层以最慢 GPU 同步。现有 dispatcher（EPLB、LPLB、UltraEP）均衡 <b>token 数</b>（或 METRO 均衡<b>激活专家数</b>），假设专家耗时与其中一个线性相关；但两代数据中心 GPU 实测表明<b>两者都不是</b>：token 数低于 n*≈156–168 时 HBM 权重流占主导——<b>成本挂在“被激活的副本”而非 token</b>；高于 n* 时 grouped GEMM 把 token 圆整到 128-tile 的 M-tile，<b>拆分专家会产生 padding 计算</b>。作者用 max-affine 模型 t=max(a+bG, c+βN) 拟合两域，给出 phase diagram，并主张<b>这是预测性结论而非普适胜利</b>：Qwen3-235B 在其胜区内端到端 +4–6% 吞吐、p99 −15.6%；DeepSeek-V3 在区外（通信受限）只有机制成本。</p>
+  </blockquote>
+  <p>对三方案的直接含义：<b>“均衡 token 数”只在计算受限/线性域是最优代理</b>；decode 的 memory-bound 域应均衡“被激活的副本数”，而拆分副本引入的 GEMM padding 又改变了成本形态——EPLB/UltraEP/MoonEP 的“token 完美均衡”主张在纯 decode 大 batch 场景需按 TEMPO 的 phase 图重新检验（EPLB 的 Global 策略服务于 decode，尤其值得对照）。<span class="ev v">V</span></p>
+
+  <h3>9.3 血缘与竞争小结</h3>
+  <ul>
+    <li>UltraEP ← 思想继承 EPLB/LPLB（README 致谢），← 内核借鉴 DeepEP/HybridEP；MoonEP ← 借鉴 DeepEP/Echo/UltraEP/AcclEP；三者的共同地基是 DeepEP 开创的低延迟 EP 通信。</li>
+    <li>MoonEP 与 UltraEP 最接近“同题异构”：UltraEP = 独立全栈运行时（规划+复制+通信），MoonEP = 通信库内置均衡规划；两者都押注 NVLink 对称内存/共享地址空间做零拷贝。</li>
+    <li>学术界邻域（待细读，交叉引用未逐一核实）：LLEP、TAOT、FEPLB（2604.19654）、ScalpeLB、UBEP（2607.06202，EP 通信重构）、HCRMap（2607.11586）、RoutePack（2608.12146）、Echo（2603.07685）；厂商侧 TensorRT-LLM Wide-EP、vLLM eplb 模块、vLLM-Ascend SWIFT balancer。<span class="ev u">U</span></li>
+  </ul>
+
+  <h3>9.4 给深入研究者的建议</h3>
+  <ol>
+    <li>先分清你要均衡的<b>阶段</b>（prefill/decode/训练）与<b>成本域</b>（计算受限 vs HBM 受限），再选代理指标（token 数 / 激活副本数 / makespan）——TEMPO 的 phase 图是现成的判据。</li>
+    <li>把“副本数”当资源变量：显存预算内最大化调度自由度（跨层复用、动态 B/R）是三家的共同竞争点。</li>
+    <li>复现时以“相对理想/相对无均衡”的<b>控制实验</b>为准，警惕宣传数字的分母差异；生产选型看引擎合入状态（EPLB 已合、MoonEP PoC、UltraEP 走 Megatron fork）。</li>
+  </ol>
+</section>
+
+<section id="s10">
+  <h2 class="sec"><span class="no">10</span>仍待核实事项与一手核实清单</h2>
+  <p>v2.0 已把 §4–§6 的主要机制与数字升级为一手来源；下表为<b>仍需你亲自确认或等待更新</b>的少数事项：</p>
+  <div class="tbl-scroll">
+  <table>
+    <tr><th>系统</th><th>事项</th><th>状态</th><th>核实路径</th></tr>
+    <tr><td rowspan="3">EPLB</td><td>官方 benchmark / 生产内部数据</td><td><span class="ev u">U</span> 仓库无表、官方未发布论文</td><td>README、DeepSeek 后续公开材料</td></tr>
+    <tr><td>logcnt 等返回值的精确语义</td><td><span class="ev r">R</span>（推测=各逻辑专家副本计数）</td><td><code>eplb.py</code> 函数注释与示例图 example.png</td></tr>
+    <tr><td>负载预测方法与周期策略（引擎侧实现）</td><td><span class="ev v">V</span> 仓库声明外包；引擎实现各不同</td><td>SGLang/vLLM 集成代码</td></tr>
+    <tr><td rowspan="3">UltraEP</td><td>配额规划器算法/近似保证的公式级细节（§5）</td><td><span class="ev v/u">V/U</span> 机制与数字已引；证明细节请读论文 §5</td><td><a href="https://ar5iv.labs.arxiv.org/html/2606.04101">ar5iv 全文</a></td></tr>
+    <tr><td>decode/在线推理迭代支持</td><td><span class="ev v">V</span> 明确不覆盖（只训练+prefill）；SGLang 推理集成 experimental</td><td>README、论文 §8</td></tr>
+    <tr><td>RefMoE-288B 生产数字细节</td><td><span class="ev u">U</span> 模型未公开</td><td>论文 §8.1/生产段落</td></tr>
+    <tr><td rowspan="4">MoonEP</td><td>README 性能图内的绝对数值（未 OCR 图片）</td><td><span class="ev u">U</span></td><td>仓库 <code>figure/comm_vs_deepep.png、e2e_vs_deepep.png</code></td></tr>
+    <tr><td>vLLM PR #52101/#54147 是否合入、backend 用法与 BF16 限制</td><td><span class="ev u">U</span>（调研时为 PoC/开放状态）</td><td>vLLM 仓库跟踪 issue #52095</td></tr>
+    <tr><td>是否实际用于 Kimi K3 生产 / 是否三大 Infra 技术之一</td><td><span class="ev u">U</span> 未见一手证据</td><td>K3 技术报告 2607.24653、Moonshot 官方发布</td></tr>
+    <tr><td>旧版“lossless top-1”叙事 / 2025 年论文</td><td><span class="ev u">U</span> 未检索到一手出处，本文不采信</td><td>GitHub 提交历史与 releases</td></tr>
+    <tr><td>公共背景</td><td>各“相对理想”数字的分母定义（force-balanced 实测 vs 理论）</td><td><span class="ev v">V</span> UltraEP 论文已说明；其余对照各自论文</td><td>见 §8.1</td></tr>
+  </table>
+  </div>
+  <p class="src-note">本次直连抓取的一手原文均保存在工作区 <code>_research/</code> 目录（12 份文件），可离线复核；UltraEP 深度调研底稿另见 <code>UltraEP_research_report.md</code>。</p>
+</section>
+
+<section id="s11">
+  <h2 class="sec"><span class="no">11</span>参考资料</h2>
+  <p class="src-note">分组列出；v2.0 关键条目为本次<b>直连抓取并通读</b>的一手来源。</p>
+  <h4>一、EPLB（DeepSeek）</h4>
+  <ul class="src-list">
+    <li>一手：<a href="https://raw.githubusercontent.com/deepseek-ai/EPLB/main/README.md">README（全文已读）</a> · <a href="https://github.com/deepseek-ai/EPLB/blob/main/eplb.py">eplb.py</a> · <a href="https://github.com/deepseek-ai/EPLB/issues/12">issue #12（示例）</a> · <a href="https://github.com/deepseek-ai/EPLB/issues/14">issue #14（decode 副本语义）</a> · <a href="https://github.com/deepseek-ai/EPLB/issues/22">issue #22（phy2log 重复）</a></li>
+    <li>发布与生态：<a href="https://m.techweb.com.cn/article/2025-02-27/2957552.shtml">techweb（开源第四弹）</a> · <a href="https://www.deepep.org/en/eplb">DeepEP 官网 EPLB 页</a> · <a href="https://github.com/sgl-project/sglang/pull/5295">SGLang PR #5295</a> · <a href="https://docs.vllm.ai/en/v0.27.1/api/vllm/distributed/eplb/eplb_state/">vLLM eplb_state</a> · <a href="https://github.com/vllm-project/vllm-ascend/blob/17f14dd4c194375b619fe1b348a4f0d71ef0e33b/docs/source/developer_guide/Design_Documents/eplb_swift_balancer.md">vLLM-Ascend SWIFT balancer</a> · <a href="https://arxiv.org/html/2508.02520v6">华为 CloudMatrix384（arXiv:2508.02520）</a> · <a href="https://github.com/ai-dynamo/dynamo/blob/62c7eb4dd1c27a5bfb980640c4babbbba4224776/docs/backends/sglang/expert-distribution-eplb.md">ai-dynamo 文档</a></li>
+    <li>后续：<a href="https://github.com/deepseek-ai/LPLB">LPLB</a> · <a href="https://github.com/zwyhahaha/IPLB">IPLB</a> · <a href="https://www.lmsys.org/blog/2026-06-26-waterfill-lplb">LMSYS：Waterfill+LPLB</a> · <a href="https://copt.shanshu.ai/news/detail?id=437">杉数科技 40% 估算</a></li>
+  </ul>
+  <h4>二、UltraEP（小红书 × 北大）</h4>
+  <ul class="src-list">
+    <li>一手（已全文通读）：<a href="https://arxiv.org/abs/2606.04101">arXiv:2606.04101</a> · <a href="https://ar5iv.labs.arxiv.org/html/2606.04101">ar5iv 全文</a> · <a href="https://raw.githubusercontent.com/Dots-Infra/UltraEP/94cab099b44fffa99a82fea99e7c12d89cf65e4f/README.md">README@94cab099</a> · <a href="https://github.com/Dots-Infra/UltraEP">仓库</a> · <a href="https://github.com/Dots-Infra/Megatron-LM-UltraEP">Megatron-LM-UltraEP（参考集成）</a></li>
+    <li>官方博客/镜像：<a href="https://dots-infra.github.io/UltraEP">UltraEP Blog v1.0.0</a> · <a href="https://scirate.com/arxiv/2606.04101">scirate</a> · <a href="https://www.alphaxiv.org/abs/2606.04101">alphaXiv</a></li>
+    <li>报道：<a href="https://www.jiqizhixin.com/articles/2026-07-29-12">机器之心（300µs / 94.3%）</a> · <a href="https://mp.weixin.qq.com/s/rAoF65ywi5trWbI-heJieg">开源通稿</a> · <a href="https://www.163.com/dy/article/L3196EH50511AQHO.html">163 转载</a></li>
+    <li>第三方评述：<a href="https://ar5iv.labs.arxiv.org/html/2608.13057">TEMPO（arXiv:2608.13057，全文已读）</a> · <a href="https://jianyuh.github.io/systems/llm/2026/08/12/UltraEP-Exact-Load-Balancing-Rack-Scale-MoE.html">技术博客</a></li>
+  </ul>
+  <h4>三、MoonEP（Moonshot AI）</h4>
+  <ul class="src-list">
+    <li>一手（已全文通读）：<a href="https://raw.githubusercontent.com/MoonshotAI/MoonEP/0f385f038fc33bec22e3bcf5a07a8a22693e754c/README.md">README@0f385f03</a> · <a href="https://github.com/MoonshotAI/MoonEP">仓库</a> · <a href="https://github.com/MoonshotAI/MoonEP/blob/0f385f038fc33bec22e3bcf5a07a8a22693e754c/moonep/planning.py">planning.py</a> · <a href="https://github.com/MoonshotAI/MoonEP/blob/0f385f038fc33bec22e3bcf5a07a8a22693e754c/moonep/api.py">api.py</a> · <a href="https://github.com/MoonshotAI/MoonEP/blob/0f385f038fc33bec22e3bcf5a07a8a22693e754c/benchmarks/bench_vs_deepep.py">bench_vs_deepep.py</a></li>
+    <li>vLLM 集成：<a href="https://github.com/vllm-project/vllm/issues/52095">RFC #52095</a> · <a href="https://app.semanticdiff.com/gh/vllm-project/vllm/pull/52101/overview">PR #52101（BF16 PoC）</a> · <a href="https://app.semanticdiff.com/gh/vllm-project/vllm/pull/54147/overview">PR #54147（ep_kernels）</a></li>
+    <li>背景与报道：<a href="https://arxiv.org/html/2607.24653">Kimi K3 技术报告（arXiv:2607.24653）</a> · <a href="https://www.marktechpost.com/2026/07/29/moonshot-ai-open-sources-moonep-a-perfectly-balanced-expert-parallelism-library-for-moe-training/">MarkTechPost</a> · <a href="https://saipien.org/moonep-planner-enforced-sxk-token-balance-and-zero-copy-buffers-to-fix-moe-skew/">Saipien 解读</a> · <a href="https://thakicloud.com/tech-blog/en/llmops/moonep-balanced-expert-parallelism/">ThakiCloud 复现</a> · <a href="https://arxiv.org/abs/2603.07685">Echo（其致谢工作）</a></li>
+  </ul>
+  <h4>四、背景与机制</h4>
+  <ul class="src-list">
+    <li>DeepSeek-V3 报告 <a href="https://arxiv.org/abs/2412.19437">arXiv:2412.19437</a> · V3/R1 推理系统概览 <a href="https://raw.githubusercontent.com/deepseek-ai/open-infra-index/56d86855fcf6e08fdfd45ce6280bd24322c93351/202502OpenSourceWeek/day_6_one_more_thing_deepseekV3R1_inference_system_overview.md">open-infra-index 原文</a> · <a href="https://github.com/deepseek-ai/DeepEP">DeepEP</a>（含 hybrid-ep 分支）· <a href="https://github.com/deepseek-ai/LPLB">LPLB</a></li>
+    <li>TEMPO <a href="https://ar5iv.labs.arxiv.org/html/2608.13057">arXiv:2608.13057</a>（token vs 激活副本 vs makespan 的 phase 分析，全文已读）</li>
+    <li>学术界邻域：LLEP 2601.17111 · FEPLB 2604.19654 · UBEP 2607.06202 · HCRMap 2607.11586 · RoutePack 2608.12146 · 2512.09277（balance activated experts）</li>
+    <li>ISCA’25 硬件洞察 <a href="https://ar5iv.labs.arxiv.org/html/2505.09343">arXiv:2505.09343</a>（RSN/scale-up 带宽背景）</li>
+  </ul>
+  <p class="src-note">证据图例：<span class="ev v">V</span> 一手原文/可直链核对 · <span class="ev r">R</span> 合理推断 · <span class="ev u">U</span> 待核实。调研与直连抓取时间：2026-08。</p>
+</section>
+
+</main>
+
+<a href="#toc" class="to-top" title="回目录">↑</a>
+
+<footer>
+  <div class="wrap">
+    <p><b>大规模 MoE 专家并行（EP）负载均衡与加速方案深度解析（v2.0 联网一手复核版）</b> —— 研究对象：arXiv:2606.04101（UltraEP）· Dots-Infra/UltraEP · MoonshotAI/MoonEP · deepseek-ai/EPLB</p>
+    <p>调研时间：2026-08；v2.0 通过显式走本机代理（127.0.0.1:7890）直连抓取 12 份一手来源（README/论文全文/源码）并逐条复核；单文件离线 HTML，无外部资源依赖。定量引用请以 §10 核实路径与原始链接为准。</p>
+  </div>
+</footer>
+
+</body>
+</html>
