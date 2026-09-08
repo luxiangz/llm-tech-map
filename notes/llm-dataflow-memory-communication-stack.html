@@ -55,6 +55,8 @@
   h4 { font-size:15.5px; margin:14px 0 6px; }
   p { margin:10px 0; }
   code { font-family:"SFMono-Regular","JetBrains Mono",Consolas,monospace; background:var(--code-bg); border-radius:4px; padding:1px 5px; font-size:.92em; color:var(--code-fg); }
+  pre { background:var(--do-bg); border:1px solid var(--line); border-radius:8px; padding:12px 14px; overflow:auto; font-size:13px; line-height:1.65; margin:12px 0; }
+  pre code { background:transparent; padding:0; color:var(--ink); font-size:13px; }
   .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:16px 18px; box-shadow:0 1px 3px rgba(15,23,42,.04); }
   .lead { background:var(--lead-bg); border-left:4px solid var(--lead-border); padding:14px 18px; border-radius:8px; color:var(--lead-fg); }
   .warn { background:var(--warn-bg); border-left:4px solid var(--warn-border); padding:12px 16px; border-radius:8px; color:var(--warn-fg); }
@@ -198,7 +200,53 @@
       </div>
       <div class="warn"><b>术语提醒：</b>「内存语义」有歧义——有时指「直接操作内存实体」（可涵盖 IB 的 RDMA），有时指「load/store 式统一编址」（CXL 口径）。本文统一用后者：<b>内存语义 ≈ load/store 语义</b>，与「消息语义」相对。RDMA 是夹在中间的「单边消息语义」：底层是队列/消息机制，但单边 Read/Write 让它「看起来像直接访问内存」。</div>
 
-  <h3>1.3 缓存一致 vs 一致性模型</h3>
+  <h3>1.3 load/store 与 put/get：从原理到代码</h3>
+  <p>这俩都是「读写」，但<b>谁执行、怎么执行、同步还是异步</b>完全不同。一句话：<b>load/store 是「我亲自去拿/放」（处理器指令），put/get 是「我叫搬运工去搬」（通信库 API）</b>。</p>
+  <table>
+    <thead><tr><th></th><th>load / store</th><th>put / get（内存级 RMA）</th><th>put / get（对象级）</th></tr></thead>
+    <tbody>
+      <tr><td><b>是什么</b></td><td>处理器<b>指令</b></td><td>通信库<b>函数</b></td><td>存储引擎<b>函数</b></td></tr>
+      <tr><td><b>操作对象</b></td><td>地址（cache line / 字节）</td><td>buffer / 内存块</td><td>Key-Value 对象</td></tr>
+      <tr><td><b>同步性</b></td><td>同步（load 返回即得值）</td><td>异步（发起后查完成）</td><td>异步/同步（引擎封装）</td></tr>
+      <tr><td><b>谁执行</b></td><td>CPU / GPU 自己</td><td>DMA 引擎 / 网卡</td><td>引擎（底层再走 DMA）</td></tr>
+      <tr><td><b>要不要注册</b></td><td>不用（页表映射）</td><td>要（MR 注册 / 对称堆）</td><td>引擎自己管</td></tr>
+      <tr><td><b>代表</b></td><td>CXL.mem / NVLink / HCCS</td><td>shmem_put/get · hixl_put/get · RDMA WRITE/READ</td><td>MemCache / Mooncake Store</td></tr>
+    </tbody>
+  </table>
+
+  <h4>① load/store：处理器指令，地址级，硬件透明</h4>
+  <pre><code>// 统一内存语义（CXL / NVLink / HCCS）：远端地址像本地一样直接 load/store
+int *remote = (int *)remote_gva;   // 远端内存的全局虚拟地址
+*remote = 42;                      // store：一条 STORE 指令，直接写远端
+int v = *remote;                   // load：一条 LOAD 指令，直接读远端
+// 硬件负责地址路由 + 缓存一致性，你感觉不到"通信"</code></pre>
+
+  <h4>② put/get（内存级）：SHMEM / HiXL / RDMA</h4>
+  <pre><code>// SHMEM（PGAS）：显式单边 put/get，异步，要同步
+#include &lt;shmem.h&gt;
+shmem_init();
+int *buf = (int *)shmem_malloc(n * sizeof(int));   // 对称堆
+shmem_int_put(buf, src, n, pe);   // put：把 src 远程写到 PE 的 buf
+shmem_int_get(dst, buf, n, pe);   // get：从 PE 的 buf 远程读
+shmem_barrier_all();              // 同步：确保完成与可见
+
+// HiXL：先注册内存，再单边搬运（异步，查询完成）
+hixl_register(engine, buf, len);
+hixl_put(engine, remote_addr, buf, len, peer);   // put：搬到远端
+hixl_get(engine, buf, remote_addr, len, peer);   // get：从远端拉
+
+// RDMA（IB Verbs）：注册 MR → post WQE(RDMA WRITE) → 轮询 CQ
+ibv_reg_mr(pd, buf, len, ...);            // 注册 MR，得 rkey
+ibv_post_send(qp, &wr, &bad_wr);          // wr.opcode = IBV_WR_RDMA_WRITE（put）</code></pre>
+
+  <h4>③ put/get（对象级）：MemCache / Mooncake Store</h4>
+  <pre><code># 对象级：Key-Value 存取，引擎内部决定走 shmem 还是 hixl
+cache.put("req_123", kv_tensor)   # 存对象
+kv = cache.get("req_123")         # 取对象</code></pre>
+
+  <div class="note"><b>关键洞察：</b>load/store 是「<b>硬件透明</b>」——你写 <code>*ptr = x</code>，硬件自动路由到远端并维护一致性，同步返回，感觉不到通信；put/get 是「<b>显式发起</b>」——你调用 <code>put(dst, src, len)</code>，明确让 DMA/网卡搬这批数据，异步完成。<b>所以 load/store 是「内存语义」，put/get 是「消息/通信语义」。</b>一个易混点：SHMEM 的 <code>shmem_put</code> 虽然叫 put，但它是「显式远程写 + 要同步」，不是 CXL 那种「透明、同步、硬件一致」的 load/store。</div>
+
+  <h3>1.4 缓存一致 vs 一致性模型</h3>
   <p>
     <b>缓存一致（Coherence）</b>：多个观察者（CPU 核 / GPU / NPU）各自有 cache，都缓存了同一块内存时，保证「<b>同一个地址</b>的多个副本最终收敛到一致的值」。它只回答「同一地址的副本怎么收敛」。
     <b>一致性模型（Consistency）</b>：规定「<b>不同地址之间</b>读写操作的顺序与可见性」。
