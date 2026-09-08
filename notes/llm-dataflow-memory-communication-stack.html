@@ -246,6 +246,30 @@ kv = cache.get("req_123")         # 取对象</code></pre>
 
   <div class="note"><b>关键洞察：</b>load/store 是「<b>硬件透明</b>」——你写 <code>*ptr = x</code>，硬件自动路由到远端并维护一致性，同步返回，感觉不到通信；put/get 是「<b>显式发起</b>」——你调用 <code>put(dst, src, len)</code>，明确让 DMA/网卡搬这批数据，异步完成。<b>所以 load/store 是「内存语义」，put/get 是「消息/通信语义」。</b>一个易混点：SHMEM 的 <code>shmem_put</code> 虽然叫 put，但它是「显式远程写 + 要同步」，不是 CXL 那种「透明、同步、硬件一致」的 load/store。</div>
 
+  <div class="fig">
+    <svg viewBox="0 0 980 540" role="img" aria-label="load/store 硬件时序图">
+      <defs><marker id="ah2" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth"><path d="M0,0 L8,3 L0,6 Z" fill="currentColor"/></marker></defs>
+      <g font-size="13" font-weight="700">
+        <rect x="20" y="18" width="220" height="54" rx="8" fill="#0e7490"/><text x="130" y="42" fill="#fff" text-anchor="middle">CPU / GPU</text><text x="130" y="60" fill="#cffafe" text-anchor="middle" font-size="11" font-weight="400">处理器</text>
+        <rect x="270" y="18" width="220" height="54" rx="8" fill="#7c3aed"/><text x="380" y="42" fill="#fff" text-anchor="middle">MMU + Cache</text><text x="380" y="60" fill="#ede9fe" text-anchor="middle" font-size="11" font-weight="400">页表 / 一致性</text>
+        <rect x="520" y="18" width="220" height="54" rx="8" fill="#2563eb"/><text x="630" y="42" fill="#fff" text-anchor="middle">互联</text><text x="630" y="60" fill="#dbeafe" text-anchor="middle" font-size="11" font-weight="400">CXL / NVLink / HCCS</text>
+        <rect x="770" y="18" width="190" height="54" rx="8" fill="#16a34a"/><text x="865" y="42" fill="#fff" text-anchor="middle">远端内存</text><text x="865" y="60" fill="#dcfce7" text-anchor="middle" font-size="11" font-weight="400">远端 HBM / DRAM</text>
+      </g>
+      <g class="life" stroke-dasharray="4 4" stroke-width="1.5">
+        <line x1="130" y1="72" x2="130" y2="500"/><line x1="380" y1="72" x2="380" y2="500"/><line x1="630" y1="72" x2="630" y2="500"/><line x1="865" y1="72" x2="865" y2="500"/>
+      </g>
+      <g font-size="12" fill="currentColor">
+        <line x1="130" y1="110" x2="380" y2="110" stroke="currentColor" stroke-width="2" stroke-dasharray="5 4" marker-end="url(#ah2)"/><text x="255" y="100" text-anchor="middle">① 建立页表映射（一次性，之后免注册）</text>
+        <line x1="130" y1="180" x2="380" y2="180" stroke="currentColor" stroke-width="2" marker-end="url(#ah2)"/><text x="255" y="170" text-anchor="middle">② CPU 执行 LOAD / STORE（读写 GVA）</text>
+        <line x1="380" y1="250" x2="630" y2="250" stroke="currentColor" stroke-width="2" marker-end="url(#ah2)"/><text x="505" y="240" text-anchor="middle">③ 地址翻译，cache miss 发请求</text>
+        <line x1="630" y1="320" x2="865" y2="320" stroke="currentColor" stroke-width="2" marker-end="url(#ah2)"/><text x="747" y="310" text-anchor="middle">④ 互联路由到远端内存</text>
+        <line x1="865" y1="390" x2="380" y2="390" stroke="currentColor" stroke-width="2" marker-end="url(#ah2)"/><text x="622" y="380" text-anchor="middle">⑤ 取回 cache line（可能触发一致性）</text>
+        <line x1="380" y1="460" x2="130" y2="460" stroke="currentColor" stroke-width="2" marker-end="url(#ah2)"/><text x="255" y="450" text-anchor="middle">⑥ 同步返回，load 得到值</text>
+      </g>
+    </svg>
+    <div class="figcap">图：load/store（内存语义）的硬件时序——注意它<b>没有 MR 注册、没有 QP/doorbell/CQ、同步返回</b>，全程硬件透明；对比 §4 Step 4 的 RDMA（消息语义）时序图（异步、显式、要注册）。</div>
+  </div>
+
   <h3>1.4 缓存一致 vs 一致性模型</h3>
   <p>
     <b>缓存一致（Coherence）</b>：多个观察者（CPU 核 / GPU / NPU）各自有 cache，都缓存了同一块内存时，保证「<b>同一个地址</b>的多个副本最终收敛到一致的值」。它只回答「同一地址的副本怎么收敛」。
