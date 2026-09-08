@@ -26,6 +26,12 @@
 - [注意力家族的张量并行（TP）拆解 — MHA · GQA · MLA · DSA 切分策略 × 完整前向 shape 走查](https://luxiangz.github.io/llm-tech-map/notes/attention-tp-shape-forward.html)
 - [大模型端到端数据流 × 内存与通信技术栈](https://luxiangz.github.io/llm-tech-map/notes/llm-dataflow-memory-communication-stack.html)
 
+### MoE 专家并行（EP）负载均衡研究
+
+- [落地索引页](https://luxiangz.github.io/llm-tech-map/docs/)
+- [EPLB · UltraEP · MoonEP 方案深度解析（v2.0 联网一手复核）](https://luxiangz.github.io/llm-tech-map/docs/moe-ep-overview.html)
+- [源码级对比分析（附本地代码与研读路线图）](https://luxiangz.github.io/llm-tech-map/docs/moe-ep-code-analysis.html)
+
 ## 更新进度
 
 1. 编辑 `index.md`，把对应条目 `- [ ]` 改为 `- [x]` 即打勾
