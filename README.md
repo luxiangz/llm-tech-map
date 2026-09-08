@@ -4,6 +4,28 @@
 
 **https://luxiangz.github.io/llm-tech-map/**
 
+## 已发布文档
+
+站点内可直接访问的文档页（HTML）：
+
+### 指南
+
+- [MiniMind 全链路完整指南：从零训练到强化学习与部署](https://luxiangz.github.io/llm-tech-map/minimind-guide.html)
+
+### 推理引擎与 Serving（vLLM）
+
+- [Continuous Batching 完整梳理——机制、意义与前世今生](https://luxiangz.github.io/llm-tech-map/notes/continuous-batching-history-flow.html)
+- [Chunked Prefill 完整梳理——流程、意义与前世今生](https://luxiangz.github.io/llm-tech-map/notes/chunked-prefill-history-flow.html)
+- [PCP 完整过程梳理 — 从拉起服务到长序列请求流转](https://luxiangz.github.io/llm-tech-map/notes/pcp-code-walkthrough.html)
+- [MLA 计算流全图解 & 吸收矩阵对比分析](https://luxiangz.github.io/llm-tech-map/notes/mla-absorb-compute-flow.html)
+- [前缀命中在 Transformer / MoE 中到底节省了什么计算](https://luxiangz.github.io/llm-tech-map/notes/prefix-cache-kv-moe.html)
+
+### 并行与通信
+
+- [SP 与 CP 详解 — 序列并行 vs 上下文并行的来龙去脉与完整对比](https://luxiangz.github.io/llm-tech-map/notes/sp-vs-cp.html)
+- [注意力家族的张量并行（TP）拆解 — MHA · GQA · MLA · DSA 切分策略 × 完整前向 shape 走查](https://luxiangz.github.io/llm-tech-map/notes/attention-tp-shape-forward.html)
+- [大模型端到端数据流 × 内存与通信技术栈](https://luxiangz.github.io/llm-tech-map/notes/llm-dataflow-memory-communication-stack.html)
+
 ## 更新进度
 
 1. 编辑 `index.md`，把对应条目 `- [ ]` 改为 `- [x]` 即打勾
