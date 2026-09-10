@@ -196,11 +196,11 @@ v      = (kv_c @ W_UV.view(Lkv, N*V)).view(Skv,N,V)   <span class="cm"># W_V ≈
   </div>
 
   <div class="fig">
-    <img src="assets/mla/fig_07.png" alt="MHA vs MLA 架构对比图（文献原图）">
+    <img src="../assets/images/notes/mla/fig_07.png" alt="MHA vs MLA 架构对比图（文献原图）">
     <div class="caption">图 1b · <strong>MHA vs MLA 架构对比</strong>（文献原图，InfraTech）——左侧 MHA 的 QKV 层/多头注意力/RoPE/O 层；右侧 MLA 的 Latent c^Q / Latent c^KV 结构，标注"Cached During Inference"（推理时缓存的是压缩 latent 而非完整 K/V）。</div>
   </div>
   <div class="fig">
-    <img src="assets/mla/fig_09.png" alt="MHA vs MLA 公式对比（量化上下采样、k_pe/compress_kv 蓝色框）">
+    <img src="../assets/images/notes/mla/fig_09.png" alt="MHA vs MLA 公式对比（量化上下采样、k_pe/compress_kv 蓝色框）">
     <div class="caption">图 1c · <strong>MHA vs MLA 完整公式对比</strong>（文献原图）——<code>q_t=W^Q h_t</code> 等；MLA 侧 q 有上下采样（W^DQ/W^UQ、RoPE）、KV 是 <code>compress_kv</code> / <code>k_pe</code>（蓝色框=需缓存），attention 的 O_t,l 对 <code>v_c^KV</code> 求和。这是 §2 两条计算流背后<strong>逐变量</strong>的公式基础。</div>
   </div>
 
@@ -226,7 +226,7 @@ v      = (kv_c @ W_UV.view(Lkv, N*V)).view(Skv,N,V)   <span class="cm"># W_V ≈
 
   <h3>2.1 非吸收矩阵版（<code>forward_mha</code>，compute-friendly）</h3>
   <div class="fig">
-    <img src="assets/mla/mla_nonabsorb_flow.webp" alt="非吸收矩阵计算流（文献原图，逐步骤标注 T/W 形状）">
+    <img src="../assets/images/notes/mla/mla_nonabsorb_flow.webp" alt="非吸收矩阵计算流（文献原图，逐步骤标注 T/W 形状）">
     <div class="caption">图 2 · 非吸收矩阵计算流（<strong>文献原图</strong>，InfraTech）——标号 ① 下行投影 / ② Q 上采样 / ③ KV 上采样 / ④ Attention / ⑤ O 投影，每步标注 T[bs, seq_len, ...] 与 W[...] 形状。要点：kv_c 经 ③ 用 W_UK / W_UV 上采样成完整的每头 k_nope/v，再做 <strong>MHA</strong>（KV 上采样是对全量 Skv 做的）。</div>
   </div>
   <p><strong>公式</strong>（<span class="file-ref">mla_attention.py:66-86</span> 伪代码，batch=1）：</p>
@@ -244,7 +244,7 @@ return sdpa_o @ W_O                                       <span class="cm">[Sq, 
 
   <h3>2.2 吸收矩阵版（<code>forward_mqa</code>，data-movement-friendly）</h3>
   <div class="fig">
-    <img src="assets/mla/mla_absorb_flow.webp" alt="吸收矩阵计算流（文献原图，含 W_UK/W_UV 转移标注）">
+    <img src="../assets/images/notes/mla/mla_absorb_flow.webp" alt="吸收矩阵计算流（文献原图，含 W_UK/W_UV 转移标注）">
     <div class="caption">图 3 · 吸收矩阵计算流（<strong>文献原图</strong>，InfraTech）——上方注记"MLA KV 向上采样计算转移：W_UK ← W_UQ、W_UV ← W_O"；③ 变成两个 matmul：<strong>Q 侧</strong> matmul(q_absorb) 用 W_UK，<strong>O 侧</strong> matmul(out_absorb) 用 W_UV。要点：cache 后的 kv_c 直接当 K/V 用，<em>不再上采样</em>，attention 是 <strong>MQA</strong>（K/V head dim = kv_lora_rank = 512）。</div>
   </div>
   <p><strong>公式</strong>（<span class="file-ref">mla_attention.py:94-118</span> 伪代码）：</p>
@@ -275,12 +275,12 @@ return o.view(-1, N*V) @ W_O</code></pre>
   </table>
 
   <div class="fig">
-    <img src="assets/mla/fig_12.webp" alt="non-absorption 与 absorption 完整计算流并排对比">
+    <img src="../assets/images/notes/mla/fig_12.webp" alt="non-absorption 与 absorption 完整计算流并排对比">
     <div class="caption">图 2c · <strong>non-absorption 与 absorption 完整计算流并排对比</strong>（文献原图）——左（non-absorption）③ 是 <code>Linear (up project)</code> 上采样；右（absorption）③ 变成 <code>matmul (q_absorb)</code>，且多出 <code>matmul (out absorb)&amp;view</code>。一眼看出"上采样移到了哪"。</div>
   </div>
 
   <div class="fig">
-    <img src="assets/mla/fig_11.png" alt="吸收原理文字说明：利用矩阵乘法结合律，把 W_UK 吸收进 W_UQ、W_UV 吸收进 W_O">
+    <img src="../assets/images/notes/mla/fig_11.png" alt="吸收原理文字说明：利用矩阵乘法结合律，把 W_UK 吸收进 W_UQ、W_UV 吸收进 W_O">
     <div class="caption">图 2d · <strong>为什么能"吸收"</strong>（文献原图，引自 DeepSeek-V2 论文注释）——"得益于矩阵乘法的结合律，可以把 <code>W^UK</code> 吸收进 <code>W^UQ</code>、<code>W^UV</code> 吸收进 <code>W^O</code>，从而<strong>无需对每个 query 重新计算 key/value</strong>，避免推理时重建 <code>k_t^c</code>、<code>v_t^c</code> 的开销。"</div>
   </div>
 
@@ -294,11 +294,11 @@ return o.view(-1, N*V) @ W_O</code></pre>
   </table>
   <div class="callout green"><strong>一句话记住</strong>：非吸收是"<strong>MHA</strong>（每头独立的 K/V，故要上采样）"，吸收是"<strong>MQA</strong>（共享 latent，head dim=Lkv=512，故 q 进 latent、输出再出 latent）"。head dim 从 128（非吸收）变 512（吸收）——这就是"算力低但数据搬运多"的开关。</div>
   <div class="fig">
-    <img src="assets/mla/fig_13.png" alt="KV 通道对比：非吸收上采样 vs 吸收直接用 latent">
+    <img src="../assets/images/notes/mla/fig_13.png" alt="KV 通道对比：非吸收上采样 vs 吸收直接用 latent">
     <div class="caption">图 3a · <strong>KV 通道对比</strong>（文献原图）——非吸收侧 ③ <code>Linear (up project)</code> 把 compress_kv 上采样成每头 K/V；吸收侧 kv_c（cache 1023）<em>直接</em>进 attention，③ 标注 <code>W[kv_lora_rank, heads*(qk_head_dim+v_head_dim)]</code> 只在吸收时转置/拆成 W_UK_T / W_UV。</div>
   </div>
   <div class="fig">
-    <img src="assets/mla/fig_14.webp" alt="O 通道对比：非吸收直接 Linear(o project) vs 吸收先 matmul(out absorb)">
+    <img src="../assets/images/notes/mla/fig_14.webp" alt="O 通道对比：非吸收直接 Linear(o project) vs 吸收先 matmul(out absorb)">
     <div class="caption">图 3b · <strong>O 通道对比</strong>（文献原图）——非吸收 <code>Linear (o project)</code> 直接出；吸收多一个 ③ <code>matmul (out absorb)&amp;view</code>（W[heads, kv_lora_rank, v_head_dim]）再进 o project。</div>
   </div>
 
@@ -351,23 +351,23 @@ diff &gt; 0 → 吸收更省算力；diff &lt; 0 → 非吸收更省算力</code
   <div class="callout info"><strong>依赖关系</strong>：diff 与 <code>cache_len</code> <strong>线性</strong>、与 <code>seq_len</code> <strong>² 非线性</strong>——正好解释两个极端：Prefill（cache=0）diff 恒负 → 非吸收省；Decode（seq=1）diff 恒正 → 吸收省。Prefix-cache 命中时 cache_len&gt;0，存在让 diff=0 的临界 seq_len，两边算力相等。</div>
   <h3>4.2 文献算力图（InfraTech 实测）</h3>
   <div class="fig">
-    <img src="assets/mla/fig_16.png" alt="Prefill 阶段算力差曲线（cache_seq=0）：diff 随 seq_len 单调下降">
+    <img src="../assets/images/notes/mla/fig_16.png" alt="Prefill 阶段算力差曲线（cache_seq=0）：diff 随 seq_len 单调下降">
     <div class="caption">图 4 · Prefill 阶段：cache_seq=0，diff 随 seq_len 单调下降（非吸收更省，序列越长越明显）——<strong>文献原图</strong></div>
   </div>
   <div class="fig">
-    <img src="assets/mla/fig_17.webp" alt="Decode 阶段算力差曲线（seq_len=1）：diff 随 cache_seq 线性上升">
+    <img src="../assets/images/notes/mla/fig_17.webp" alt="Decode 阶段算力差曲线（seq_len=1）：diff 随 cache_seq 线性上升">
     <div class="caption">图 5 · Decode 阶段：seq_len=1，diff 随 cache_seq <strong>线性上升</strong>（吸收更省，cache 越长越明显）——<strong>文献原图</strong></div>
   </div>
   <div class="fig">
-    <img src="assets/mla/fig_18.png" alt="Prefix-cache 场景算力差曲线（cache_seq=20）：存在 diff=0 临界点">
+    <img src="../assets/images/notes/mla/fig_18.png" alt="Prefix-cache 场景算力差曲线（cache_seq=20）：存在 diff=0 临界点">
     <div class="caption">图 6 · Prefill + prefix-cache：cache_seq=20，曲线由正转负，红圈是 diff=0 临界点（两边算力相等）——<strong>文献原图</strong></div>
   </div>
   <div class="fig">
-    <img src="assets/mla/fig_05.png" alt="diff 二维热力图（x=seq_len, y=cache_len），带 diff=0 红线">
+    <img src="../assets/images/notes/mla/fig_05.png" alt="diff 二维热力图（x=seq_len, y=cache_len），带 diff=0 红线">
     <div class="caption">图 7 · diff 二维热力图（x=seq_len, y=cache_len），红线为 diff=0 分界——<strong>文献原图</strong></div>
   </div>
   <div class="fig">
-    <img src="assets/mla/fig_19.png" alt="diff 三维曲面（x=seq_len, y=cache_len），diff=0 等高线">
+    <img src="../assets/images/notes/mla/fig_19.png" alt="diff 三维曲面（x=seq_len, y=cache_len），diff=0 等高线">
     <div class="caption">图 8 · diff 三维曲面 + diff=0 等高线——<strong>文献原图</strong></div>
   </div>
   <table>
@@ -390,7 +390,7 @@ qkv_o_non_absorb = 128*seq*(128+64) + 128*(seq+cache)*(64+128+128) + 128*seq*128
 qkv_o_absorb     = 128*seq*(512+64) + 128*(seq+cache)*(512+64+512) + 128*seq*512</code></pre>
   <div class="callout red"><strong>一个反直觉的结论</strong>：吸收版<strong>算力更省但显存更大</strong>（decode 时尤其），非吸收<strong>算力更贵但显存更小</strong>（prefill 时）。"以算换存"在 MLA 内部还有一个<strong>反方向的权衡</strong>：吸收版把"上采样的算力"换成了"注意力的大 latent 缓冲显存"。</div>
   <div class="fig">
-    <img src="assets/mla/fig_21.webp" alt="16K 请求下两种形态显存差值代码结果约 1.5GB">
+    <img src="../assets/images/notes/mla/fig_21.webp" alt="16K 请求下两种形态显存差值代码结果约 1.5GB">
     <div class="caption">图 9 · 实测：16K 请求下 <code>max_val_absorb − max_val_non_absorb ≈ 1.50 GB</code>（<strong>文献原图</strong>）——量化印证"吸收版激活峰值更高"。</div>
   </div>
 
@@ -416,7 +416,7 @@ NOTE：什么算大/小目前由调度器打的 prefill/decode 标签决定，
      未来应改按比值动态调（这正是 §4 公式给出的最优判据）。</code></pre>
   <p>换句话说：<strong>vLLM 的实现和这篇文章的 FLOPs 推导殊途同归</strong>——代码按阶段硬编码，文章用 diff 公式证明了"这个硬编码就是最优的"。</p>
   <div class="fig">
-    <img src="assets/mla/fig_20.webp" alt="W_UK/W_UV 形状变换：大小未变，仅拆成 out_absorb 和 q_absorb 两个 matmul">
+    <img src="../assets/images/notes/mla/fig_20.webp" alt="W_UK/W_UV 形状变换：大小未变，仅拆成 out_absorb 和 q_absorb 两个 matmul">
     <div class="caption">图 10 · <strong>吸收权重构造</strong>（文献原图）——"<strong>形状变换，大小未变</strong>"：<code>Linear (up project)</code> 的 <code>W[kv_lora_rank, heads*(qk_head_dim+v_head_dim)]</code> 被拆成 <code>matmul (out absorb)</code> 的 <code>W[heads, kv_lora_rank, v_head_dim]</code> 和 <code>matmul (q_absorb)</code> 的 <code>W[heads, qk_head_dim, kv_lora_rank]</code>——<strong>参数总数不变，只是 reshape/转置</strong>（对照本地代码 <code>kimi_k3/mla.py:350-375</code> 的 <code>W_UK_T=permute</code>、<code>W_UV=transpose</code>）。</div>
   </div>
 

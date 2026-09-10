@@ -10,7 +10,7 @@
 
 ### 指南
 
-- [MiniMind 全链路完整指南：从零训练到强化学习与部署](https://luxiangz.github.io/llm-tech-map/minimind-guide.html)
+- [MiniMind 全链路完整指南：从零训练到强化学习与部署](https://luxiangz.github.io/llm-tech-map/guides/minimind-guide.html)
 
 ### 推理引擎与 Serving（vLLM）
 
@@ -41,10 +41,15 @@
 
 | 文件 | 作用 |
 |---|---|
-| `index.md` | 技术地图主页（日常只需编辑这一个文件） |
+| `index.md` | 统一入口：顶部为已发布文档索引，下方为完整学习地图 |
+| `guides/` | 独立长文指南（MiniMind 等） |
 | `notes/` | 知识点的详细笔记页（与地图条目互相链接） |
+| `docs/` | 专题研究笔记（MoE 专家并行负载均衡） |
+| `assets/css/` | Jekyll 主题样式与字体排版覆盖 |
+| `assets/lib/` | 前端库（MathJax / highlight.js） |
+| `assets/images/` | 全站图片，按指南与笔记分目录存放 |
+| `minimind-guide.html` | 兼容旧链接的跳转页，指向 `guides/minimind-guide.html` |
 | `_config.yml` | Jekyll 配置：GFM 引擎 + cayman 主题 |
-| `assets/css/style.scss` | 字体与排版覆盖（霞鹜文楷 / 微软雅黑标题） |
 
 ## 发布方式
 

@@ -8,7 +8,31 @@ description: 面向大模型方向的完整技术知识目录，覆盖从数学�
 > **进度追踪**：在源码中把 `- [ ]` 改为 `- [x]` 即为已完成（GitHub Pages 渲染为复选框）。
 > 建议学习顺序：领域一 → 领域五/三（核心双主线）→ 领域四 → 领域六 → 领域七 → 领域二 → 领域八 → 领域九 → 领域十（贯穿全程）。
 
-## 目录
+## 已发布文档索引
+
+> 本站所有长文/指南的统一入口；点链接直接阅读，返回首页按钮在各文档右上角。
+
+### 学习指南
+- [MiniMind 全链路完整指南：从零训练到强化学习与部署](guides/minimind-guide.html)
+
+### 推理引擎与 Serving
+- [Continuous Batching 完整梳理——机制、意义与前世今生](notes/continuous-batching-history-flow.html)
+- [Chunked Prefill 完整梳理——流程、意义与前世今生](notes/chunked-prefill-history-flow.html)
+- [PCP 完整过程梳理 — 从拉起服务到长序列请求流转](notes/pcp-code-walkthrough.html)
+- [MLA 计算流全图解 & 吸收矩阵对比分析](notes/mla-absorb-compute-flow.html)
+- [前缀命中在 Transformer / MoE 中到底节省了什么计算](notes/prefix-cache-kv-moe.html)
+
+### 并行与通信
+- [SP 与 CP 详解 — 序列并行 vs 上下文并行的来龙去脉与完整对比](notes/sp-vs-cp.html)
+- [注意力家族的张量并行（TP）拆解 — MHA · GQA · MLA · DSA 切分策略 × 完整前向 shape 走查](notes/attention-tp-shape-forward.html)
+- [大模型端到端数据流 × 内存与通信技术栈](notes/llm-dataflow-memory-communication-stack.html)
+
+### MoE 专家并行（EP）负载均衡
+- [MoE EP 负载均衡研究笔记索引](docs/index.html)
+- [EPLB · UltraEP · MoonEP 方案深度解析](docs/moe-ep-overview.html)
+- [EPLB · UltraEP · MoonEP 源码级对比分析](docs/moe-ep-code-analysis.html)
+
+## 学习地图目录
 1. [深度学习与机器学习基础](#一深度学习与机器学习基础)
 2. [Transformer 与模型架构](#二transformer-与模型架构)
 3. [预训练](#三预训练)
@@ -660,4 +684,3 @@ flowchart LR
   J -.贯穿全程.-> D
   J -.贯穿全程.-> G
 </pre>
-
