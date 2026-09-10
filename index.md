@@ -20,6 +20,7 @@ description: 面向大模型方向的完整技术知识目录，覆盖从数学�
 - [PCP 完整过程梳理 — 从拉起服务到长序列请求流转](docs/inference/pcp-code-walkthrough.html)
 - [MLA 计算流全图解 & 吸收矩阵对比分析](docs/inference/mla-absorb-compute-flow.html)
 - [前缀命中在 Transformer / MoE 中到底节省了什么计算](docs/inference/prefix-cache-kv-moe.html)
+- [MoE 与 FFN 原理及 vLLM / vLLM-Ascend 前馈融合算子](docs/inference/moe-ffn-fused-operators.html)
 
 ### 并行与通信
 - [SP 与 CP 详解 — 序列并行 vs 上下文并行的来龙去脉与完整对比](docs/parallel/sp-vs-cp.html)
