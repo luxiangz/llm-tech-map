@@ -6,7 +6,6 @@ description: 面向大模型方向的完整技术知识目录，覆盖从数学�
 
 > 面向大模型方向的完整技术知识目录，覆盖从数学基础到工程实践的整条链路。
 > **进度追踪**：在源码中把 `- [ ]` 改为 `- [x]` 即为已完成（GitHub Pages 渲染为复选框）。
-> 建议学习顺序：领域一 → 领域五/三（核心双主线）→ 领域四 → 领域六 → 领域七 → 领域二 → 领域八 → 领域九 → 领域十（贯穿全程）。
 
 ## 已发布文档索引
 
@@ -31,6 +30,35 @@ description: 面向大模型方向的完整技术知识目录，覆盖从数学�
 - [MoE EP 负载均衡研究笔记索引](docs/index.html)
 - [EPLB · UltraEP · MoonEP 方案深度解析](docs/moe-ep-overview.html)
 - [EPLB · UltraEP · MoonEP 源码级对比分析](docs/moe-ep-code-analysis.html)
+
+## 学习路径建议
+
+<pre class="mermaid">
+flowchart LR
+  A["领域一 基础"] --> B["领域五 推理引擎 Serving"]
+  A --> C["领域三 预训练（并行与加速）"]
+  B --> D["领域四 后训练：对齐与微调"]
+  C --> D
+  D --> E["领域六 算子/HPC"]
+  E --> F["领域二 Transformer 架构深挖"]
+  F --> G["领域七 硬件集群"]
+  G --> H["领域八 Agent 应用"]
+  H --> I["领域九 前沿生态"]
+  J["领域十 工程工具＋术语表＋论文＋个人项目（做中学）"] -.贯穿全程.-> A
+  J -.贯穿全程.-> D
+  J -.贯穿全程.-> G
+</pre>
+
+## 学习阶段速览
+
+| 阶段 | 重点 | 对应领域 |
+|---|---|---|
+| 基础 | 数学、深度学习、Transformer 与模型架构 | 一、二 |
+| 训练 | 预训练、对齐与微调、模型评估 | 三、四 |
+| 推理 | Serving、量化、长上下文、性能分析 | 五 |
+| 系统 | 算子、HPC、AI 硬件与集群基础设施 | 六、七 |
+| 应用 | Agent、RAG、模型生态与前沿 | 八、九 |
+| 工程 | 工具链、术语表、个人项目 | 十、十一、十二 |
 
 ## 学习地图目录
 1. [深度学习与机器学习基础](#一深度学习与机器学习基础)
@@ -212,25 +240,25 @@ description: 面向大模型方向的完整技术知识目录，覆盖从数学�
 - [ ] 引擎横向对比：功能/性能/生态选型、主流引擎执行流水线对比
 - [ ] 端侧与边缘推理：手机 NPU（Qualcomm/Apple/麒麟）、端侧量化部署、WebGPU/WASM、llama.cpp 端侧生态、端云协同
 
-### 5.2b API 与协议层
+### 5.3 API 与协议层
 - [ ] OpenAI 兼容 API 规范、流式输出（SSE）、function calling 传输层
 - [ ] gRPC/HTTP 性能对比、长连接与连接池
 - [ ] 推理网关与协议转换、多模态请求协议
 
-### 5.3 长上下文
+### 5.4 长上下文
 - [ ] 位置外推：YaRN/NTK/ABF 与长上下文训练
 - [ ] 序列并行与 RingAttention、Ulysses、LongLoRA
 - [ ] 长上下文工程：FastGen/FlexPrefill/IceFormer/StarAttention/HybridAttention
 - [ ] Infini-attention 无限上下文、KV 分层压缩
 - [ ] 长上下文成本模型与评测
 
-### 5.4 量化与压缩
+### 5.5 量化与压缩
 - [ ] PTQ：RTN/GPTQ/AWQ/SmoothQuant/FP8
 - [ ] QAT 量化感知训练、INT4/INT8
 - [ ] KV Cache 量化、2:4 结构化稀疏
 - [ ] 量化管线：compressed-tensors/llm-compressor、离线量化与误差评估
 
-### 5.5 Serving 与部署
+### 5.6 Serving 与部署
 - [ ] 容量规划：吞吐/延迟 SLO、QPS 建模、并发与批大小
 - [ ] 推理集群调度：GPU 放置、多租户、任务优先级
 - [ ] 分离式推理（disaggregation）部署拓扑
@@ -240,7 +268,7 @@ description: 面向大模型方向的完整技术知识目录，覆盖从数学�
 - [ ] 多 LoRA/多适配器服务（S-LoRA/Punica）、嵌入与重排模型服务
 - [ ] 离线批量推理（batch inference、异步任务队列）
 
-### 5.6 性能分析
+### 5.7 性能分析
 - [ ] Roofline 模型与 ECM 多级模型、组件化 Roofline（ASPLOS25）
 - [ ] Prefill vs Decode 延迟分解、MFU/MBU
 - [ ] profiling 实操：nsys/ncu/torch profiler
@@ -661,26 +689,6 @@ description: 面向大模型方向的完整技术知识目录，覆盖从数学�
 - [ ] 深入介绍：架构设计、关键实现、踩坑记录（单开小节或外链）
 - [ ] 成果与收获：可展示的产出、学到的知识点、可复用的经验
 
-### 12.3 我的项目
+### 12.2 我的项目
 
 > 逐个添加中……
-
----
-
-## 学习路径建议
-
-<pre class="mermaid">
-flowchart LR
-  A["领域一 基础"] --> B["领域五 推理引擎 Serving"]
-  A --> C["领域三 预训练（并行与加速）"]
-  B --> D["领域四 后训练：对齐与微调"]
-  C --> D
-  D --> E["领域六 算子/HPC"]
-  E --> F["领域二 Transformer 架构深挖"]
-  F --> G["领域七 硬件集群"]
-  G --> H["领域八 Agent 应用"]
-  H --> I["领域九 前沿生态"]
-  J["领域十 工程工具＋术语表＋论文＋个人项目（做中学）"] -.贯穿全程.-> A
-  J -.贯穿全程.-> D
-  J -.贯穿全程.-> G
-</pre>
