@@ -61,6 +61,8 @@ shape 流转：
 
 这正好对应图 [mlp_shape_flow.svg](E:/Desktop/业务/EP/mlp_shape_flow.svg)。
 
+![ReLU FFN 公式与 shape 流程](assets/ffn-relu-flow.svg)
+
 ## 1.2 SwiGLU FFN：把第一个投影拆成 gate 和 up
 
 SwiGLU 是 LLM 中更常用的 FFN。它把普通 FFN 的 $W_1$ 拆成两个升维分支：
@@ -100,6 +102,8 @@ y = \mathrm{down\_proj}\left(
 $$
 
 这也是 [ffn_formula_flow.drawio](E:/Desktop/业务/EP/ffn_formula_flow.drawio) 中 SwiGLU sheet 的展开内容。
+
+![SwiGLU FFN 的 gate/up/down 拆解与 Hadamard 逐元素乘法](assets/ffn-swiglu-flow.svg)
 
 ## 1.3 MoE：把一个 FFN 换成多个专家
 
@@ -146,6 +150,8 @@ W_{\mathrm{down}}
 $$
 
 该结构对应 [moe_vs_ffn_diagram.svg](E:/Desktop/业务/EP/moe_vs_ffn_diagram.svg) 和 [ffn_formula_flow.drawio](E:/Desktop/业务/EP/ffn_formula_flow.drawio) 的 MoE sheet。
+
+![Sparse MoE 路由与共享专家流程](assets/moe-routing-flow.svg)
 
 ### MoE 计算过程的系统视角
 

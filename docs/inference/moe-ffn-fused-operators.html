@@ -24,6 +24,9 @@ blockquote { margin: 1em 0; padding: .6em 1em; border-left: 4px solid #d0d7de; c
 hr { border: none; border-top: 1px solid #d8dee4; margin: 2em 0; }
 .formula { background: #f6f8fa; padding: 12px 16px; border-radius: 8px; overflow-x: auto; margin: 1em 0; }
 ul, ol { padding-left: 1.8em; }
+.figure { margin: 1.4em 0; text-align: center; }
+.figure img { max-width: 100%; height: auto; border: 1px solid #e5e7eb; border-radius: 10px; background: #fff; }
+.figcaption { margin-top: .5em; color: #57606a; font-size: .92em; text-align: center; }
 </style>
 <script>
 window.MathJax = {
@@ -84,6 +87,10 @@ b2 : [d_model]
 [B, T, d_model]
 </code></pre>
 <p>这正好对应图 <a href="E:/Desktop/业务/EP/mlp_shape_flow.svg">mlp_shape_flow.svg</a>。</p>
+<div class="figure">
+<img src="assets/ffn-relu-flow.svg" alt="ReLU FFN 公式与 shape 流程">
+<div class="figcaption">图 1-1：ReLU FFN 的公式流程与 shape 流转</div>
+</div>
 <h2>1.2 SwiGLU FFN：把第一个投影拆成 gate 和 up</h2>
 <p>SwiGLU 是 LLM 中更常用的 FFN。它把普通 FFN 的 $W_1$ 拆成两个升维分支：</p>
 <div class="formula">\[u = x W_{\mathrm{up}} + b_{\mathrm{up}},\qquad
@@ -126,6 +133,10 @@ y = h W_{\mathrm{down}} + b_{\mathrm{down}}\]</div>
 \odot \mathrm{up\_proj}(x)
 \right)\]</div>
 <p>这也是 <a href="E:/Desktop/业务/EP/ffn_formula_flow.drawio">ffn_formula_flow.drawio</a> 中 SwiGLU sheet 的展开内容。</p>
+<div class="figure">
+<img src="assets/ffn-swiglu-flow.svg" alt="SwiGLU FFN 公式与 gate/up/down 流程">
+<div class="figcaption">图 1-2：SwiGLU FFN 的 gate/up/down 拆解与 Hadamard 逐元素乘法</div>
+</div>
 <h2>1.3 MoE：把一个 FFN 换成多个专家</h2>
 <p>稀疏 MoE 层把前馈层替换为 $N$ 个专家和一个 Router。每个专家通常就是一个小型 FFN/MLP，例如 SwiGLU MLP。</p>
 <p>输入 $x$ 先经 Router 得到 logits：</p>
@@ -151,6 +162,10 @@ W_{\mathrm{down}}
 (W_{\mathrm{up}} x)
 \right)\]</div>
 <p>该结构对应 <a href="E:/Desktop/业务/EP/moe_vs_ffn_diagram.svg">moe_vs_ffn_diagram.svg</a> 和 <a href="E:/Desktop/业务/EP/ffn_formula_flow.drawio">ffn_formula_flow.drawio</a> 的 MoE sheet。</p>
+<div class="figure">
+<img src="assets/moe-routing-flow.svg" alt="Sparse MoE 路由与共享专家流程">
+<div class="figcaption">图 1-3：Sparse MoE 的 Router/TopK、routed experts 与 shared experts 展开</div>
+</div>
 <h3>MoE 计算过程的系统视角</h3>
 <p>在推理系统中，MoE 每层通常包括：</p>
 <pre><code class="language-text">Router / TopK
