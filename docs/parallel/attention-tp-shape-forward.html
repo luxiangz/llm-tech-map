@@ -1,3 +1,8 @@
+---
+layout: null
+redirect_from:
+  - /notes/attention-tp-shape-forward.html
+---
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
@@ -201,7 +206,7 @@
 </style>
 </head>
 <body>
-<a href="../index.html" style="position:fixed;top:12px;right:14px;z-index:99;background:#f6f7f9;border:1px solid #e2e5ea;border-radius:999px;padding:4px 12px;font-size:14px;color:#2c5fa8;text-decoration:none;box-shadow:0 1px 4px rgba(0,0,0,.08)">← 技术地图首页</a>
+<a href="../../index.html" style="position:fixed;top:12px;right:14px;z-index:99;background:#f6f7f9;border:1px solid #e2e5ea;border-radius:999px;padding:4px 12px;font-size:14px;color:#2c5fa8;text-decoration:none;box-shadow:0 1px 4px rgba(0,0,0,.08)">← 技术地图首页</a>
 <div class="wrap">
 
   <div class="kicker">推理系统研究 · 并行研究 · TP 深挖</div>
@@ -587,7 +592,7 @@ else:                             # 头够分
   <h2 id="s5"><span class="sec-no">5</span>MLA 的 TP：latent 复制 + 上行按头切（案例 DeepSeek-V3，TP=4）</h2>
 
   <div class="fig">
-    <img src="../assets/images/notes/deepseek-v3-architecture.jpg"
+    <img src="../../assets/images/parallel/deepseek-v3-architecture.jpg"
          alt="DeepSeek-V3 整体架构图（CalvinXKY/InfraTech）"
          loading="lazy">
     <div class="caption">DeepSeek-V3 整体架构图 —— 先看全局，再对照本节的 TP 拆解。图片来源：
@@ -744,16 +749,16 @@ else:                             # 头够分
   <p>「吸收」是 MLA kernel 层的术语（FlashMLA / DeepSeek kernel / vLLM 的 kimi_k3 MLA 实现注释原文 <code>absorbs kv_b_proj into W_UK_T / W_UV</code>、<code>BMM1: absorb q_nope into latent space</code>），指把 KV 上采样矩阵折叠进打分/输出侧，让 K/V 永不物化。下面三张图从不同视角画同一个 DeepSeek-V3.2 注意力架构（来源：<a href="https://github.com/CalvinXKY/InfraTech/tree/main/models/deepseek_v3_2">CalvinXKY/InfraTech · models/deepseek_v3_2</a>）：</p>
   <div class="grid2">
     <div class="fig">
-      <img src="../assets/images/notes/dsv32-attention-mha.png" alt="DeepSeek-V3.2 注意力架构 MHA 视角" loading="lazy">
+      <img src="../../assets/images/parallel/dsv32-attention-mha.png" alt="DeepSeek-V3.2 注意力架构 MHA 视角" loading="lazy">
       <div class="caption">MHA 视角 —— <strong>非吸收形态</strong>：每头 Q/K/V 显式上采样（W<sup>UK</sup>/W<sup>UV</sup> 物化 512→16384）后再做 attention，即论文公式的直观画法</div>
     </div>
     <div class="fig">
-      <img src="../assets/images/notes/dsv32-attention-mla.png" alt="DeepSeek-V3.2 注意力架构（MLA）" loading="lazy">
+      <img src="../../assets/images/parallel/dsv32-attention-mla.png" alt="DeepSeek-V3.2 注意力架构（MLA）" loading="lazy">
       <div class="caption">MLA 基础视角 —— latent 压缩 + 上行按头切（§5 的主体结构）</div>
     </div>
   </div>
   <div class="fig">
-      <img src="../assets/images/notes/dsv32-attention-mqa.png" alt="DeepSeek-V3.2 注意力架构 MQA 视角" loading="lazy">
+      <img src="../../assets/images/parallel/dsv32-attention-mqa.png" alt="DeepSeek-V3.2 注意力架构 MQA 视角" loading="lazy">
     <div class="caption">MQA 视角 —— <strong>吸收形态（decode 路径）</strong>：q' = W<sup>UK</sup><sup>T</sup> q<sub>nope</sub>（BMM1 把 q 吸收进 latent 空间）直接对 c<sup>KV</sup> 打分，K 永不物化；V 上采样挪到注意力输出之后（o = W<sub>UV</sub><sup>T</sup>(P·c)）</div>
   </div>
   <div class="formula"><span class="lbl">两种形态的等价性（矩阵乘法结合律）</span>非吸收：score = q<sub>nope</sub><sup>T</sup>(W<sup>UK</sup>·c)，o = P·(W<sup>UV</sup>·c)　·　吸收：score = (W<sup>UK</sup><sup>T</sup>·q<sub>nope</sub>)<sup>T</sup>·c，o = W<sup>UV</sup><sup>T</sup>·(P·c)</div>
@@ -960,7 +965,7 @@ else:                             # 头够分
     <li>IndexCache 论文（arXiv:2603.12201）：DSA 跨层 top-k 复用。</li>
     <li>Megatron-LM（Narayanan et al. 2021，arXiv:1909.08053）：列/行并行、按头切分与 sequential/interleaved 布局；Megatron-Core 对 GQA 的 kv 头分切/复制语义与 vLLM 一致。</li>
     <li>TensorRT-LLM PR #15513（DSA indexer top-k 跨层复用）、PR #11990（GLM-5 支持与 DSA MTP）；NVIDIA 博客 Optimizing DeepSeek-V3.2 on Blackwell。</li>
-    <li>本工作区配套：<a href="sp-vs-cp.html">SP vs CP 详解</a>（SP/CP 两线演化的完整对比）；<a href="mla-absorb-compute-flow.html">MLA 计算流图解</a>（吸收/非吸收计算流与形状走查）。</li>
+    <li>本工作区配套：<a href="sp-vs-cp.html">SP vs CP 详解</a>（SP/CP 两线演化的完整对比）；<a href="../inference/mla-absorb-compute-flow.html">MLA 计算流图解</a>（吸收/非吸收计算流与形状走查）。</li>
   </ol>
 
   <div class="footer">

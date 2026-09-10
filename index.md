@@ -12,24 +12,24 @@ description: 面向大模型方向的完整技术知识目录，覆盖从数学�
 > 本站所有长文/指南的统一入口；点链接直接阅读，返回首页按钮在各文档右上角。
 
 ### 学习指南
-- [MiniMind 全链路完整指南：从零训练到强化学习与部署](guides/minimind-guide.html)
+- [MiniMind 全链路完整指南：从零训练到强化学习与部署](docs/minimind/)
 
 ### 推理引擎与 Serving
-- [Continuous Batching 完整梳理——机制、意义与前世今生](notes/continuous-batching-history-flow.html)
-- [Chunked Prefill 完整梳理——流程、意义与前世今生](notes/chunked-prefill-history-flow.html)
-- [PCP 完整过程梳理 — 从拉起服务到长序列请求流转](notes/pcp-code-walkthrough.html)
-- [MLA 计算流全图解 & 吸收矩阵对比分析](notes/mla-absorb-compute-flow.html)
-- [前缀命中在 Transformer / MoE 中到底节省了什么计算](notes/prefix-cache-kv-moe.html)
+- [Continuous Batching 完整梳理——机制、意义与前世今生](docs/inference/continuous-batching-history-flow.html)
+- [Chunked Prefill 完整梳理——流程、意义与前世今生](docs/inference/chunked-prefill-history-flow.html)
+- [PCP 完整过程梳理 — 从拉起服务到长序列请求流转](docs/inference/pcp-code-walkthrough.html)
+- [MLA 计算流全图解 & 吸收矩阵对比分析](docs/inference/mla-absorb-compute-flow.html)
+- [前缀命中在 Transformer / MoE 中到底节省了什么计算](docs/inference/prefix-cache-kv-moe.html)
 
 ### 并行与通信
-- [SP 与 CP 详解 — 序列并行 vs 上下文并行的来龙去脉与完整对比](notes/sp-vs-cp.html)
-- [注意力家族的张量并行（TP）拆解 — MHA · GQA · MLA · DSA 切分策略 × 完整前向 shape 走查](notes/attention-tp-shape-forward.html)
-- [大模型端到端数据流 × 内存与通信技术栈](notes/llm-dataflow-memory-communication-stack.html)
+- [SP 与 CP 详解 — 序列并行 vs 上下文并行的来龙去脉与完整对比](docs/parallel/sp-vs-cp.html)
+- [注意力家族的张量并行（TP）拆解 — MHA · GQA · MLA · DSA 切分策略 × 完整前向 shape 走查](docs/parallel/attention-tp-shape-forward.html)
+- [大模型端到端数据流 × 内存与通信技术栈](docs/parallel/llm-dataflow-memory-communication-stack.html)
 
 ### MoE 专家并行（EP）负载均衡
-- [MoE EP 负载均衡研究笔记索引](docs/index.html)
-- [EPLB · UltraEP · MoonEP 方案深度解析](docs/moe-ep-overview.html)
-- [EPLB · UltraEP · MoonEP 源码级对比分析](docs/moe-ep-code-analysis.html)
+- [MoE EP 负载均衡研究笔记索引](docs/moe-ep/)
+- [EPLB · UltraEP · MoonEP 方案深度解析](docs/moe-ep/moe-ep-overview.html)
+- [EPLB · UltraEP · MoonEP 源码级对比分析](docs/moe-ep/moe-ep-code-analysis.html)
 
 ## 学习路径建议
 
@@ -103,7 +103,7 @@ flowchart LR
 ### 2.1 Attention 全谱系
 - [ ] Attention 动机：序列建模困境、RNN 串行计算与信息瓶颈
 - [ ] 核心机制：QKV、缩放点积注意力、为什么除以 √dk、Softmax 与掩码
-- [ ] 变体：MHA / MQA / GQA / MLA（多潜在注意力） — 📄 [MLA 计算流图解笔记](notes/mla-absorb-compute-flow.html)
+- [ ] 变体：MHA / MQA / GQA / MLA（多潜在注意力） — 📄 [MLA 计算流图解笔记](docs/inference/mla-absorb-compute-flow.html)
 - [ ] 稀疏注意力：窗口/全局/BigBird/NSA/DSA（DeepSeek 稀疏注意力）
 - [ ] 高效实现：FlashAttention 1/2/3、PagedAttention、线性注意力（Performer）
 - [ ] KV 压缩：H2O/SnapKV/StreamingLLM
@@ -157,10 +157,10 @@ flowchart LR
 ### 3.3 并行训练
 - [ ] 并行度全景：DP/TP/PP/EP/CP/SP 对比与选择
 - [ ] 数据并行：DDP、ZeRO 三阶段、offload
-- [ ] 张量并行：Megatron 算子切分 — 📄 [注意力家族 TP 拆解笔记](notes/attention-tp-shape-forward.html)
+- [ ] 张量并行：Megatron 算子切分 — 📄 [注意力家族 TP 拆解笔记](docs/parallel/attention-tp-shape-forward.html)
 - [ ] 流水线并行：PP 气泡、调度算法、DualPipe/PgPipe
-- [ ] 专家并行 EP、上下文并行 CP、序列并行 SP — 📄 [SP vs CP 详解笔记](notes/sp-vs-cp.html)
-- [ ] PCP：Prefill Context Parallel 设计与实现 — 📄 [PCP 完整过程梳理笔记](notes/pcp-code-walkthrough.html)
+- [ ] 专家并行 EP、上下文并行 CP、序列并行 SP — 📄 [SP vs CP 详解笔记](docs/parallel/sp-vs-cp.html)
+- [ ] PCP：Prefill Context Parallel 设计与实现 — 📄 [PCP 完整过程梳理笔记](docs/inference/pcp-code-walkthrough.html)
 - [ ] 集合通信：原语、AllReduce 算法、通信计算重叠
 
 ### 3.4 训练加速
@@ -224,9 +224,9 @@ flowchart LR
 ## 五、推理引擎与 Serving
 ### 5.1 推理机制
 - [ ] 自回归解码与 KV Cache
-- [ ] PagedAttention、连续批处理（Continuous Batching） — 📄 [Continuous Batching 完整梳理笔记](notes/continuous-batching-history-flow.html)
-- [ ] 分块预填充（Chunked Prefill）、PD 分离 — 📄 [Chunked Prefill 完整梳理笔记](notes/chunked-prefill-history-flow.html)
-- [ ] 前缀缓存（prefix cache）、RadixAttention — 📄 [前缀命中节省了什么计算笔记](notes/prefix-cache-kv-moe.html)
+- [ ] PagedAttention、连续批处理（Continuous Batching） — 📄 [Continuous Batching 完整梳理笔记](docs/inference/continuous-batching-history-flow.html)
+- [ ] 分块预填充（Chunked Prefill）、PD 分离 — 📄 [Chunked Prefill 完整梳理笔记](docs/inference/chunked-prefill-history-flow.html)
+- [ ] 前缀缓存（prefix cache）、RadixAttention — 📄 [前缀命中节省了什么计算笔记](docs/inference/prefix-cache-kv-moe.html)
 - [ ] 采样家族：top-k/top-p/temperature/min-p/typical、平行采样
 - [ ] 投机解码：草稿模型/自投机/Medusa/EAGLE、接受率与加速比建模
 - [ ] 结构化输出与约束解码（grammar/JSON Schema/guided decoding）

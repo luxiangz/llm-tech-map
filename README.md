@@ -4,53 +4,62 @@
 
 **https://luxiangz.github.io/llm-tech-map/**
 
+## 目录约定
+
+所有已发布长文和专题统一放在 `docs/` 下，按主题分子目录：
+
+- `docs/minimind/`：MiniMind 全链路指南
+- `docs/inference/`：推理引擎与 Serving 笔记
+- `docs/parallel/`：并行与通信笔记
+- `docs/moe-ep/`：MoE 专家并行负载均衡专题
+- `docs/index.html`：内容层统一入口
+
 ## 已发布文档
 
-站点内可直接访问的文档页（HTML）：
+### 学习指南
 
-### 指南
+- [MiniMind 全链路完整指南](https://luxiangz.github.io/llm-tech-map/docs/minimind/)
 
-- [MiniMind 全链路完整指南：从零训练到强化学习与部署](https://luxiangz.github.io/llm-tech-map/guides/minimind-guide.html)
+### 推理引擎与 Serving
 
-### 推理引擎与 Serving（vLLM）
-
-- [Continuous Batching 完整梳理——机制、意义与前世今生](https://luxiangz.github.io/llm-tech-map/notes/continuous-batching-history-flow.html)
-- [Chunked Prefill 完整梳理——流程、意义与前世今生](https://luxiangz.github.io/llm-tech-map/notes/chunked-prefill-history-flow.html)
-- [PCP 完整过程梳理 — 从拉起服务到长序列请求流转](https://luxiangz.github.io/llm-tech-map/notes/pcp-code-walkthrough.html)
-- [MLA 计算流全图解 & 吸收矩阵对比分析](https://luxiangz.github.io/llm-tech-map/notes/mla-absorb-compute-flow.html)
-- [前缀命中在 Transformer / MoE 中到底节省了什么计算](https://luxiangz.github.io/llm-tech-map/notes/prefix-cache-kv-moe.html)
+- [Continuous Batching 完整梳理](https://luxiangz.github.io/llm-tech-map/docs/inference/continuous-batching-history-flow.html)
+- [Chunked Prefill 完整梳理](https://luxiangz.github.io/llm-tech-map/docs/inference/chunked-prefill-history-flow.html)
+- [PCP 完整过程梳理](https://luxiangz.github.io/llm-tech-map/docs/inference/pcp-code-walkthrough.html)
+- [MLA 计算流全图解 & 吸收矩阵对比分析](https://luxiangz.github.io/llm-tech-map/docs/inference/mla-absorb-compute-flow.html)
+- [前缀命中在 Transformer / MoE 中到底节省了什么计算](https://luxiangz.github.io/llm-tech-map/docs/inference/prefix-cache-kv-moe.html)
 
 ### 并行与通信
 
-- [SP 与 CP 详解 — 序列并行 vs 上下文并行的来龙去脉与完整对比](https://luxiangz.github.io/llm-tech-map/notes/sp-vs-cp.html)
-- [注意力家族的张量并行（TP）拆解 — MHA · GQA · MLA · DSA 切分策略 × 完整前向 shape 走查](https://luxiangz.github.io/llm-tech-map/notes/attention-tp-shape-forward.html)
-- [大模型端到端数据流 × 内存与通信技术栈](https://luxiangz.github.io/llm-tech-map/notes/llm-dataflow-memory-communication-stack.html)
+- [SP 与 CP 详解](https://luxiangz.github.io/llm-tech-map/docs/parallel/sp-vs-cp.html)
+- [注意力家族的张量并行（TP）拆解](https://luxiangz.github.io/llm-tech-map/docs/parallel/attention-tp-shape-forward.html)
+- [大模型端到端数据流 × 内存与通信技术栈](https://luxiangz.github.io/llm-tech-map/docs/parallel/llm-dataflow-memory-communication-stack.html)
 
-### MoE 专家并行（EP）负载均衡研究
+### MoE 专家并行（EP）负载均衡
 
-- [落地索引页](https://luxiangz.github.io/llm-tech-map/docs/)
-- [EPLB · UltraEP · MoonEP 方案深度解析（v2.0 联网一手复核）](https://luxiangz.github.io/llm-tech-map/docs/moe-ep-overview.html)
-- [源码级对比分析（附本地代码与研读路线图）](https://luxiangz.github.io/llm-tech-map/docs/moe-ep-code-analysis.html)
+- [专题索引](https://luxiangz.github.io/llm-tech-map/docs/moe-ep/)
+- [方案深度解析](https://luxiangz.github.io/llm-tech-map/docs/moe-ep/moe-ep-overview.html)
+- [源码级对比分析](https://luxiangz.github.io/llm-tech-map/docs/moe-ep/moe-ep-code-analysis.html)
+
+## 仓库结构
+
+| 路径 | 作用 |
+|---|---|
+| `index.md` | 站点首页：已发布文档入口 + 学习地图 |
+| `docs/` | 所有已发布专题内容，按主题分子目录 |
+| `assets/css/` | Jekyll 主题样式 |
+| `assets/lib/` | 前端库（MathJax / highlight.js） |
+| `assets/images/` | 图片资源，按专题分子目录 |
+| `_config.yml` | Jekyll 配置与 GitHub Pages 插件 |
+
+## 旧链接兼容
+
+旧路径（`/minimind-guide.html`、`/guides/minimind-guide.html`、`/notes/*.html`、`/docs/moe-ep-*.html`）通过 `jekyll-redirect-from` 自动跳转到新路径，不需要在源码中保留旧目录。
 
 ## 更新进度
 
 1. 编辑 `index.md`，把对应条目 `- [ ]` 改为 `- [x]` 即打勾
 2. 提交并推送，约 1 分钟后网站自动更新
 
-## 仓库结构
-
-| 文件 | 作用 |
-|---|---|
-| `index.md` | 统一入口：顶部为已发布文档索引，下方为完整学习地图 |
-| `guides/` | 独立长文指南（MiniMind 等） |
-| `notes/` | 知识点的详细笔记页（与地图条目互相链接） |
-| `docs/` | 专题研究笔记（MoE 专家并行负载均衡） |
-| `assets/css/` | Jekyll 主题样式与字体排版覆盖 |
-| `assets/lib/` | 前端库（MathJax / highlight.js） |
-| `assets/images/` | 全站图片，按指南与笔记分目录存放 |
-| `minimind-guide.html` | 兼容旧链接的跳转页，指向 `guides/minimind-guide.html` |
-| `_config.yml` | Jekyll 配置：GFM 引擎 + cayman 主题 |
-
 ## 发布方式
 
-GitHub Pages 从 `main` 分支根目录直接构建（Settings → Pages → Deploy from a branch → main / root）。无需本地构建。
+GitHub Pages 从 `main` 分支根目录直接构建，无需本地构建。

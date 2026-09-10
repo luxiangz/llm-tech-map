@@ -1,3 +1,8 @@
+---
+layout: null
+redirect_from:
+  - /notes/sp-vs-cp.html
+---
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
@@ -190,7 +195,7 @@
 </style>
 </head>
 <body>
-<a href="../index.html" style="position:fixed;top:12px;right:14px;z-index:99;background:#f6f7f9;border:1px solid #e2e5ea;border-radius:999px;padding:4px 12px;font-size:14px;color:#2c5fa8;text-decoration:none;box-shadow:0 1px 4px rgba(0,0,0,.08)">← 技术地图首页</a>
+<a href="../../index.html" style="position:fixed;top:12px;right:14px;z-index:99;background:#f6f7f9;border:1px solid #e2e5ea;border-radius:999px;padding:4px 12px;font-size:14px;color:#2c5fa8;text-decoration:none;box-shadow:0 1px 4px rgba(0,0,0,.08)">← 技术地图首页</a>
 <div class="wrap">
 
   <div class="kicker">推理系统研究 · 并行研究 · 序列/上下文并行专题</div>
@@ -769,7 +774,7 @@
     <li>Liu et al., <em>Ring Attention with Blockwise Transformers for Near-Infinite Context</em>（arXiv:2310.01889，2023）：ring 环形轮转 + blockwise online softmax。</li>
     <li>Jacobs et al., <em>DeepSpeed Ulysses: System Optimizations for Enabling Training of Extreme Long Sequence Transformer Models</em>（arXiv:2309.14509，2023）：all-to-all 上下文并行。</li>
     <li>vLLM（本地 checkout）：<span class="file-ref">docs/design/fusions.md</span>（Sequence Parallelism / enable_sp：AllReduce→ReduceScatter+AllGather、AsyncTP 前置）；<span class="file-ref">docs/serving/context_parallel_deployment.md</span>（PCP 的 partial-query/full-KV 与 partial-query/partial-KV 两策略、DCP 与 TP 的整除约束、先 TP 后 DCP）。</li>
-    <li>本工作区配套：<a href="attention-tp-shape-forward.html">注意力家族 TP 拆解</a>（MLA 的 KV 为何切不动、TP 的 KV 复制与 DCP 解药）；<a href="pcp-code-walkthrough.html">PCP 完整过程梳理</a>（vLLM 里 PCP 的落地走查）。</li>
+    <li>本工作区配套：<a href="attention-tp-shape-forward.html">注意力家族 TP 拆解</a>（MLA 的 KV 为何切不动、TP 的 KV 复制与 DCP 解药）；<a href="../inference/pcp-code-walkthrough.html">PCP 完整过程梳理</a>（vLLM 里 PCP 的落地走查）。</li>
   </ol>
 
   <div class="footer">

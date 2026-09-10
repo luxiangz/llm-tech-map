@@ -1,6 +1,8 @@
 title: 大模型技术地图
 description: 面向大模型方向的完整技术知识目录 · LLM 全栈学习清单
 theme: jekyll-theme-cayman
+plugins:
+  - jekyll-redirect-from
 markdown: kramdown
 kramdown:
   # kramdown-parser-gfm：GFM 输入，支持任务列表（- [ ] 渲染为复选框）

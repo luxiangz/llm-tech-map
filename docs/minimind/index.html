@@ -1,3 +1,9 @@
+---
+layout: null
+redirect_from:
+  - /minimind-guide.html
+  - /guides/minimind-guide.html
+---
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
@@ -82,9 +88,9 @@
     svg: { fontCache: 'local', scale: 0.9 }
   };
 </script>
-<script id="MathJax-script" async src="../assets/lib/mathjax-tex-svg.js" onerror="this.onerror=null;var f=document.createElement('script');f.src='https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js';document.head.appendChild(f);"></script>
-<link rel="stylesheet" href="../assets/lib/highlight-github.min.css">
-<script src="../assets/lib/highlight.min.js"></script>
+<script id="MathJax-script" async src="../../assets/lib/mathjax-tex-svg.js" onerror="this.onerror=null;var f=document.createElement('script');f.src='https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js';document.head.appendChild(f);"></script>
+<link rel="stylesheet" href="../../assets/lib/highlight-github.min.css">
+<script src="../../assets/lib/highlight.min.js"></script>
 <script>document.addEventListener('DOMContentLoaded', () => hljs.highlightAll());</script>
 <script>
 document.addEventListener('DOMContentLoaded', () => {
@@ -120,7 +126,7 @@ document.addEventListener('DOMContentLoaded', () => {
 </script>
 </head>
 <body>
-<a href="../index.html" style="position:fixed;top:12px;right:14px;z-index:99;background:#f6f7f9;border:1px solid #e2e5ea;border-radius:999px;padding:4px 12px;font-size:14px;color:#2c5fa8;text-decoration:none;box-shadow:0 1px 4px rgba(0,0,0,.08)">← 技术地图首页</a>
+<a href="../../index.html" style="position:fixed;top:12px;right:14px;z-index:99;background:#f6f7f9;border:1px solid #e2e5ea;border-radius:999px;padding:4px 12px;font-size:14px;color:#2c5fa8;text-decoration:none;box-shadow:0 1px 4px rgba(0,0,0,.08)">← 技术地图首页</a>
 <div class="wrap">
 <header class="doc">
   <h1>MiniMind 全链路完整指南</h1>
@@ -561,7 +567,7 @@ lm_checkpoint(lm_config, weight=args.save_weight, model=model, optimizer=optimiz
 <h2>第 5 章 模型结构深读</h2>
 <h3>5.1 数据流全景</h3>
 <figure>
-  <img src="../assets/images/minimind/LLM-structure.jpg" alt="MiniMind Dense 模型结构图">
+  <img src="../../assets/images/minimind/LLM-structure.jpg" alt="MiniMind Dense 模型结构图">
   <figcaption>MiniMind Dense 模型整体结构：Embedding → 8× Transformer Block（RMSNorm + GQA Attention + SwiGLU FFN）→ RMSNorm → lm_head</figcaption>
 </figure>
 <pre><code>input_ids (B, S)
@@ -829,7 +835,7 @@ $$y = \sum_{i=1}^{N} g_i(x)\,\operatorname{FFN}_i(x), \qquad g(x) = \operatornam
 <figcaption>MoE 稀疏路由：路由门把每个 token 分给 top-1 专家，只有被选中的专家参与计算。</figcaption>
 </figure>
 <figure>
-  <img src="../assets/images/minimind/LLM-structure-moe.jpg" alt="MiniMind MoE 模型结构图">
+  <img src="../../assets/images/minimind/LLM-structure-moe.jpg" alt="MiniMind MoE 模型结构图">
   <figcaption>MiniMind MoE 模型结构：FFN 层由路由门 + 4 个专家组成，每个 token 只激活 1 个专家</figcaption>
 </figure>
 <h3>5.7 MiniMindBlock 与整体 forward</h3>

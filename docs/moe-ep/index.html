@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MoE 专家并行负载均衡 · 研究笔记索引</title>
+<style>
+  body{margin:0;font-family:-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;background:#f4f6fb;color:#1a2332;line-height:1.7}
+  .wrap{max-width:900px;margin:0 auto;padding:48px 22px}
+  h1{font-size:26px;color:#123a63;border-left:5px solid #0f62fe;padding-left:12px}
+  .sub{color:#5a6a7c;font-size:15px}
+  .card{background:#fff;border:1px solid #dfe6ef;border-radius:12px;padding:20px 24px;margin:18px 0;display:block;color:inherit;text-decoration:none;transition:.15s}
+  .card:hover{border-color:#0f62fe;box-shadow:0 6px 18px rgba(15,98,254,.12)}
+  .card h2{margin:0 0 6px;font-size:19px;color:#0f62fe}
+  .card p{margin:4px 0;font-size:14.5px;color:#3d4a5c}
+  .tag{display:inline-block;font-size:12px;background:#eef3fa;color:#123a63;border:1px solid #d4dfee;border-radius:999px;padding:1px 10px;margin:2px 6px 0 0}
+  .foot{margin-top:34px;font-size:12.5px;color:#8a97a6}
+</style>
+</head>
+<body>
+<a href="../../index.html" style="position:fixed;top:12px;right:14px;z-index:99;background:#f6f7f9;border:1px solid #e2e5ea;border-radius:999px;padding:4px 12px;font-size:14px;color:#2c5fa8;text-decoration:none;box-shadow:0 1px 4px rgba(0,0,0,.08)">← 技术地图首页</a>
+<div class="wrap">
+  <h1>MoE 专家并行（EP）负载均衡方案研究</h1>
+  <p class="sub">EPLB（DeepSeek）· UltraEP（小红书 × 北大）· MoonEP（Moonshot AI）—— 从动机到源码的完整调研笔记。</p>
+
+  <a class="card" href="moe-ep-overview.html">
+    <h2>1. 方案深度解析（联网一手复核版 v2.0）</h2>
+    <p>以「动机 → 方案设计 → 实现 → 验证」为主线拆解三个系统：统一问题形式化、逐系统详解（含论文/README 一手数字）、横向对比矩阵、验证与复现指南、生态演进（TEMPO 批判）与信息缺口清单。</p>
+    <span class="tag">arXiv:2606.04101</span><span class="tag">DeepSeek EPLB</span><span class="tag">MoonEP</span><span class="tag">94.3% force-balanced ideal</span>
+  </a>
+
+  <a class="card" href="moe-ep-code-analysis.html">
+    <h2>2. 源码级对比分析（附本地代码与研读路线图）</h2>
+    <p>三个仓库完整源码逐文件精读：EPLB 164 行纯 PyTorch 放置算法；UltraEP ~7k 行 C++/CUDA（quota 二分 + oracle、tile/relay 权重分发、NVSHMEM 对称堆）；MoonEP CuTe DSL 规划内核（每 rank 恒载 S×K 的构造性保证）+ 对称内存通信库。含六维对比表与代码路线图。</p>
+    <span class="tag">代码级</span><span class="tag">C++/CUDA</span><span class="tag">CuTe DSL</span><span class="tag">quota planner</span>
+  </a>
+
+  <p class="foot">资料窗口：2026-08（含 GitHub 固定 commit 快照：EPLB d52c72d5 / UltraEP 94cab099 / MoonEP 0f385f03）。本目录为 Git Pages 静态发布版；本地完整工作区含三仓库源码与逐文件分析报告（<code>src/</code>、<code>src/_analysis/</code>）。</p>
+</div>
+</body>
+</html>
