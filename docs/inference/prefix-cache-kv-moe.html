@@ -296,10 +296,10 @@ window.MathJax = {
     <div class="step-card">
       <div class="step-head"><span class="step">1. 输入 LayerNorm</span><span class="op">归一化</span></div>
       <div class="step-grid">
-        <div class="scenario prefill"><div class="sc-label">全量 Prefill（无缓存）</div>$\bar X=\mathrm{LN}(X)$<br>$O(B\,S\,d_{model})$</div>
-        <div class="scenario hit"><div class="sc-label">缓存命中 Prefill（有 KV Cache）</div>$\bar X_{new}=\mathrm{LN}(X_{new})$<br>$O(B\,S_{new}\,d_{model})$</div>
-        <div class="scenario decode"><div class="sc-label">普通 Decode（1 Token/步）</div>$\bar x=\mathrm{LN}(x_{gen})$<br>$O(B\,d_{model})$</div>
-        <div class="scenario spec"><div class="sc-label">投机解码（m 候选/步）</div>$\bar X_{gen}=\mathrm{LN}(X_{gen})$<br>$O(B\,m\,d_{model})$</div>
+        <div class="scenario prefill"><div class="sc-label">全量 Prefill（无缓存）</div>$\bar X=\mathrm{LN}(X)$<br>$[B,S,d_{model}]\to[B,S,d_{model}]$<br>$O(B\,S\,d_{model})$</div>
+        <div class="scenario hit"><div class="sc-label">缓存命中 Prefill（有 KV Cache）</div>$\bar X_{new}=\mathrm{LN}(X_{new})$<br>$[B,S_{new},d_{model}]\to[B,S_{new},d_{model}]$<br>$O(B\,S_{new}\,d_{model})$</div>
+        <div class="scenario decode"><div class="sc-label">普通 Decode（1 Token/步）</div>$\bar x=\mathrm{LN}(x_{gen})$<br>$[B,1,d_{model}]\to[B,1,d_{model}]$<br>$O(B\,d_{model})$</div>
+        <div class="scenario spec"><div class="sc-label">投机解码（m 候选/步）</div>$\bar X_{gen}=\mathrm{LN}(X_{gen})$<br>$[B,m,d_{model}]\to[B,m,d_{model}]$<br>$O(B\,m\,d_{model})$</div>
       </div>
       <div class="step-save"><b>节省：</b>Prefill 省 $O(B\,S_{hit}\,d_{model})$</div>
     </div>
@@ -307,10 +307,10 @@ window.MathJax = {
     <div class="step-card">
       <div class="step-head"><span class="step">2. Q/K/V 投影</span><span class="op">线性层</span></div>
       <div class="step-grid">
-        <div class="scenario prefill"><div class="sc-label">全量 Prefill（无缓存）</div>$Q,K,V=\bar X W_Q,\bar X W_K,\bar X W_V$<br>$3\,B\,S\,d_{model}^{2}$</div>
-        <div class="scenario hit"><div class="sc-label">缓存命中 Prefill（有 KV Cache）</div>只算 $S_{new}$ 个 Token 的 Q/K/V，旧 K/V 从 Cache 读<br>$3\,B\,S_{new}\,d_{model}^{2}$</div>
-        <div class="scenario decode"><div class="sc-label">普通 Decode（1 Token/步）</div>$q,k,v$ 各 $[B,1,d_{model}]$<br>$3\,B\,d_{model}^{2}$</div>
-        <div class="scenario spec"><div class="sc-label">投机解码（m 候选/步）</div>$Q,K,V$ 各 $[B,m,d_{model}]$<br>$3\,B\,m\,d_{model}^{2}$</div>
+        <div class="scenario prefill"><div class="sc-label">全量 Prefill（无缓存）</div>$Q,K,V=\bar X W_Q,\bar X W_K,\bar X W_V$<br>$[B,S,d_{model}]\to[B,S,d_{model}]^{\times 3}$<br>$3\,B\,S\,d_{model}^{2}$</div>
+        <div class="scenario hit"><div class="sc-label">缓存命中 Prefill（有 KV Cache）</div>只算 $S_{new}$ 个 Token 的 Q/K/V，旧 K/V 从 Cache 读<br>$[B,S_{new},d_{model}]\to[B,S_{new},d_{model}]^{\times 3}$<br>$3\,B\,S_{new}\,d_{model}^{2}$</div>
+        <div class="scenario decode"><div class="sc-label">普通 Decode（1 Token/步）</div>$q,k,v$ 各 $[B,1,d_{model}]$<br>$[B,1,d_{model}]\to[B,1,d_{model}]^{\times 3}$<br>$3\,B\,d_{model}^{2}$</div>
+        <div class="scenario spec"><div class="sc-label">投机解码（m 候选/步）</div>$Q,K,V$ 各 $[B,m,d_{model}]$<br>$[B,m,d_{model}]\to[B,m,d_{model}]^{\times 3}$<br>$3\,B\,m\,d_{model}^{2}$</div>
       </div>
       <div class="step-save"><b>节省：</b>Prefill 省 $3\,B\,S_{hit}\,d_{model}^{2}$（连 $W_Q$ 一起省）</div>
     </div>
@@ -318,10 +318,10 @@ window.MathJax = {
     <div class="step-card">
       <div class="step-head"><span class="step">3. 多头 Reshape</span><span class="op">0 FLOPs</span></div>
       <div class="step-grid">
-        <div class="scenario prefill"><div class="sc-label">全量 Prefill（无缓存）</div>$Q,K,V\in\mathbb R^{B\times H\times S\times D}$</div>
-        <div class="scenario hit"><div class="sc-label">缓存命中 Prefill（有 KV Cache）</div>$Q_{new}\in\mathbb R^{B\times H\times S_{new}\times D}$<br>$K_{c},V_{c}\in\mathbb R^{B\times H\times S\times D}$</div>
-        <div class="scenario decode"><div class="sc-label">普通 Decode（1 Token/步）</div>$q,k,v\in\mathbb R^{B\times H\times 1\times D}$</div>
-        <div class="scenario spec"><div class="sc-label">投机解码（m 候选/步）</div>$q,k,v\in\mathbb R^{B\times H\times m\times D}$</div>
+        <div class="scenario prefill"><div class="sc-label">全量 Prefill（无缓存）</div>$[B,S,d_{model}]^{\times 3}\to[B,H,S,D]^{\times 3}$<br>$Q,K,V\in\mathbb R^{B\times H\times S\times D}$</div>
+        <div class="scenario hit"><div class="sc-label">缓存命中 Prefill（有 KV Cache）</div>$Q_{new}: [B,S_{new},d_{model}]\to[B,H,S_{new},D]$<br>$K_{c},V_{c}: [B,H,S,D]$（缓存读取）</div>
+        <div class="scenario decode"><div class="sc-label">普通 Decode（1 Token/步）</div>$[B,1,d_{model}]^{\times 3}\to[B,H,1,D]^{\times 3}$<br>$q,k,v\in\mathbb R^{B\times H\times 1\times D}$</div>
+        <div class="scenario spec"><div class="sc-label">投机解码（m 候选/步）</div>$[B,m,d_{model}]^{\times 3}\to[B,H,m,D]^{\times 3}$<br>$q,k,v\in\mathbb R^{B\times H\times m\times D}$</div>
       </div>
       <div class="step-save"><b>节省：</b>无（纯数据搬移）</div>
     </div>
@@ -340,10 +340,10 @@ window.MathJax = {
     <div class="step-card">
       <div class="step-head"><span class="step">5. 注意力掩码</span><span class="op">上三角置 -∞</span></div>
       <div class="step-grid">
-        <div class="scenario prefill"><div class="sc-label">全量 Prefill（无缓存）</div>$[B,H,S,S]$<br>$O(B\,H\,S^2)$</div>
-        <div class="scenario hit"><div class="sc-label">缓存命中 Prefill（有 KV Cache）</div>$[B,H,S_{new},S]$<br>$O(B\,H\,S_{new}\,S)$</div>
-        <div class="scenario decode"><div class="sc-label">普通 Decode（1 Token/步）</div>$[B,H,1,S]$<br>$O(B\,H\,S)$</div>
-        <div class="scenario spec"><div class="sc-label">投机解码（m 候选/步）</div>$[B,H,m,S{+}m]$<br>$O(B\,H\,m\,(S{+}m))$</div>
+        <div class="scenario prefill"><div class="sc-label">全量 Prefill（无缓存）</div>$[B,H,S,S]\to[B,H,S,S]$<br>$O(B\,H\,S^2)$</div>
+        <div class="scenario hit"><div class="sc-label">缓存命中 Prefill（有 KV Cache）</div>$[B,H,S_{new},S]\to[B,H,S_{new},S]$<br>$O(B\,H\,S_{new}\,S)$</div>
+        <div class="scenario decode"><div class="sc-label">普通 Decode（1 Token/步）</div>$[B,H,1,S]\to[B,H,1,S]$<br>$O(B\,H\,S)$</div>
+        <div class="scenario spec"><div class="sc-label">投机解码（m 候选/步）</div>$[B,H,m,S{+}m]\to[B,H,m,S{+}m]$<br>$O(B\,H\,m\,(S{+}m))$</div>
       </div>
       <div class="step-save"><b>节省：</b>同 Step 4 量级</div>
     </div>
@@ -351,10 +351,10 @@ window.MathJax = {
     <div class="step-card">
       <div class="step-head"><span class="step">6. Softmax</span><span class="op">指数+约简</span></div>
       <div class="step-grid">
-        <div class="scenario prefill"><div class="sc-label">全量 Prefill（无缓存）</div>$B\,H\,S$ 行</div>
-        <div class="scenario hit"><div class="sc-label">缓存命中 Prefill（有 KV Cache）</div>$B\,H\,S_{new}$ 行</div>
-        <div class="scenario decode"><div class="sc-label">普通 Decode（1 Token/步）</div>$B\,H$ 行</div>
-        <div class="scenario spec"><div class="sc-label">投机解码（m 候选/步）</div>$B\,H\,m$ 行</div>
+        <div class="scenario prefill"><div class="sc-label">全量 Prefill（无缓存）</div>$[B,H,S,S]\to[B,H,S,S]$<br>$B\,H\,S$ 行</div>
+        <div class="scenario hit"><div class="sc-label">缓存命中 Prefill（有 KV Cache）</div>$[B,H,S_{new},S]\to[B,H,S_{new},S]$<br>$B\,H\,S_{new}$ 行</div>
+        <div class="scenario decode"><div class="sc-label">普通 Decode（1 Token/步）</div>$[B,H,1,S]\to[B,H,1,S]$<br>$B\,H$ 行</div>
+        <div class="scenario spec"><div class="sc-label">投机解码（m 候选/步）</div>$[B,H,m,S{+}m]\to[B,H,m,S{+}m]$<br>$B\,H\,m$ 行</div>
       </div>
       <div class="step-save"><b>节省：</b>Prefill 省 $B\,H\,S_{hit}$ 行（长上下文可达总耗时 15%~20%）</div>
     </div>
@@ -384,10 +384,10 @@ window.MathJax = {
     <div class="step-card">
       <div class="step-head"><span class="step">9. 输出投影 $W_O$</span><span class="op">线性层</span></div>
       <div class="step-grid">
-        <div class="scenario prefill"><div class="sc-label">全量 Prefill（无缓存）</div>$B\,S\,d_{model}^{2}$</div>
-        <div class="scenario hit"><div class="sc-label">缓存命中 Prefill（有 KV Cache）</div>$B\,S_{new}\,d_{model}^{2}$</div>
-        <div class="scenario decode"><div class="sc-label">普通 Decode（1 Token/步）</div>$B\,d_{model}^{2}$</div>
-        <div class="scenario spec"><div class="sc-label">投机解码（m 候选/步）</div>$B\,m\,d_{model}^{2}$</div>
+        <div class="scenario prefill"><div class="sc-label">全量 Prefill（无缓存）</div>$[B,S,d_{model}]\to[B,S,d_{model}]$<br>$B\,S\,d_{model}^{2}$</div>
+        <div class="scenario hit"><div class="sc-label">缓存命中 Prefill（有 KV Cache）</div>$[B,S_{new},d_{model}]\to[B,S_{new},d_{model}]$<br>$B\,S_{new}\,d_{model}^{2}$</div>
+        <div class="scenario decode"><div class="sc-label">普通 Decode（1 Token/步）</div>$[B,1,d_{model}]\to[B,1,d_{model}]$<br>$B\,d_{model}^{2}$</div>
+        <div class="scenario spec"><div class="sc-label">投机解码（m 候选/步）</div>$[B,m,d_{model}]\to[B,m,d_{model}]$<br>$B\,m\,d_{model}^{2}$</div>
       </div>
       <div class="step-save"><b>节省：</b>Prefill 省 $B\,S_{hit}\,d_{model}^{2}$</div>
     </div>
@@ -395,10 +395,10 @@ window.MathJax = {
     <div class="step-card">
       <div class="step-head"><span class="step">10. Attention 残差</span><span class="op">加法</span></div>
       <div class="step-grid">
-        <div class="scenario prefill"><div class="sc-label">全量 Prefill（无缓存）</div>$X_{attn}=X+\mathrm{AttnProj}$<br>$O(B\,S\,d_{model})$</div>
-        <div class="scenario hit"><div class="sc-label">缓存命中 Prefill（有 KV Cache）</div>$O(B\,S_{new}\,d_{model})$</div>
-        <div class="scenario decode"><div class="sc-label">普通 Decode（1 Token/步）</div>$O(B\,d_{model})$</div>
-        <div class="scenario spec"><div class="sc-label">投机解码（m 候选/步）</div>$O(B\,m\,d_{model})$</div>
+        <div class="scenario prefill"><div class="sc-label">全量 Prefill（无缓存）</div>$X_{attn}=X+\mathrm{AttnProj}$<br>$[B,S,d_{model}]+[B,S,d_{model}]\to[B,S,d_{model}]$<br>$O(B\,S\,d_{model})$</div>
+        <div class="scenario hit"><div class="sc-label">缓存命中 Prefill（有 KV Cache）</div>$[B,S_{new},d_{model}]+[B,S_{new},d_{model}]\to[B,S_{new},d_{model}]$<br>$O(B\,S_{new}\,d_{model})$</div>
+        <div class="scenario decode"><div class="sc-label">普通 Decode（1 Token/步）</div>$[B,1,d_{model}]+[B,1,d_{model}]\to[B,1,d_{model}]$<br>$O(B\,d_{model})$</div>
+        <div class="scenario spec"><div class="sc-label">投机解码（m 候选/步）</div>$[B,m,d_{model}]+[B,m,d_{model}]\to[B,m,d_{model}]$<br>$O(B\,m\,d_{model})$</div>
       </div>
       <div class="step-save"><b>节省：</b>Prefill 省 $O(B\,S_{hit}\,d_{model})$</div>
     </div>
@@ -406,10 +406,10 @@ window.MathJax = {
     <div class="step-card">
       <div class="step-head"><span class="step">11. FFN 前 LayerNorm</span><span class="op">归一化</span></div>
       <div class="step-grid">
-        <div class="scenario prefill"><div class="sc-label">全量 Prefill（无缓存）</div>$\bar X_{attn}=\mathrm{LN}(X_{attn})$<br>$O(B\,S\,d_{model})$</div>
-        <div class="scenario hit"><div class="sc-label">缓存命中 Prefill（有 KV Cache）</div>$O(B\,S_{new}\,d_{model})$</div>
-        <div class="scenario decode"><div class="sc-label">普通 Decode（1 Token/步）</div>$O(B\,d_{model})$</div>
-        <div class="scenario spec"><div class="sc-label">投机解码（m 候选/步）</div>$O(B\,m\,d_{model})$</div>
+        <div class="scenario prefill"><div class="sc-label">全量 Prefill（无缓存）</div>$\bar X_{attn}=\mathrm{LN}(X_{attn})$<br>$[B,S,d_{model}]\to[B,S,d_{model}]$<br>$O(B\,S\,d_{model})$</div>
+        <div class="scenario hit"><div class="sc-label">缓存命中 Prefill（有 KV Cache）</div>$[B,S_{new},d_{model}]\to[B,S_{new},d_{model}]$<br>$O(B\,S_{new}\,d_{model})$</div>
+        <div class="scenario decode"><div class="sc-label">普通 Decode（1 Token/步）</div>$[B,1,d_{model}]\to[B,1,d_{model}]$<br>$O(B\,d_{model})$</div>
+        <div class="scenario spec"><div class="sc-label">投机解码（m 候选/步）</div>$[B,m,d_{model}]\to[B,m,d_{model}]$<br>$O(B\,m\,d_{model})$</div>
       </div>
       <div class="step-save"><b>节省：</b>Prefill 省 $O(B\,S_{hit}\,d_{model})$</div>
     </div>
@@ -418,9 +418,9 @@ window.MathJax = {
       <div class="step-head"><span class="step">12. MoE 路由（门控）</span><span class="op">线性+Softmax</span></div>
       <div class="step-grid">
         <div class="scenario prefill"><div class="sc-label">全量 Prefill（无缓存）</div>$G=\mathrm{Softmax}(\bar X_{attn}W_{gate})$<br>$[B,S,d_{model}]\to[B,S,E]$<br>$B\,S\,d_{model}\,E$</div>
-        <div class="scenario hit"><div class="sc-label">缓存命中 Prefill（有 KV Cache）</div>$B\,S_{new}\,d_{model}\,E$</div>
-        <div class="scenario decode"><div class="sc-label">普通 Decode（1 Token/步）</div>$B\,d_{model}\,E$</div>
-        <div class="scenario spec"><div class="sc-label">投机解码（m 候选/步）</div>$B\,m\,d_{model}\,E$</div>
+        <div class="scenario hit"><div class="sc-label">缓存命中 Prefill（有 KV Cache）</div>$[B,S_{new},d_{model}]\to[B,S_{new},E]$<br>$B\,S_{new}\,d_{model}\,E$</div>
+        <div class="scenario decode"><div class="sc-label">普通 Decode（1 Token/步）</div>$[B,1,d_{model}]\to[B,1,E]$<br>$B\,d_{model}\,E$</div>
+        <div class="scenario spec"><div class="sc-label">投机解码（m 候选/步）</div>$[B,m,d_{model}]\to[B,m,E]$<br>$B\,m\,d_{model}\,E$</div>
       </div>
       <div class="step-save"><b>节省：</b>Prefill 省 $B\,S_{hit}\,d_{model}\,E$；Decode 每个新 Token 仍要重新路由</div>
     </div>
@@ -428,10 +428,10 @@ window.MathJax = {
     <div class="step-card">
       <div class="step-head"><span class="step">13. Top-K 选择</span><span class="op">排序/堆</span></div>
       <div class="step-grid">
-        <div class="scenario prefill"><div class="sc-label">全量 Prefill（无缓存）</div>$B\,S$ 个 Token 各选 Top-K<br>$O(B\,S\,E\log K)$</div>
-        <div class="scenario hit"><div class="sc-label">缓存命中 Prefill（有 KV Cache）</div>$O(B\,S_{new}\,E\log K)$</div>
-        <div class="scenario decode"><div class="sc-label">普通 Decode（1 Token/步）</div>$O(B\,E\log K)$</div>
-        <div class="scenario spec"><div class="sc-label">投机解码（m 候选/步）</div>$O(B\,m\,E\log K)$</div>
+        <div class="scenario prefill"><div class="sc-label">全量 Prefill（无缓存）</div>$B\,S$ 个 Token 各选 Top-K<br>$[B,S,E]\to[B,S,K]$<br>$O(B\,S\,E\log K)$</div>
+        <div class="scenario hit"><div class="sc-label">缓存命中 Prefill（有 KV Cache）</div>$[B,S_{new},E]\to[B,S_{new},K]$<br>$O(B\,S_{new}\,E\log K)$</div>
+        <div class="scenario decode"><div class="sc-label">普通 Decode（1 Token/步）</div>$[B,1,E]\to[B,1,K]$<br>$O(B\,E\log K)$</div>
+        <div class="scenario spec"><div class="sc-label">投机解码（m 候选/步）</div>$[B,m,E]\to[B,m,K]$<br>$O(B\,m\,E\log K)$</div>
       </div>
       <div class="step-save"><b>节省：</b>Prefill 省 $O(B\,S_{hit}\,E\log K)$</div>
     </div>
@@ -439,10 +439,10 @@ window.MathJax = {
     <div class="step-card">
       <div class="step-head"><span class="step">14. MoE 专家 FFN</span><span class="op">稀疏矩阵乘</span></div>
       <div class="step-grid">
-        <div class="scenario prefill"><div class="sc-label">全量 Prefill（无缓存）</div>$\mathrm{FFN}_k(x)=\mathrm{SiLU}(xW_{1,k})\cdot W_{2,k}$<br>$B\,S\,K\cdot 2\,d_{model}\,d_{ff}$<br>（S=2048 → ≈ $4.81\times10^{11}$ FLOPs）</div>
-        <div class="scenario hit"><div class="sc-label">缓存命中 Prefill（有 KV Cache）</div>$B\,S_{new}\,K\cdot 2\,d_{model}\,d_{ff}$<br>（S<sub>new</sub>=1024 → ≈ $2.405\times10^{11}$）</div>
-        <div class="scenario decode"><div class="sc-label">普通 Decode（1 Token/步）</div>$B\,K\cdot 2\,d_{model}\,d_{ff}$<br>≈ $2.35\times10^{8}$</div>
-        <div class="scenario spec"><div class="sc-label">投机解码（m 候选/步）</div>$B\,m\,K\cdot 2\,d_{model}\,d_{ff}$（m 个候选并行）</div>
+        <div class="scenario prefill"><div class="sc-label">全量 Prefill（无缓存）</div>$\mathrm{FFN}_k(x)=\mathrm{SiLU}(xW_{1,k})\cdot W_{2,k}$<br>$[B,S,d_{model}]\to[B,S,d_{model}]$<br>$B\,S\,K\cdot 2\,d_{model}\,d_{ff}$<br>（S=2048 → ≈ $4.81\times10^{11}$ FLOPs）</div>
+        <div class="scenario hit"><div class="sc-label">缓存命中 Prefill（有 KV Cache）</div>$[B,S_{new},d_{model}]\to[B,S_{new},d_{model}]$<br>$B\,S_{new}\,K\cdot 2\,d_{model}\,d_{ff}$<br>（S<sub>new</sub>=1024 → ≈ $2.405\times10^{11}$）</div>
+        <div class="scenario decode"><div class="sc-label">普通 Decode（1 Token/步）</div>$[B,1,d_{model}]\to[B,1,d_{model}]$<br>$B\,K\cdot 2\,d_{model}\,d_{ff}$<br>≈ $2.35\times10^{8}$</div>
+        <div class="scenario spec"><div class="sc-label">投机解码（m 候选/步）</div>$[B,m,d_{model}]\to[B,m,d_{model}]$<br>$B\,m\,K\cdot 2\,d_{model}\,d_{ff}$（m 个候选并行）</div>
       </div>
       <div class="step-save"><b>节省：</b>几乎无——<b>路由命中省不掉 FFN</b>，新 Token 必须重算</div>
     </div>
@@ -450,10 +450,10 @@ window.MathJax = {
     <div class="step-card">
       <div class="step-head"><span class="step">15. 专家输出加权</span><span class="op">加权求和</span></div>
       <div class="step-grid">
-        <div class="scenario prefill"><div class="sc-label">全量 Prefill（无缓存）</div>$\mathrm{MoEOut}=\sum_{k\in\mathrm{TopK}(i)}G_{i,k}\,\mathrm{FFN}_k(x_i)$<br>$O(B\,S\,K\,d_{model})$</div>
-        <div class="scenario hit"><div class="sc-label">缓存命中 Prefill（有 KV Cache）</div>$O(B\,S_{new}\,K\,d_{model})$</div>
-        <div class="scenario decode"><div class="sc-label">普通 Decode（1 Token/步）</div>$O(B\,K\,d_{model})$</div>
-        <div class="scenario spec"><div class="sc-label">投机解码（m 候选/步）</div>$O(B\,m\,K\,d_{model})$</div>
+        <div class="scenario prefill"><div class="sc-label">全量 Prefill（无缓存）</div>$\mathrm{MoEOut}=\sum_{k\in\mathrm{TopK}(i)}G_{i,k}\,\mathrm{FFN}_k(x_i)$<br>$[B,S,K]\times[B,S,K,d_{model}]\to[B,S,d_{model}]$<br>$O(B\,S\,K\,d_{model})$</div>
+        <div class="scenario hit"><div class="sc-label">缓存命中 Prefill（有 KV Cache）</div>$[B,S_{new},K]\times[B,S_{new},K,d_{model}]\to[B,S_{new},d_{model}]$<br>$O(B\,S_{new}\,K\,d_{model})$</div>
+        <div class="scenario decode"><div class="sc-label">普通 Decode（1 Token/步）</div>$[B,1,K]\times[B,1,K,d_{model}]\to[B,1,d_{model}]$<br>$O(B\,K\,d_{model})$</div>
+        <div class="scenario spec"><div class="sc-label">投机解码（m 候选/步）</div>$[B,m,K]\times[B,m,K,d_{model}]\to[B,m,d_{model}]$<br>$O(B\,m\,K\,d_{model})$</div>
       </div>
       <div class="step-save"><b>节省：</b>Prefill 省 $O(B\,S_{hit}\,K\,d_{model})$</div>
     </div>
@@ -461,10 +461,10 @@ window.MathJax = {
     <div class="step-card">
       <div class="step-head"><span class="step">16. FFN 残差</span><span class="op">加法</span></div>
       <div class="step-grid">
-        <div class="scenario prefill"><div class="sc-label">全量 Prefill（无缓存）</div>$X_{final}=X_{attn}+\mathrm{MoEOut}$<br>$O(B\,S\,d_{model})$</div>
-        <div class="scenario hit"><div class="sc-label">缓存命中 Prefill（有 KV Cache）</div>$O(B\,S_{new}\,d_{model})$</div>
-        <div class="scenario decode"><div class="sc-label">普通 Decode（1 Token/步）</div>$O(B\,d_{model})$</div>
-        <div class="scenario spec"><div class="sc-label">投机解码（m 候选/步）</div>$O(B\,m\,d_{model})$</div>
+        <div class="scenario prefill"><div class="sc-label">全量 Prefill（无缓存）</div>$X_{final}=X_{attn}+\mathrm{MoEOut}$<br>$[B,S,d_{model}]+[B,S,d_{model}]\to[B,S,d_{model}]$<br>$O(B\,S\,d_{model})$</div>
+        <div class="scenario hit"><div class="sc-label">缓存命中 Prefill（有 KV Cache）</div>$[B,S_{new},d_{model}]+[B,S_{new},d_{model}]\to[B,S_{new},d_{model}]$<br>$O(B\,S_{new}\,d_{model})$</div>
+        <div class="scenario decode"><div class="sc-label">普通 Decode（1 Token/步）</div>$[B,1,d_{model}]+[B,1,d_{model}]\to[B,1,d_{model}]$<br>$O(B\,d_{model})$</div>
+        <div class="scenario spec"><div class="sc-label">投机解码（m 候选/步）</div>$[B,m,d_{model}]+[B,m,d_{model}]\to[B,m,d_{model}]$<br>$O(B\,m\,d_{model})$</div>
       </div>
       <div class="step-save"><b>节省：</b>Prefill 省 $O(B\,S_{hit}\,d_{model})$</div>
     </div>
@@ -475,7 +475,7 @@ window.MathJax = {
         <div class="scenario prefill"><div class="sc-label">全量 Prefill（无缓存）</div>—（不存在）</div>
         <div class="scenario hit"><div class="sc-label">缓存命中 Prefill（有 KV Cache）</div>—（不存在）</div>
         <div class="scenario decode"><div class="sc-label">普通 Decode（1 Token/步）</div>—（不存在）</div>
-        <div class="scenario spec"><div class="sc-label">投机解码（m 候选/步）</div>逐个比较 Draft 与 Target 的概率分布<br>$O(m\cdot V)$，接受率 $\alpha$ 决定跳过步数</div>
+        <div class="scenario spec"><div class="sc-label">投机解码（m 候选/步）</div>逐个比较 Draft 与 Target 的概率分布<br>$[B,m,V]\to[B,m_{acc}]$<br>$O(m\cdot V)$，接受率 $\alpha$ 决定跳过步数</div>
       </div>
       <div class="step-save"><b>节省：</b>投机新增（相对 FFN 可忽略）</div>
     </div>
@@ -483,10 +483,10 @@ window.MathJax = {
     <div class="step-card">
       <div class="step-head"><span class="step">18. KV Cache 更新</span><span class="op">写入缓存</span></div>
       <div class="step-grid">
-        <div class="scenario prefill"><div class="sc-label">全量 Prefill（无缓存）</div>缓存全部 S 个 Token 的 K/V<br>写入量 $2\,B\,S\,d_{model}$</div>
-        <div class="scenario hit"><div class="sc-label">缓存命中 Prefill（有 KV Cache）</div>只缓存 $S_{new}$ 个新 Token 的 K/V<br>写入量 $2\,B\,S_{new}\,d_{model}$</div>
-        <div class="scenario decode"><div class="sc-label">普通 Decode（1 Token/步）</div>每步写 1 个 Token，共 N 次<br>$2\,B\,d_{model}$</div>
-        <div class="scenario spec"><div class="sc-label">投机解码（m 候选/步）</div>验证通过一次性写 $m_{acc}$ 个（$\le m$）<br>共 $\frac{N}{\alpha m}$ 次</div>
+        <div class="scenario prefill"><div class="sc-label">全量 Prefill（无缓存）</div>缓存全部 S 个 Token 的 K/V<br>$[B,H,S,D]^{\times 2}\to\mathrm{KVCache}$<br>写入量 $2\,B\,S\,d_{model}$</div>
+        <div class="scenario hit"><div class="sc-label">缓存命中 Prefill（有 KV Cache）</div>只缓存 $S_{new}$ 个新 Token 的 K/V<br>$[B,H,S_{new},D]^{\times 2}\to\mathrm{KVCache}$<br>写入量 $2\,B\,S_{new}\,d_{model}$</div>
+        <div class="scenario decode"><div class="sc-label">普通 Decode（1 Token/步）</div>每步写 1 个 Token，共 N 次<br>$[B,H,1,D]^{\times 2}\to\mathrm{KVCache}$<br>$2\,B\,d_{model}$</div>
+        <div class="scenario spec"><div class="sc-label">投机解码（m 候选/步）</div>验证通过一次性写 $m_{acc}$ 个（$\le m$）<br>$[B,H,m_{acc},D]^{\times 2}\to\mathrm{KVCache}$<br>共 $\frac{N}{\alpha m}$ 次</div>
       </div>
       <div class="step-save"><b>节省：</b>Prefill 省 $2\,B\,S_{hit}\,d_{model}$ 写入；投机把写入次数 $N\to\frac{N}{\alpha m}$</div>
     </div>
