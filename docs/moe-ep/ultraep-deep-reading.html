@@ -83,14 +83,14 @@ window.MathJax = {
 <h1>UltraEP 深度阅读笔记 —— 论文 × 源码精读 × 问题详解</h1>
 
 <blockquote>
-<p>对象：<a href="https://arxiv.org/abs/2606.04101">UltraEP（arXiv:2606.04101，v3，2026-06-18）</a>——小红书 × 北大的机柜级专家负载均衡系统。本文分两部分：<b>Part I</b>（§0–§12）按「问题 → 硬件前提 → 完整方案 → 逐模块源码走读 → 实验 → 批判」单线精读，论断尽量落到 <a href="https://github.com/Dots-Infra/UltraEP">官方代码仓</a>（本地快照 commit <code>94cab099</code>）的具体文件与行为；<b>Part II</b> 把阅读过程中（一篇 DeepSeek 论文对话与本笔记讨论中）产生的全部问题集中收尾，逐题详解，公式用到的符号都当场定义。证据标注：<span class="ev ev-v">V</span> 一手核对（论文 / <a href="https://dots-infra.github.io/UltraEP/zh/">官方博客 v1.0.0</a> / 本地源码 / arXiv 版本页 / DeepEP 仓库）<span class="ev ev-r">R</span> 合理推断<span class="ev ev-u">U</span> 待核实。整理：2026-09-16（全文重写版）。</p>
+<p>对象：<a href="https://arxiv.org/abs/2606.04101">UltraEP（arXiv:2606.04101，v3，2026-06-18）</a>——小红书 × 北大的机柜级专家负载均衡系统。本文分两部分：<b>Part I</b>（§0–§13）按「问题 → 硬件前提 → 完整方案 → 逐模块源码走读 → 实验 → 推理总结 → 批判」单线精读，论断尽量落到 <a href="https://github.com/Dots-Infra/UltraEP">官方代码仓</a>（本地快照 commit <code>94cab099</code>）的具体文件与行为；<b>Part II</b> 把阅读过程中（一篇 DeepSeek 论文对话与本笔记讨论中）产生的全部问题集中收尾，逐题详解，公式用到的符号都当场定义。证据标注：<span class="ev ev-v">V</span> 一手核对（论文 / <a href="https://dots-infra.github.io/UltraEP/zh/">官方博客 v1.0.0</a> / 本地源码 / arXiv 版本页 / DeepEP 仓库）<span class="ev ev-r">R</span> 合理推断<span class="ev ev-u">U</span> 待核实。整理：2026-09-16（全文重写版）。</p>
 </blockquote>
 
 <h2>0. 阅读指南与符号表</h2>
 
 <h3>0.1 材料与口径</h3>
 <ul>
-<li>论文 v3 摘要与 arXiv 版本页逐句核对（v1/v2 已撤回，见 §12）；博客 v1.0.0（仓库 <code>docs/blog_v1_zh.md</code>）提供工程细节与口径拆分；源码为本地 <code>E:\Desktop\业务\EP\src\UltraEP</code>（与 GitHub commit <code>94cab099</code> 一致），实测约 5.9k 行（kernel .cu 共 3849 行 + Python 包 2006 行，不含头文件与 C++ 绑定）<span class="ev ev-v">V</span>。</li>
+<li>论文 v3 摘要与 arXiv 版本页逐句核对（v1/v2 已撤回，见 §13）；博客 v1.0.0（仓库 <code>docs/blog_v1_zh.md</code>）提供工程细节与口径拆分；源码为本地 <code>E:\Desktop\业务\EP\src\UltraEP</code>（与 GitHub commit <code>94cab099</code> 一致），实测约 5.9k 行（kernel .cu 共 3849 行 + Python 包 2006 行，不含头文件与 C++ 绑定）<span class="ev ev-v">V</span>。</li>
 <li>对照系：DeepSeek 的 EPLB / LPLB（直接前驱）、DeepEP（token 通信线，V1 README 与 V2 main 均一手核对）、MoonEP（decode 侧对照，见本目录姊妹篇）。</li>
 </ul>
 
@@ -178,7 +178,7 @@ flowchart LR
 <tr><td>1</td><td><b>复制</b>热专家，不<b>迁移</b></td><td>把热专家整体搬到空闲 rank</td><td>迁移要搬优化器状态、跨 step 状态漂移、失败恢复复杂，且破坏训练确定性</td><td>只物化前向权重；副本梯度在反向实时归约回 master；优化器仍只更新 master → 计算数学等价</td></tr>
 <tr><td>2</td><td><b>实时精确</b>负载，不做历史预测</td><td>EPLB 式窗口统计 + 周期性重排</td><td>非平稳负载下预测失准，重排滞后甚至负优化（§1.2、Q11A 的 Figure 4 证据）</td><td>把规划压到 EP64 &lt;100 µs，使「每层每 microbatch 都算一次」在时间上算得起</td></tr>
 <tr><td>3</td><td>放置与路由<b>耦合</b>求解</td><td>EPLB（先放置）+ LPLB（再路由）的两阶段</td><td>两阶段互相牵制：放置偏差限制路由可解性，路由再好也修不回放置欠的账</td><td>quota 直接解「每个实例接收多少」，一步同时定放置与配额（§7）</td></tr>
-<tr><td>4</td><td>复制限制在 <b>scale-up 域</b>内</td><td>允许跨机（RDMA）复制</td><td>RDMA 的带宽与时延撑不住每层 GB 级的复制流量（§12 带宽账）</td><td>NVL 域 &lt; EP 组时接受均衡下限 &gt; 1.0，不越界（§2）</td></tr>
+<tr><td>4</td><td>复制限制在 <b>scale-up 域</b>内</td><td>允许跨机（RDMA）复制</td><td>RDMA 的带宽与时延撑不住每层 GB 级的复制流量（§13 带宽账）</td><td>NVL 域 &lt; EP 组时接受均衡下限 &gt; 1.0，不越界（§2）</td></tr>
 </table>
 
 <h3>3.3 端到端走查：一个完整训练步里发生什么</h3>
@@ -440,7 +440,47 @@ flowchart LR
 <tr><td>与理想差距的来源</td><td>非残余失衡</td><td>实际路由下通信/计算对各专家负载的非一致性 + 冗余控制开销（博客）——rank 级摊平 ≠ 专家级均衡</td><td><span class="ev ev-v">V</span></td></tr>
 </table>
 
-<h2>12. 版本史与批判性讨论</h2>
+<h2>12. 最终总结：面向推理 prefill 的完整方案链</h2>
+<p>本节把全文重新组织成一条<b>单向叙事</b>，并按读者的实际关注点做两个裁剪：<b>只讲推理 prefill</b>（decode 为何不适合本方案见 Q13/Q14；训练侧的反向机制见 §10，不进入本节叙事）；<b>先把 GPU 亲和优化全部割出去</b>——§6–§9 的 kernel 细节全部退场，先给出最淳朴的端到端逻辑方案（§12.1），再回答「这个方案直接实现能赚到钱吗」（§12.2），然后<b>依次引入每一项改进</b>：它解决淳朴方案的哪个致命伤、具体做了什么、把哪段性能优化到什么水平（§12.3），最后把 §11 的实验数字逐一挂回改进链（§12.4）。符号沿用 §0.2。</p>
+
+<h3>12.1 淳朴方案：如果只讲逻辑</h3>
+<p>剥掉全部工程外壳后，UltraEP 在推理 prefill 的一个 MoE 层上只做五件事：</p>
+<ol>
+<li><b>量</b>：门控算完的瞬间，本 batch 的精确负载 $L_e = \sum_r \lambda_{r,e}$ 已经天然确定，不需要任何额外测量——这是整个方案的第一性优势（§6）；</li>
+<li><b>解</b>：以「每 rank 负载 ≤ τ」为约束二分搜索最小可行阈值 τ*，贪心探针同时给出副本放置 X 与实例配额 U（§7 / Q6A）——副本带着口粮出生，放置与路由一步解完；</li>
+<li><b>拷</b>：为新开副本把 master 权重拷过去；方案没变的实例零拷贝（§8）；</li>
+<li><b>分</b>：token 按配额分摊到各实例——本 rank 自己有实例的先走本地，残余按配额占比比例分配（§9）；</li>
+<li><b>算</b>：dispatch → 专家计算 → combine 照旧，UltraEP 不碰 token 线。</li>
+</ol>
+<p>这一层有两条可以严格陈述的性质：<b>① 数学等价</b>——副本权重与 master 逐位相同，token 按 top-k 概率加权合并的输出不变，推理结果不受影响；<b>② 逻辑最优</b>——它基于精确负载做实时决策，均衡上限只受槽位预算 $R$ 与 NVL 域约束（§3.3 玩具例子：$R$=1 时 𝓘 1.49→1.09，$R$=2 时 →1.00），不受任何预测质量拖累。换句话说，<b>方案层已经把「该做什么」解对了，剩下的全部问题是「怎么做才不亏」</b>。</p>
+
+<h3>12.2 淳朴方案直接实现会怎样：收益倒挂</h3>
+<p>均衡的收益可以算：𝓘 从 4 压到 1，MoE 段约省 75% 的计算时间（吞吐损失 ≈ 1 − 1/𝓘，Q11）。但如果按最直觉的方式实现——负载拷到 CPU、CPU 上求解、方案发回去、每个副本起一次拷贝、逐 token 判目的地——每一层的均衡动作本身就要付出毫秒级代价，收益瞬间被吃穿，<b>越均衡越亏</b>。这正是论文 §4 两个 key insight 的由来（Non-Payload 开销与扇出瓶颈，详见 Q10A）：在 RSN 上，线太快了，<b>钱不在带宽上，在调度带宽的开销上</b>。下面每一项改进，都是对淳朴方案某一个具体失血点的止血。</p>
+
+<h3>12.3 依次引入的改进：动机 → 做法 → 优化了什么</h3>
+<p><b>改进 A：控制面整体设备驻留（GPU-native solving）。</b>动机：淳朴方案的「解」若在 CPU 上做，每层要付 D2H/H2D 往返与流同步（毫秒级），直接倒亏。做法：二分与贪心探针整体搬上 GPU——单个协作线程块占一个 SM，负载矩阵与放置状态驻留共享内存，多 warp 并行评估候选阈值、warp 归约裁决，一个 kernel 直接吐出放置+配额+前缀元数据；全程无 host 同步，CUDA graph 兼容（§7）。优化效果：求解在 EP64 下 <b>&lt;100 µs</b><span class="ev ev-v">V</span>。不做的后果：控制面比均衡收益贵 10 倍以上。</p>
+<p><b>改进 B：传输任务化 + 增量物化 + 槽位跨层复用。</b>动机：淳朴方案的「拷」有两个浪费——逐对点拷的控制开销（任务集合每层都变，固定通信原语用不上），以及把没变的东西反复拷。做法：方案编译成 tile 级传输任务流，持久化 kernel 反复抢单（一次 launch 覆盖整层），每 tile SMEM 暂存一次、向 N 个目的多路 store；槽位 buffer <b>跨层复用</b>，只物化方案的变化部分，运行时零动态分配（§8、§5.4）。优化效果：数据面与控制面合计的关键路径暴露 ≤ <b>300 µs</b>（约步时 1–2%<span class="ev ev-v">V</span>，口径为 Qwen3-235B EP64 训练 nsys；推理 prefill 机制相同，每层控制开销与 token 数无关，未单独公布<span class="ev ev-r">R</span>）；显存上单个冗余槽从「每层各留一份」的 9.9 GB 降到复用后的 <b>108 MB</b>（训练口径含 fp32 梯度<span class="ev ev-v">V</span>；纯推理只含 bf16 权重，推演约 3.5 GB → 37.7 MB<span class="ev ev-r">R</span>）。不做的后果：传输控制开销与显存占用都随层数线性爆炸。</p>
+<p><b>改进 C：扇出自适应中继（direct / adaptive / force_relay 三档）。</b>动机：淳朴方案的「拷」在热专家上会退化成 O(C) 出口多播——20 个副本就是 792 MB ≈ 2–4 ms，均衡收益被通信 straggler 吃掉（Q10A②）。做法：按扇出收益判定现建两阶段中继树，master 只发 ⌊√C⌋ 份给中继、中继按 chunk 流式转发；温和场景直发（中继本身也有控制开销）。优化效果：出口流量从 C−1 份降到 ⌊√C⌋ 份，极端热专家的同步时间约省 √C 倍，且无全局 barrier（§8.2）。不做的后果：负载越偏斜越亏，均衡自噬。</p>
+<p><b>改进 D：配额前缀分流。</b>动机：淳朴方案的「分」若逐 token 做完整路由决策，代价高且结果依赖处理顺序。做法：把 U 做成前缀和表，token 的目的地化为一次上界查找，本地配额优先、残余按比例 + 确定性取整（§9）。优化效果：分流成本近零、结果确定可复现、且与 ③ 的传输并发而被掩盖。不做的后果：分流本身成为新的热路径。</p>
+<p><b>改进 E：通信资源的预算化。</b>动机：通信 kernel 与计算 kernel 共享同一批 SM，抢占会拖慢本该掩盖通信的计算（Q10A①后半）。做法：驻留 SM 数与共享内存 footprint 显式可控（如 <code>ULTRA_EP_GRAD_REDUCE_NUM_SMS</code>，持久化 kernel 让通信/计算线程块可同 SM 调度）。优化效果：均衡流量可预算化地与计算共存。此项主要惠及存在重叠机会的场景（反向、以及与 DeepEP token 通信的 SM 配合），纯前向 prefill 中 ②③ 本就在数据依赖的关键路径上、不需要掩盖<span class="ev ev-r">R</span>。</p>
+
+<h3>12.4 改进链与实验数字的对应</h3>
+<table>
+<tr><th>实验事实（§11.2 全表）</th><th>归因</th></tr>
+<tr><td>求解 EP64 &lt;100 µs</td><td>改进 A</td></tr>
+<tr><td>关键路径总暴露 ≤300 µs（1–2% 步时）</td><td>改进 A + B + C 的合力（A 是控制面，B 是传输主体，C 保证极端偏斜下不失控）</td></tr>
+<tr><td>冗余槽显存 9.9 GB → 108 MB（Qwen3-235B）</td><td>改进 B（跨层复用）；运行时零动态分配</td></tr>
+<tr><td>跨 rank 𝓘 1.30–4.01 → <b>1.01–1.04</b></td><td>淳朴方案层（§12.1）的正确性 + A–D 保证它「算得起、跑得动、分得准」</td></tr>
+<tr><td>prefill 达理想吞吐 90–97%，较 SGLang <b>1.56×</b>（EP40/64，LongBench / Codeforces / DAPO-Math-17K）</td><td>全链条；其中 1.56× 的主体是 𝓘 压平的收益（12.1），减去 ≤300 µs/层的代价（12.3）后仍然大赚</td></tr>
+<tr><td>EPLB / LPLB 始终落后</td><td>方案层差异：历史预测滞后（无改进对应——UltraEP 根本不用预测）+ 两阶段割裂（§3.2 选择 ③）+ 复制预算受限</td></tr>
+<tr><td>DeepEP token 接收 buffer 的 worst-case 分配随之下调</td><td>间接收益：负载摊平 → 最坏尺寸变小（§6.3 的口径）</td></tr>
+<tr><td>288B 生产预训练 ≥92% 理想性能（长周期稳定）</td><td>全链条的稳定性验证（训练场景，此处仅作旁证）</td></tr>
+</table>
+
+<h3>12.5 一段话收束</h3>
+<p>UltraEP 的推理故事可以压缩成三句话：<b>方案层</b>，它用「精确负载 + 实时联合求解」把该做的事做对——副本带着配额出生，token 按配额落位，rank 负载被摊到 1.01–1.04；<b>实现层</b>，它用设备驻留求解（&lt;100 µs）、任务化增量传输、自适应中继、前缀分流四步止血，把「每层每 microbatch 做一次均衡」的代价压进 300 µs 预算、1–2% 步时；<b>结果层</b>，推理 prefill 在真实请求分布下拿到理想吞吐的 90–97%、较 SGLang 1.56×——均衡的收益第一次系统性大于均衡的代价，而这正是「实时系统侧均衡」从论文走向生产的那条线。</p>
+
+<h2>13. 版本史与批判性讨论</h2>
 <ul>
 <li><b>版本史</b><span class="ev ev-v">V</span>（arXiv 版本页）：v1（2026-06-02）与 v2（2026-06-05）均 Withdrawn，v3（2026-06-18）为当前版；开源 v1.0.0 发布于 2026-07-15。署名 13 人（一作 Xinming Wei，北大，于小红书实习期间完成），单位含北大、小红书、上海 AI Lab、独立研究者。</li>
 <li><b>TEMPO 的批评</b>（arXiv:2608.13057）：将 UltraEP 与 LLEP、TAOT 归为 training-side balancers，认为其难以在 serving 栈上端到端复现（原文片段截断，语义待核<span class="ev ev-u">U</span>）；旁证：SGLang 集成 experimental<span class="ev ev-v">V</span>。</li>
@@ -849,7 +889,7 @@ xychart-beta
 <p>读图要点：表中 $T$ 与 $G$ 含义同 Q15。同一列自上而下就是「decode → prefill」的 token 增益；同一行自左向右就是「EP 度拉大差距」。两个锚点：$G$=64、$T$=4096（典型 prefill）噪声地板 1.13——UltraEP 均衡后实测 1.01–1.04 已贴住地板，说明残差主要是系统偏斜与控制开销；$G$=64、$T$=128（典型 decode 批）地板高达 1.72——<b>decode 天生难靠自然摊平，只能靠部署期静态均衡兜底</b>，这与 Q13/Q14 的结论互相印证。模型口径提示：均匀路由假设、未含 top-k 负相关与热度偏斜，真实数值叠加其上<span class="ev ev-r">R</span>。</p>
 </div>
 
-<h2>13. 参考资料</h2>
+<h2>14. 参考资料</h2>
 <ul>
 <li>论文：<a href="https://arxiv.org/abs/2606.04101">UltraEP: Unleash MoE Training and Inference on Rack-Scale Nodes with Near-Optimal Load Balancing</a>（arXiv:2606.04101，v3，2026-06-18；v1/v2 已撤回）</li>
 <li>代码仓：<a href="https://github.com/Dots-Infra/UltraEP">Dots-Infra/UltraEP</a>（本地快照 <code>94cab099</code>；行数为本地实测）与参考集成 <a href="https://github.com/Dots-Infra/Megatron-LM-UltraEP">Megatron-LM-UltraEP</a></li>
