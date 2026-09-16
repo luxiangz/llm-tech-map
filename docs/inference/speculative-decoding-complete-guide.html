@@ -1,0 +1,2400 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>投机解码完全指南：从拒绝采样到并行草稿生成</title>
+<!-- 霞鹜文楷：开源可商用的中文楷体风格字体；加载失败时自动回退到微软雅黑 -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/lxgw-wenkai-webfont@1.7.0/style.css">
+<style>
+  :root {
+    --bg: #faf8f4;
+    --card: #ffffff;
+    --ink: #2b2926;
+    --sub: #6f6a61;
+    --accent: #b3541e;
+    --accent-soft: #f3e4d8;
+    --blue: #1e5a8a;
+    --blue-soft: #e2ecf4;
+    --green: #2e7d32;
+    --green-soft: #e6f0e6;
+    --red: #b3261e;
+    --line: #e5ded2;
+    --code-bg: #232936;
+    --code-ink: #d8dee9;
+    --warn: #8a6d1a;
+    --warn-soft: #f7f0d9;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html { scroll-behavior: smooth; }
+  body {
+    font-family: "LXGW WenKai", "Microsoft YaHei", "PingFang SC", "Segoe UI", sans-serif;
+    font-size: 17.5px;
+    line-height: 1.85;
+    letter-spacing: 0.01em;
+    color: var(--ink);
+    background: var(--bg);
+  }
+  h1, h2, h3, h4 { font-family: "Microsoft YaHei", "PingFang SC", sans-serif; line-height: 1.4; letter-spacing: 0.01em; }
+  code, pre { font-family: "Cascadia Code", Consolas, "Microsoft YaHei", monospace; }
+
+  /* ===== 布局 ===== */
+  .wrap { max-width: 980px; margin: 0 auto; padding: 0 28px; }
+
+  /* ===== Hero 封面 ===== */
+  .hero {
+    background: linear-gradient(135deg, #2b2320 0%, #4a3428 55%, #6b4a33 100%);
+    color: #f5efe6;
+    padding: 84px 28px 64px;
+    border-bottom: 4px solid var(--accent);
+  }
+  .hero .wrap { max-width: 980px; }
+  .hero .kicker {
+    display: inline-block;
+    font-family: "Microsoft YaHei", "PingFang SC", sans-serif;
+    font-size: 14.5px;
+    letter-spacing: 0.32em;
+    color: #e8b48c;
+    text-transform: uppercase;
+    margin-bottom: 18px;
+    border: 1px solid rgba(232,180,140,.5);
+    padding: 4px 14px;
+    border-radius: 999px;
+  }
+  .hero h1 { font-size: 40px; font-weight: 700; margin-bottom: 16px; color: #fff; }
+  .hero .sub { font-size: 19px; color: #d9cdbf; max-width: 760px; margin-bottom: 26px; }
+  .hero .meta { font-size: 14.5px; color: #b7a694; }
+  .hero .meta span { margin-right: 22px; }
+
+  /* ===== 目录 ===== */
+  nav.toc {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 26px 30px;
+    margin: 34px 0 8px;
+  }
+  nav.toc h2 { font-size: 20px; margin-bottom: 14px; color: var(--accent); }
+  nav.toc ol { list-style: none; counter-reset: toc; columns: 2; column-gap: 40px; }
+  nav.toc li { counter-increment: toc; margin: 5px 0; break-inside: avoid; }
+  nav.toc li::before { content: counter(toc, decimal-leading-zero); color: var(--accent); font-family: "Cascadia Code", Consolas, monospace; font-size: 13.5px; margin-right: 10px; }
+  nav.toc a { color: var(--ink); text-decoration: none; border-bottom: 1px dashed transparent; }
+  nav.toc a:hover { color: var(--accent); border-bottom-color: var(--accent); }
+  @media (max-width: 720px) { nav.toc ol { columns: 1; } }
+
+  /* ===== 章节 ===== */
+  section { padding: 46px 0 10px; border-bottom: 1px dashed var(--line); }
+  section:last-of-type { border-bottom: none; }
+  h2.sec {
+    font-size: 29px; font-weight: 700; margin-bottom: 6px;
+    display: flex; align-items: baseline; gap: 14px;
+  }
+  h2.sec .no {
+    font-family: "Cascadia Code", Consolas, monospace;
+    font-size: 20px; font-weight: 600; color: var(--accent);
+    background: var(--accent-soft); border-radius: 8px;
+    padding: 2px 12px; flex-shrink: 0;
+  }
+  .sec-en { font-size: 13.5px; color: var(--sub); font-family: "Cascadia Code", Consolas, monospace; margin-bottom: 22px; letter-spacing: .08em; }
+  h3 { font-size: 21.5px; margin: 34px 0 12px; color: #4a3528; }
+  h3::before { content: "▸ "; color: var(--accent); }
+  h4 { font-size: 18px; margin: 24px 0 8px; color: #4a3528; }
+  p { margin: 12px 0; }
+  strong { color: #8f3d12; }
+  ul, ol { margin: 12px 0 12px 26px; }
+  li { margin: 6px 0; }
+  a { color: var(--blue); }
+  .lead { font-size: 18.5px; color: #3d3933; }
+  .hl { background: linear-gradient(transparent 62%, #f7ddc2 62%); padding: 0 2px; }
+
+  /* ===== 提示框 ===== */
+  .box { border-radius: 10px; padding: 16px 20px; margin: 20px 0; border-left: 4px solid; }
+  .box .bt { font-weight: 700; font-size: 15.5px; display: block; margin-bottom: 4px; }
+  .box.key   { background: var(--accent-soft); border-color: var(--accent); }
+  .box.info  { background: var(--blue-soft);  border-color: var(--blue); }
+  .box.math  { background: #f1ece2;  border-color: #8a6d1a; }
+  .box.warn  { background: var(--warn-soft); border-color: var(--warn); }
+  .box.green { background: var(--green-soft); border-color: var(--green); }
+  .em-red { color: var(--red); font-weight: 700; text-decoration: underline; text-underline-offset: 4px; }
+  .em-ul { font-weight: 700; text-decoration: underline; text-underline-offset: 4px; }
+  .em-ul-group, .em-ul-group * { font-weight: 700; text-decoration: underline; text-underline-offset: 3px; }
+  .em-block, .em-block * { font-weight: 700; text-decoration: underline; text-underline-offset: 3px; }
+  li.em-red-li, li.em-red-li * { color: var(--red); font-weight: 700; text-decoration: underline; text-underline-offset: 3px; }
+  ul.cn { list-style: none; margin: 6px 0 6px 22px; padding: 0; }
+  ul.cn > li { margin: 4px 0; }
+  .sim { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 20px; margin: 18px 0; }
+  .sim-controls { display: flex; flex-wrap: wrap; gap: 18px; margin-bottom: 14px; }
+  .sim-controls label { display: flex; align-items: center; gap: 8px; font-size: 15px; }
+  .sim-controls input[type="range"] { width: 150px; accent-color: var(--accent); }
+  .sim-controls span { font-family: "Cascadia Code", Consolas, monospace; min-width: 42px; color: var(--accent); font-weight: 700; }
+  .sim-panels { display: flex; flex-wrap: wrap; gap: 14px; }
+  .sim-fig { flex: 1; min-width: 320px; padding: 8px; margin: 0; border: 1px dashed var(--line); border-radius: 10px; }
+  .sim-fig canvas { max-width: 100%; height: auto; }
+  .sim-info { margin-top: 12px; font-size: 15.5px; background: var(--accent-soft); border-radius: 8px; padding: 10px 14px; }
+  .sim-info strong { color: var(--accent); }
+
+  /* ===== 公式 ===== */
+  .formula {
+    background: #f4efe6; border: 1px solid var(--line); border-radius: 8px;
+    text-align: center; padding: 12px 18px; margin: 16px 0;
+    font-size: 19px; font-style: italic; color: #3d352c;
+  }
+  .formula .tag { float: right; font-style: normal; font-size: 13px; color: var(--sub); font-family: "Cascadia Code", Consolas, monospace; }
+
+  /* ===== 代码 ===== */
+  pre.code {
+    background: var(--code-bg); color: var(--code-ink);
+    border-radius: 10px; padding: 18px 22px; margin: 16px 0;
+    font-size: 14.5px; line-height: 1.7; overflow-x: auto;
+    border: 1px solid #1a1f2a;
+  }
+  pre.code .c { color: #7d8aa0; font-style: italic; }
+  pre.code .k { color: #e5b567; }
+  pre.code .s { color: #b5d68f; }
+  pre.code .f { color: #88beec; }
+  pre.code .n { color: #d18bb3; }
+  .code-cap { font-size: 13.5px; color: var(--sub); margin: -8px 0 20px; text-align: right; }
+  code.inline {
+    background: #efe9dd; color: #7a3d14; border-radius: 5px;
+    padding: 1px 7px; font-size: 14.5px;
+  }
+
+  /* ===== 图（SVG 容器） ===== */
+  figure {
+    background: var(--card); border: 1px solid var(--line); border-radius: 12px;
+    padding: 22px 18px 14px; margin: 22px 0; text-align: center;
+  }
+  figure svg { max-width: 100%; height: auto; }
+  figcaption { font-size: 14.5px; color: var(--sub); margin-top: 10px; text-align: left; }
+  figcaption .fno { color: var(--accent); font-weight: 700; font-family: "Cascadia Code", Consolas, monospace; }
+  figure img { max-width: 720px; height: auto; border-radius: 8px; border: 1px solid var(--line); }
+
+  /* ===== 表格 ===== */
+  table { border-collapse: collapse; width: 100%; margin: 18px 0; font-size: 15.5px; background: var(--card); }
+  th {
+    background: #45332a; color: #f2e8dd; font-weight: 600;
+    padding: 10px 14px; text-align: left; font-family: "Microsoft YaHei", sans-serif;
+  }
+  td { border-bottom: 1px solid var(--line); padding: 9px 14px; vertical-align: top; }
+  tr:nth-child(even) td { background: #faf6ef; }
+  td.c, th.c { text-align: center; }
+
+  /* ===== 时间线 ===== */
+  .timeline { margin: 20px 0; position: relative; padding-left: 30px; }
+  .timeline::before { content: ""; position: absolute; left: 9px; top: 6px; bottom: 6px; width: 2px; background: var(--line); }
+  .tl-item { position: relative; margin-bottom: 18px; }
+  .tl-item::before {
+    content: ""; position: absolute; left: -27px; top: 8px; width: 12px; height: 12px;
+    border-radius: 50%; background: var(--accent); border: 2px solid #fff; box-shadow: 0 0 0 2px var(--accent);
+  }
+  .tl-item .tl-date { font-family: "Cascadia Code", Consolas, monospace; font-size: 14px; color: var(--accent); font-weight: 700; }
+  .tl-item .tl-title { font-weight: 700; }
+
+  /* ===== 页脚 ===== */
+  footer { background: #2b2320; color: #b7a694; padding: 40px 0 60px; margin-top: 50px; font-size: 14.5px; }
+  footer .wrap { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 14px; }
+
+  /* 返回顶部 */
+  nav.toc li.appx::before { content: "A"; color: var(--accent); font-family: "Cascadia Code", Consolas, monospace; font-size: 13.5px; margin-right: 10px; }
+  .backtop {
+    position: fixed; right: 26px; bottom: 26px; background: var(--accent); color: #fff;
+    width: 44px; height: 44px; border-radius: 50%; text-align: center; line-height: 44px;
+    text-decoration: none; font-size: 20px; box-shadow: 0 4px 14px rgba(0,0,0,.25); z-index: 99;
+  }
+  .backtop:hover { background: #8f3d12; }
+</style>
+</head>
+<body>
+<a href="../../index.html" style="position:fixed;top:12px;right:14px;z-index:99;background:#f6f7f9;border:1px solid #e2e5ea;border-radius:999px;padding:4px 12px;font-size:14px;color:#2c5fa8;text-decoration:none;box-shadow:0 1px 4px rgba(0,0,0,.08)">← 技术地图首页</a>>
+
+<!-- ==================== 封面 ==================== -->
+<header class="hero">
+  <div class="wrap">
+    <span class="kicker">Speculative Decoding · 学习笔记</span>
+    <h1>投机解码完全指南</h1>
+    <p class="sub">从拒绝采样的数学保证，到 EAGLE 特征层草稿，再到 P-EAGLE / DFlash / DSpark 并行草稿生成 —— 一份从零开始的系统性学习笔记：原理、公式、架构图与可运行代码。</p>
+    <div class="meta">
+      <span>📅 2026-08-12 整理</span>
+      <span>📚 15 个章节（含附录）</span>
+      <span>🧩 17 张示意图 · 13 段代码</span>
+      <span>🎯 面向：对 LLM 推理加速感兴趣的研究者 / 工程师</span>
+    </div>
+  </div>
+</header>
+
+<div class="wrap">
+
+<!-- ==================== 目录 ==================== -->
+<nav class="toc" id="toc">
+  <h2>目录 Contents</h2>
+  <ol>
+    <li><a href="#s1">动机：LLM 推理的带宽瓶颈</a></li>
+    <li><a href="#s2">核心原理：草稿与验证</a></li>
+    <li><a href="#s3">数学基础：拒绝采样与无损保证</a></li>
+    <li><a href="#s4">加速比分析：接受率是唯一的杠杆</a></li>
+    <li><a href="#s5">草稿来源全景：六类方案一览</a></li>
+    <li><a href="#s6">经典投机解码：独立草稿模型</a></li>
+    <li><a href="#s7">零训练方案：n-gram / Prompt Lookup</a></li>
+    <li><a href="#s8">Medusa：多解码头 + 树注意力</a></li>
+    <li><a href="#s9">EAGLE 系列：特征层草稿</a></li>
+    <li><a href="#s10">MTP：DeepSeek 的多 Token 预测</a></li>
+    <li><a href="#s11">并行草稿生成：P-EAGLE / DFlash / DSpark</a></li>
+    <li><a href="#s12">代码实战：从最小实现到生产部署</a></li>
+    <li><a href="#s13">评估指标、调参与工程陷阱</a></li>
+    <li><a href="#s14">演进时间线与参考资料</a></li>
+    <li class="appx"><a href="#appendix">附录：外部资源中的投机解码精选</a></li>
+  </ol>
+</nav>
+
+<!-- ==================== 第 1 章 ==================== -->
+<section id="s1">
+  <h2 class="sec"><span class="no">01</span> 动机：LLM 推理的带宽瓶颈</h2>
+  <div class="sec-en">WHY — AUTOREGRESSIVE DECODING IS MEMORY-BOUND</div>
+
+  <p class="lead">大语言模型生成文本的过程是<strong>自回归（autoregressive）</strong>的：每生成一个 token，就要把整个模型的所有参数从显存读一遍。当模型足够大时，真正卡住速度的不是计算，而是<strong>显存带宽（memory bandwidth）</strong>。</p>
+
+  <h3>1.1 一个算数问题：为什么大模型生成这么慢</h3>
+  <p>以 70B 参数的模型为例（FP16 存储）：</p>
+  <div class="formula">权重大小 ≈ 70 × 10<sup>9</sup> × 2 字节 ≈ <strong>140 GB</strong></div>
+  <p>在 NVIDIA H100（显存带宽约 3.35 TB/s）上，每生成一个 token 至少要读一遍全部权重：</p>
+  <div class="formula">单 token 理论下限 ≈ 140 GB ÷ 3.35 TB/s ≈ <strong>42 ms</strong> → 约 24 tok/s</div>
+  <p>在 A100 80G（约 2 TB/s）上则只有约 14 tok/s。而一次前向中每个 token 的<strong>激活量（激活、KV cache 增量）</strong>不过几百 KB 到几 MB —— 相比 140 GB 的权重读取可以忽略不计。这就是关键洞察的起点：</p>
+
+  <div class="box key">
+    <span class="bt">💡 核心洞察</span>
+    既然瓶颈是"把权重读一遍"，那么<strong>一次前向里塞进 1 个 token 还是 K 个 token，耗时几乎一样</strong>（K 个 token 的额外计算和额外显存读取都很小）。自回归解码"一次只验证一个 token"，把带宽利用率拉到了极低 —— 这就是投机解码要补的洞。
+  </div>
+
+  <h3>1.2 从"串行猜测"到"批量验证"</h3>
+  <p>传统自回归解码的工作方式是：</p>
+  <ul>
+    <li>用已生成的 <code class="inline">&lt;prefix&gt;</code> 跑一次前向 → 得到下一个 token 的分布 → 采样出 <code class="inline">x₁</code>；</li>
+    <li>再把 <code class="inline">&lt;prefix, x₁&gt;</code> 跑一次前向 → 得到 <code class="inline">x₂</code>；</li>
+    <li>如此循环 —— 每一步都完整读取一遍全部权重，且每一步之间<strong>严格串行</strong>。</li>
+  </ul>
+  <p>投机解码（speculative decoding）的思路则完全相反：<strong>先让一个又快又小的"草稿模型"连续猜出一整串候选 token，然后让大模型用一次并行前向把它们全部验证掉</strong>。被验证通过的 token 全部免费"预支"到手，被拒绝的 token 用数学上严格的方法修正 —— 整体分布与大模型直接解码<strong>完全一致</strong>。</p>
+
+  <figure>
+    <svg width="920" height="430" viewBox="0 0 920 430" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="自回归解码与投机解码对比">
+      <style>
+        .tk { fill:#fff; stroke:#4a3428; stroke-width:1.6; rx:8; }
+        .tkt { font:600 15px "Cascadia Code",Consolas,monospace; fill:#4a3428; text-anchor:middle; }
+        .lbl { font:600 15.5px "Microsoft YaHei",sans-serif; fill:#2b2926; }
+        .lbl2 { font:500 13px "LXGW WenKai","Microsoft YaHei",sans-serif; fill:#6f6a61; }
+        .arr { stroke:#b3541e; stroke-width:2.2; fill:none; marker-end:url(#ar); }
+        .dash { stroke:#b3541e; stroke-width:1.6; stroke-dasharray:6 5; fill:none; }
+      </style>
+      <defs>
+        <marker id="ar" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto">
+          <path d="M0,0 L10,4 L0,8 z" fill="#b3541e"/>
+        </marker>
+      </defs>
+
+      <!-- 左：自回归 -->
+      <text x="230" y="36" class="lbl" text-anchor="middle">自回归解码（一次一个 token）</text>
+      <rect x="40"  y="70"  width="150" height="52" rx="10" fill="#45332a"/>
+      <text x="115" y="101" class="tkt" fill="#f2e8dd" font-size="13.5">prefix</text>
+      <g>
+        <rect x="210" y="70"  width="150" height="52" rx="10" class="tk"/><text x="285" y="101" class="tkt">x₁</text>
+        <rect x="380" y="70"  width="150" height="52" rx="10" class="tk"/><text x="455" y="101" class="tkt">x₂</text>
+        <rect x="550" y="70"  width="150" height="52" rx="10" class="tk"/><text x="625" y="101" class="tkt">x₃</text>
+        <rect x="720" y="70"  width="150" height="52" rx="10" class="tk"/><text x="795" y="101" class="tkt">x₄</text>
+      </g>
+      <path class="arr" d="M190,96 C196,96 200,96 208,96"/>
+      <path class="arr" d="M360,96 C366,96 370,96 378,96"/>
+      <path class="arr" d="M530,96 C536,96 540,96 548,96"/>
+      <path class="arr" d="M700,96 C706,96 710,96 718,96"/>
+      <text x="115" y="152" class="lbl2" text-anchor="middle">每次前向 = 重读全部权重</text>
+      <text x="115" y="172" class="lbl2" text-anchor="middle">→ 4 次串行前向</text>
+      <text x="285" y="152" class="lbl2" text-anchor="middle">每步只产出 1 个</text>
+      <text x="285" y="172" class="lbl2" text-anchor="middle">token，串行等待</text>
+
+      <!-- 右：投机解码 -->
+      <text x="690" y="210" class="lbl" text-anchor="middle">投机解码（草稿 → 一次并行验证）</text>
+      <rect x="400" y="232" width="150" height="52" rx="10" fill="#45332a"/>
+      <text x="475" y="263" class="tkt" fill="#f2e8dd" font-size="13.5">prefix</text>
+      <path class="arr" d="M550,258 C556,258 560,258 568,258"/>
+      <rect x="570" y="232" width="320" height="52" rx="10" fill="#e2ecf4" stroke="#1e5a8a" stroke-width="1.6"/>
+      <text x="730" y="254" class="tkt" fill="#1e5a8a" font-size="13">d₁ d₂ d₃ d₄</text>
+      <text x="730" y="274" class="lbl2" text-anchor="middle" font-size="12.5">草稿模型一次并行猜出 4 个候选</text>
+      <path class="dash" d="M730,284 C730,300 730,306 730,314"/>
+      <rect x="570" y="318" width="320" height="52" rx="10" fill="#e6f0e6" stroke="#2e7d32" stroke-width="1.6"/>
+      <text x="730" y="340" class="tkt" fill="#2e7d32" font-size="13">x₁ x₂ x₃ x₄</text>
+      <text x="730" y="360" class="lbl2" text-anchor="middle" font-size="12.5">目标模型一次前向并行验证全部候选</text>
+      <text x="100" y="248" class="lbl2" text-anchor="middle">一次前向同时</text>
+      <text x="100" y="268" class="lbl2" text-anchor="middle">产出多个 token，</text>
+      <text x="100" y="288" class="lbl2" text-anchor="middle">带宽利用率拉满</text>
+      <rect x="40" y="306" width="120" height="64" rx="10" fill="#f3e4d8"/>
+      <text x="100" y="334" class="lbl" text-anchor="middle" font-size="13.5" fill="#b3541e">✓ 2~5× 加速</text>
+      <text x="100" y="356" class="lbl2" text-anchor="middle" font-size="12">输出分布零变化</text>
+    </svg>
+    <figcaption><span class="fno">图 1</span>　自回归解码每步串行产出 1 个 token；投机解码用草稿模型一次猜出一整串候选，再由目标模型一次并行验证。投机解码的加速来自"把一次前向的带宽成本摊到多个 token 上"。</figcaption>
+  </figure>
+
+  <div class="box info">
+    <span class="bt">ℹ️ 什么时候有效，什么时候无效</span>
+    <span class="em-red">投机解码针对的是单请求、小 batch、内存带宽受限的延迟场景（如交互式聊天、单流推理）。当 batch 很大时，权重读取被多个请求摊薄，推理转为计算受限，投机解码的收益会明显下降；在并发批处理（continuous batching）下收益也会被压缩。</span>这也是为什么生产环境实测加速通常落在 <strong>2–4×</strong>，而不是论文里的理论值。
+  </div>
+
+  <h3>1.3 MoE 模型不用读完全部权重：激活参数的带宽账本</h3>
+  <p>上面的 140 GB 例子对<strong>稠密模型</strong>成立——每个 token 都要读全部权重。但近年主流模型大量采用<strong>混合专家（MoE）</strong>结构（DeepSeek-V3/V4、Qwen3-30B-A3B、GLM-5.2、Kimi K3、Mixtral 等），其带宽账本完全不同，关键在于<strong>总参数 vs 激活参数</strong>的区别：</p>
+  <table>
+    <tr><th>模型</th><th class="c">总参数</th><th class="c">激活参数</th><th class="c">总专家数</th><th class="c">激活专家数</th><th class="c">每 token 读取量</th><th>说明</th></tr>
+    <tr><td>稠密 70B</td><td class="c">70B</td><td class="c">70B（全部）</td><td class="c">—（无专家）</td><td class="c">—</td><td class="c">140 GB（fp16）</td><td>§1.1 的例子，全读</td></tr>
+    <tr><td>Qwen3-30B-A3B</td><td class="c">30.5B</td><td class="c">3.3B</td><td class="c">128</td><td class="c">8</td><td class="c">~6.6 GB（fp16）</td><td>48 层全 MoE，A3B = Active 3.3B，约 1/9</td></tr>
+    <tr><td>Mixtral 8×7B</td><td class="c">46.7B</td><td class="c">12.9B</td><td class="c">8</td><td class="c">2</td><td class="c">~26 GB（fp16）</td><td>top-2 路由，约 1/3.6；"7B"是近似命名，单专家实际仅 0.18B</td></tr>
+    <tr><td>DeepSeek-V4-Flash（2026-07 开源）</td><td class="c">284B</td><td class="c">~13B</td><td class="c">256（+1 共享）</td><td class="c">6</td><td class="c">~10 GB（FP4/FP8 混合）</td><td>43 层全 MoE，top-6，1M 上下文；304B 含 DSpark 草稿模块</td></tr>
+    <tr><td>DeepSeek-V3</td><td class="c">671B</td><td class="c">~37B</td><td class="c">256（+1 共享）</td><td class="c">8</td><td class="c">~37 GB（fp8）</td><td>top-k 路由只激活少数专家，约为总参数的 1/18</td></tr>
+    <tr><td>GLM-5.2（2026-06）</td><td class="c">744B</td><td class="c">~40B</td><td class="c">256</td><td class="c">8</td><td class="c">~40 GB（fp8）</td><td>78 层，MLA + DSA 稀疏注意力，1M 上下文</td></tr>
+    <tr><td>DeepSeek-V4-Pro（预览）</td><td class="c">1.6T</td><td class="c">49B</td><td class="c">未公开</td><td class="c">—</td><td class="c">~40 GB（FP4/FP8 混合）</td><td>CSA/HCA 混合注意力，1M 上下文</td></tr>
+    <tr><td>Kimi K3（2026-07）</td><td class="c">2.8T</td><td class="c">~104B</td><td class="c">896（+2 共享）</td><td class="c">16</td><td class="c">~52 GB（MXFP4）</td><td>Stable LatentMoE，稀疏度 1.8%，首个开源 3T 级模型</td></tr>
+  </table>
+  <p>验证公式：<strong>激活参数 = 共享层 + 专家总参 ×（激活专家数 ÷ 总专家数）</strong>。六款 MoE 模型的完整账本分解（数字按各官方 config 推算）：</p>
+  <ul>
+    <li><strong>Mixtral 8×7B</strong>：专家部分 = 176M（每专家 FFN：4096×14336×3）× 8 专家 × 32 层 ≈ <strong>45.1B</strong>；共享层（attention / embedding / router）≈ 1.6B；总 46.7B ✓。激活 = 1.6 + 45.1×2/8 ≈ <strong>12.9B ≈ 13B</strong> ✓。注意 "7B" 是近似命名，单个专家 FFN 实际仅 ~0.18B；</li>
+    <li><strong>DeepSeek-V3</strong>：路由专家部分 = 44M（7168×2048×3）× 256 专家 × 58 层 ≈ <strong>653.7B</strong>，另有 1 个共享专家（每 token 全读）≈ 2.6B；共享层（MLA 注意力、embedding、3 个稠密层等）≈ 14.8B；总 671B ✓。激活 = 14.8 + 2.6 + 653.7×8/256 ≈ <strong>37.7B ≈ 37B</strong> ✓（与论文口径一致）；</li>
+    <li><strong>Qwen3-30B-A3B</strong>：专家部分 = 4.7M（2048×768×3）× 128 专家 × 48 层 ≈ <strong>29.0B</strong>；共享层（含 embedding 与 lm_head）≈ 1.5B；总 30.5B ✓。激活 = 1.5 + 29.0×8/128 ≈ <strong>3.3B</strong> ✓（官方 3.35B，完全对上）；</li>
+    <li><strong>DeepSeek-V4-Flash</strong>：路由专家部分 = 25M（4096×2048×3）× 256 专家 × 43 层 ≈ <strong>277B</strong> + 共享专家 ≈ 1.1B；共享层（CSA/HCA 注意力、embedding）≈ 6B；总 284B ✓。激活 = 6 + 1.1 + 277×6/256 ≈ <strong>13.6B ≈ 13B</strong> ✓；</li>
+    <li><strong>GLM-5.2</strong>：路由专家部分 ≈ <strong>727B</strong>（78 层 × 256 专家）；共享层（MLA 注意力、DSA indexer、embedding）≈ 17B；总 744B ✓。激活 = 17 + 727×8/256 ≈ <strong>39.7B ≈ 40B</strong> ✓；</li>
+    <li><strong>Kimi K3</strong>：路由专家部分（Stable LatentMoE）≈ <strong>2.74T</strong>；2 个共享专家 + 稠密层（KDA/MLA、embedding）合计 ≈ 55B；总 2.8T ✓。激活 = 55 + 2.74T×16/896 ≈ <strong>103.9B ≈ 104B</strong> ✓（宣称稀疏度 1.8% 与专家激活比例 16/896 = 1.79% 吻合）。</li>
+  </ul>
+  <p>四个要点：</p>
+  <ul class="cn">
+    <li><strong>① 专家激活比例 &lt; 激活参数占比</strong>：专家激活比例（Mixtral 2/8、Qwen3 8/128、DeepSeek 8/256、V4-Flash 6/256、GLM-5.2 8/256、K3 16/896）都低于各自的激活参数占比（27.6%、10.8%、5.5%、4.6%、5.4%、3.7%）——共享层每 token 全读，把占比"垫高"了；</li>
+    <li><strong>② 外推前先扣共享层</strong>：若用"激活参数 ÷ 激活专家数 × 总专家数"外推总参数，必须先扣除共享层，否则会高估（Mixtral 13/2×8 = 52B &gt; 47B 就是这么来的）；</li>
+    <li><strong>③ 架构细节决定账本</strong>：是否有共享专家（DeepSeek 有）、MoE 层占比（DeepSeek 58/61、Qwen3 与 V4-Flash 全部层都是 MoE）——用公式前先查 config；</li>
+    <li><strong>④ DeepSeek-V4-Pro 待验证</strong>：V4-Pro（1.6T / 49B）专家数尚未公开，暂无法套用公式验证——发布后按同样流程分解即可。</li>
+  </ul>
+  <ul>
+    <li><strong>每 token 读取量</strong> = 共享稠密层（embedding、注意力、router，全读）＋ 被路由激活的 k 个专家（k 通常 2–8）。以 DeepSeek-V3 为例：约 37 GB ÷ 3.35 TB/s ≈ 11 ms → <strong>~90 tok/s 量级</strong>——比同总参数的稠密模型高一个数量级；</li>
+    <li><strong>显存仍须全部驻留</strong>：671B 权重依然要完整加载（或部分 offload），被压缩的只是<strong>读取带宽</strong>——路由机制让你"不用搬"，但必须"装着"。原因有二：
+      <ul class="cn">
+        <li><strong>① 路由动态性</strong>：路由由当前 token 的 hidden state 动态决定、逐 token 变化——无法预知下一个 token 激活哪些专家，任何专家都必须随时可用；</li>
+        <li><strong>② 换入成本</strong>：若按需从磁盘/CPU 换入专家，PCIe 带宽（~64 GB/s）比显存带宽（~3.35 TB/s）慢约 50 倍——换入一个专家（~2.4 GB）就要 ~37 ms，比 GPU 直接读完全部激活权重（~11 ms）还慢，按需加载反而毁掉 MoE 唯一的带宽优势。工程折中（如 llama.cpp 的专家级 offload）只对<strong>低频专家</strong>生效，且一旦路由到被 offload 的专家就会产生延迟尖峰。</li>
+      </ul>
+    </li>
+    <li><strong>共享层仍全读</strong>：注意力层（如 DeepSeek-V3 的 MLA）是稠密的，每个 token 都要读；</li>
+    <li class="em-red-li"><strong>瓶颈转移</strong>：多卡部署时专家分散在多张卡上，每 token 的 all-to-all 通信成为新瓶颈——MoE 解码的瓶颈从"权重带宽"转向"通信带宽"。这也决定了 MoE 的多卡并行要用<strong>大 EP（专家并行，Expert Parallelism）</strong>：EP=N 表示把全部专家均分到 N 张卡（每卡 专家总数/N 个），token 经 router 激活的专家若在别的卡上，就经 all-to-all 通信 dispatch 过去计算、再 combine 回来。
+      <p style="margin:6px 0 4px;"><strong>EP 与 TP 的分工</strong>：两者是<strong>正交的两个维度、生产中总是配合使用</strong>——TP 切分稠密层（attention 的 QKV/O、embedding：矩阵切成多份、每步 all-reduce 同步），EP 切分稀疏层（专家 FFN：每卡只算自己被激活的专家）。<strong>专家层不能用 TP 代替 EP</strong>：总 FLOPs 无论怎么切都不变（都是 8 个激活专家），但 TP 切专家会改变<strong>计算图的连接结构</strong>——EP 下 token 只与激活专家所在的 8 张卡通信（稀疏连接，其余卡可同时处理别的 token），TP 下每个激活专家都切分在全部参与卡上，token 必须流经每一张卡、每算一个专家就 all-reduce 同步一次，专家级并行退化为矩阵级并行、卡间强同步（SIMD）——这就是"稀疏计算被稠密化"的含义：省的不只是"算多少"，更是"token 只和少数卡发生关系"。因此生产配置是<strong>"大 EP + 小 TP"</strong>。</p>
+      <p style="margin:6px 0 4px;"><strong>EP 必须大的原因有三：</strong></p>
+      <ul class="cn">
+        <li><strong>① 显存</strong>：专家总参物理上装不进单卡——DeepSeek-V3 专家部分 653B fp8 ≈ 653GB，EP=8 时每卡 82GB 已超 H100 80GB，EP=64 时每卡仅 ~10GB；</li>
+        <li><strong>② 负载均衡</strong>：decode 时每 token 只激活 8 个专家——EP 大（如 64，每卡 4 个）时这 8 个专家分散在 8 张卡上并行计算；EP 小（如 8，每卡 32 个）时可能全挤在 1–2 张卡上造成热点过载、其余卡空闲。batch 内大量 token 的专家计算靠大数定律在卡间趋于均匀，卡越多越均衡；</li>
+        <li><strong>③ 延迟</strong>：专家计算并行度 = 激活专家分布的卡数，EP=64 时单 token 延迟降到"单专家计算"量级。</li>
+      </ul>
+      <p style="margin:6px 0 4px;"><strong>但 EP 不能无限大</strong>：EP 上限是专家总数、必须整除；attention 权重不随 EP 切分（由 TP/PP 负责），EP 增大的同时 attention 权重要在每张参与卡上驻留或跨卡同步，卡越多这部分开销越大；all-to-all 通信量随 EP 增大（token 要与更多卡通信），受 NVLink/NVSwitch 互联带宽约束。DeepSeek-V3 官方训练用 EP=64（每卡 4 专家）+ TP，vLLM/SGLang 社区推理常用 EP=32/64 + TP=1~8；Kimi K3（896 专家、2.8T）则需要大 EP + 多节点（64+ 加速器）才能部署。</p>
+    </li>
+  </ul>
+  <p>这对投机解码有两个直接影响：一是 MoE 目标的单 token 成本更低，投机收益需重新实测（附录 A.1 的 DFlash 实验正是基于 MoE 的 Qwen3-30B-A3B）；二是草稿头（EAGLE / MTP）通常只挂 MoE 的<strong>共享层</strong>，草稿开销进一步降低——两者同向有利。</p>
+</section>
+
+<!-- ==================== 第 2 章 ==================== -->
+<section id="s2">
+  <h2 class="sec"><span class="no">02</span> 核心原理：草稿与验证</h2>
+  <div class="sec-en">DRAFT THEN VERIFY — THE SPECULATIVE DECODING LOOP</div>
+
+  <h3>2.1 两个角色</h3>
+  <table>
+    <tr><th style="width:22%">角色</th><th style="width:36%">草稿模型（Draft Model）</th><th>目标模型（Target / Verifier）</th></tr>
+    <tr>
+      <td><strong>职责</strong></td>
+      <td>快速猜出后续 K 个候选 token（投机长度 K，也叫 γ）</td>
+      <td>一次并行前向，校验全部候选，并产出修正后的 token</td>
+    </tr>
+    <tr>
+      <td><strong>规模</strong></td>
+      <td>远小于目标模型（如 0.3–2B vs 8–70B），或仅是一个额外的"解码头"</td>
+      <td>用户真正想要的那个大模型</td>
+    </tr>
+    <tr>
+      <td><strong>来源</strong></td>
+      <td>独立小模型 / 目标模型的子模块 / 特征层外推头 / n-gram 匹配（无参数）</td>
+      <td>任意现成 LLM</td>
+    </tr>
+    <tr>
+      <td><strong>分布</strong></td>
+      <td>q(x) —— 可能与大模型不一致，允许犯错</td>
+      <td>p(x) —— 最终输出必须严格服从它</td>
+    </tr>
+  </table>
+
+  <h3>2.2 一轮完整的草稿—验证循环</h3>
+  <ul class="cn">
+    <li><strong>① 草稿（Draft）</strong>：草稿模型基于当前前缀（含 KV cache），自回归地（或用并行方法）生成 K 个候选 token <code class="inline">d₁ d₂ … d_K</code>；</li>
+    <li><strong>② 拼接（Extend）</strong>：把候选串接到前缀后面，目标模型只跑<strong>一次</strong>前向，同时得到每个位置上的真实分布 <code class="inline">p(·|prefix, d₁…d_{i-1})</code>；</li>
+    <li><strong>③ 验证（Verify）</strong>：从左到右逐个位置做拒绝采样检验：草稿 token 是否与大模型分布一致？</li>
+    <li><strong>④ 接受 / 修正（Accept / Resample）</strong>：接受连续被验证通过的 token；遇到第一个不一致的位置，从残差分布重采样一个 token 替换它；</li>
+    <li><strong>⑤ 更新（Update）</strong>：把被接受的 token（以及重采样出的那个 token）写入 KV cache，进入下一轮。</li>
+  </ul>
+
+  <figure>
+    <svg width="920" height="360" viewBox="0 0 920 360" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="投机解码循环流程图">
+      <style>
+        .nd { fill:#fff; stroke:#4a3428; stroke-width:1.8; rx:12; }
+        .ndt { font:600 14.5px "Microsoft YaHei",sans-serif; fill:#2b2926; text-anchor:middle; }
+        .nds { font:500 12.5px "LXGW WenKai","Microsoft YaHei",sans-serif; fill:#6f6a61; text-anchor:middle; }
+        .n2 { fill:#f3e4d8; stroke:#b3541e; stroke-width:1.8; rx:12; }
+        .n3 { fill:#e2ecf4; stroke:#1e5a8a; stroke-width:1.8; rx:12; }
+        .n4 { fill:#e6f0e6; stroke:#2e7d32; stroke-width:1.8; rx:12; }
+        .a2 { stroke:#b3541e; stroke-width:2; fill:none; marker-end:url(#ar2); }
+        .a3 { stroke:#1e5a8a; stroke-width:2; fill:none; marker-end:url(#ar3); }
+        .a4 { stroke:#2e7d32; stroke-width:2; fill:none; marker-end:url(#ar4); }
+        .a9 { stroke:#8a6d1a; stroke-width:2; fill:none; marker-end:url(#ar9); }
+      </style>
+      <defs>
+        <marker id="ar2" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto"><path d="M0,0 L10,4 L0,8 z" fill="#b3541e"/></marker>
+        <marker id="ar3" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto"><path d="M0,0 L10,4 L0,8 z" fill="#1e5a8a"/></marker>
+        <marker id="ar4" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto"><path d="M0,0 L10,4 L0,8 z" fill="#2e7d32"/></marker>
+        <marker id="ar9" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto"><path d="M0,0 L10,4 L0,8 z" fill="#8a6d1a"/></marker>
+      </defs>
+
+      <!-- 上排：草稿 → 拼接 → 验证 -->
+      <rect x="60"  y="40" width="200" height="74" class="nd" fill="#faf6ef"/>
+      <text x="160" y="72" class="ndt">① 草稿 Draft</text>
+      <text x="160" y="96" class="nds">草稿模型生成 K 个候选</text>
+
+      <rect x="370" y="40" width="200" height="74" class="nd"/>
+      <text x="470" y="72" class="ndt">② 拼接 Extend</text>
+      <text x="470" y="96" class="nds">候选接到前缀后</text>
+
+      <rect x="680" y="40" width="200" height="74" class="n3"/>
+      <text x="780" y="72" class="ndt">③ 验证 Verify</text>
+      <text x="780" y="96" class="nds">目标模型一次并行前向</text>
+
+      <!-- 下排：接受/修正 → 更新（③④ 同列垂直直连） -->
+      <rect x="680" y="210" width="200" height="84" class="n4"/>
+      <text x="780" y="242" class="ndt">④ 接受 / 修正</text>
+      <text x="780" y="266" class="nds">逐位置拒绝采样检验，</text>
+      <text x="780" y="284" class="nds">首个不一致处重采样修正</text>
+
+      <rect x="370" y="210" width="200" height="84" class="n2"/>
+      <text x="470" y="242" class="ndt">⑤ 更新</text>
+      <text x="470" y="266" class="nds">接受的 token + 修正 token</text>
+      <text x="470" y="284" class="nds">写入 KV cache，进入下一轮</text>
+
+      <!-- 箭头链：①→②→③→④→⑤→① -->
+      <path class="a2" d="M260,77 L368,77"/>
+      <path class="a3" d="M570,77 L678,77"/>
+      <path class="a4" d="M780,114 L780,208"/>
+      <path class="a4" d="M680,252 L572,252"/>
+      <path class="a9" d="M470,294 C470,326 45,326 45,250 C45,180 45,140 45,116"/>
+
+      <!-- 阶段标注 -->
+      <text x="160" y="150" class="nds" fill="#b3541e" font-size="13">草稿阶段：小模型快速执行</text>
+      <text x="780" y="150" class="nds" fill="#1e5a8a" font-size="13">验证阶段：大模型只跑一次前向</text>
+      <text x="700" y="185" class="nds" fill="#2e7d32" font-size="13">接受长度 t ∈ [1, K+1]</text>
+      <text x="160" y="346" class="nds" fill="#8a6d1a" font-size="13">下一轮：以新前缀继续草稿</text>
+    </svg>
+    <figcaption><span class="fno">图 2</span>　投机解码的一轮循环：草稿 → 拼接 → 单次并行验证 → 逐位置拒绝采样 → 更新 KV cache。一轮最多能前进 K+1 个 token（K 个候选 + 1 个"奖励 token"：即使最后一个候选被拒，重采样也会产出一个 token）。</figcaption>
+  </figure>
+
+  <figure>
+    <img src="../../assets/images/inference/spec/wx1_flow.png" alt="推测解码流程总览">
+    <figcaption><span class="fno">图 3</span>　推测解码流程总览（来源：AI 大排档《推测解码的第一性原理》）。"草稿模型先往前猜几步，目标模型一次 forward 把候选一起验掉"——与本节的五步循环是同一件事的两种画法。</figcaption>
+  </figure>
+
+  <div class="box key">
+    <span class="bt">💡 三个直觉</span>
+    <ul style="margin:4px 0 0 20px;">
+      <li><strong>草稿允许犯错</strong>：候选被拒不损失正确性，只是浪费了草稿阶段的算力；</li>
+      <li><strong>验证永远免费并行</strong>：K 个候选的验证只花一次目标模型前向的时间；</li>
+      <li><strong>一轮保底前进 1 个 token</strong>：哪怕全部候选都被拒，重采样也必然产生一个合法 token —— 所以投机解码的最差情况也只是"多花一次小模型前向"，而不是退化。</li>
+    </ul>
+  </div>
+
+  <h3>2.3 为什么一次前向能同时验证多个位置：因果掩码的"免费午餐"</h3>
+  <p>"一次前向同时算出所有候选位置的目标分布"不是投机解码发明的技巧，而是<strong>因果语言模型的天然属性</strong>。用具体例子看：设前缀长度 L、草稿生成 3 个候选 d₁ d₂ d₃，目标模型输入序列 [x₁…x_L, d₁, d₂, d₃]（长度 L+3），标准的下三角因果掩码保证：</p>
+  <table>
+    <tr><th class="c">输入位置</th><th class="c">因果掩码可见范围</th><th class="c">输出分布</th><th>验证用途</th></tr>
+    <tr><td class="c">L（真实前缀末位）</td><td class="c">[1..L]</td><td class="c">p₀ = p(·|x₁…x_L)</td><td>验证草稿 d₁</td></tr>
+    <tr><td class="c">L+1（草稿 d₁）</td><td class="c">[1..L+1]</td><td class="c">p₁ = p(·|x₁…x_L, d₁)</td><td>验证草稿 d₂</td></tr>
+    <tr><td class="c">L+2（草稿 d₂）</td><td class="c">[1..L+2]</td><td class="c">p₂ = p(·|x₁…x_L, d₁, d₂)</td><td>验证草稿 d₃</td></tr>
+    <tr><td class="c">L+3（草稿 d₃）</td><td class="c">[1..L+3]</td><td class="c">p₃ = p(·|x₁…x_L, d₁, d₂, d₃)</td><td>若全部接受，直接作为下一轮起点</td></tr>
+  </table>
+  <p>每个位置都在预测"下一个 token"，而因果掩码保证位置 i 的输出只看到前 i 个 token——所以拼接候选后的一次前向，<strong>天然等于同时做了多个位置的预测</strong>，验证所需的全部目标分布一次拿全。这就是"一次前向验证 K 个候选"的机制根基（来源：糖嘟嘟的AI学习笔记《投机解码深度技术解析》）。</p>
+
+  <h3>2.4 扩散模型（DiT）也有投机解码：范式不变，验证对象变了</h3>
+  <p>既然投机解码依赖"一次前向算出多个位置的目标分布"，那逐像素去噪的扩散模型（DiT）是不是没有投机解码？答案分两层：</p>
+  <ul class="cn">
+    <li><strong>经典 token 级投机解码确实不适用</strong>：扩散生成是全局连续的迭代去噪（x_T → x₀，通常 20–50 步），没有"词表分布"，也没有"一次前向验证一串候选 token"的结构——逐位置拒绝采样与接受率分析不直接成立；</li>
+    <li><strong>但"草稿-验证"范式在扩散领域以改头换面的形式存在且很活跃</strong>：草稿从"猜 token 串"变成"预测未来的去噪步骤结果"（轻量 Taylor 外推 / 特征缓存 / 自投机），验证从"比对逐位置分布"变成"重算检查状态一致性"（L² 误差 / 端点对齐）。</li>
+  </ul>
+  <table>
+    <tr><th style="width:20%">维度</th><th style="width:38%">LLM 投机解码</th><th>扩散投机解码（DiT）</th></tr>
+    <tr><td>生成过程</td><td>自回归 token 串</td><td>迭代去噪 x_T → x₀</td></tr>
+    <tr><td>草稿</td><td>小模型猜 token 串</td><td>轻量预测未来去噪步（Taylor 外推 / 特征缓存）</td></tr>
+    <tr><td>验证对象</td><td>逐位置目标分布 p</td><td>去噪状态 / 特征一致性（L² 误差、端点对齐）</td></tr>
+    <tr><td>接受 / 修正</td><td>拒绝采样（无损）</td><td>误差阈值 / 不确定性松弛（近似无损）</td></tr>
+    <tr><td>代表工作</td><td>EAGLE / Medusa / 并行草稿</td><td>SpeCa / ASDSV / FREE / Block Verification</td></tr>
+  </table>
+  <p>实际成果：<strong>SpeCa</strong>（Taylor 级数轻量草稿预测未来时间步特征 + 层间 L² 误差验证，FLUX 6.34× / DiT 7.3× / HunyuanVideo 6.1×）；<strong>ASDSV</strong>（投机验证只检查初始与最终状态对齐、按去噪阶段动态调整草稿步数 K，Flux.1-dev / Wan2.1 上 1.77–3.01×）；<strong>FREE</strong>（特征级自回归草稿 + 并行验证 + 不确定性松弛，ImageNet-512 无损 1.86×）。当扩散被"自回归化"时（Muse 的掩码扩散、VAR 的尺度级自回归、Chameleon 的图像 token 自回归），token 级投机解码范式会完整回归。</p>
+  <p>本质上，投机解码 = 通用计算的<strong>推测执行（speculative execution）</strong>思想——"便宜的近似生成 + 昂贵的验证修正"，适用于任何"生成过程可分解为可验证步骤"的生成器：LLM 的步骤是 token（验证=目标分布），扩散的步骤是去噪步（验证=状态一致性），VAR 的步骤是尺度（验证=目标尺度分布）。token 只是它在语言模型上的具体形态。</p>
+</section>
+
+<!-- ==================== 第 3 章 ==================== -->
+<section id="s3">
+  <h2 class="sec"><span class="no">03</span> 数学基础：拒绝采样与无损保证</h2>
+  <div class="sec-en">REJECTION SAMPLING — THE LOSSLESS GUARANTEE</div>
+
+  <p class="lead">投机解码最迷人的地方在于：它不是一个启发式近似，而是一个<strong>数学上无损（lossless）</strong>的采样过程。输出分布与目标模型直接解码<strong>逐 token 完全一致</strong>。这一保证来自经典的拒绝采样（rejection sampling）技术，最早由 Leviathan 等（2023）与 Chen 等（2023）独立给出。</p>
+
+  <h3>3.1 先搞清楚问题：我们想要的，和我们有的</h3>
+  <p>投机解码的"无损"不是一个玄学口号，而是一个可以严格证明的等式。为了看懂它，先把局面摆清楚：</p>
+  <ul>
+    <li><strong>目标分布 p(x)</strong>：目标模型在给定前缀下对下一个 token 的真实概率分布。这是<strong>质量红线</strong>——最终输出的每一个 token，都必须严格服从 p，不允许近似、不允许打折；</li>
+    <li><strong>草稿分布 q(x)</strong>：草稿模型的分布。它便宜、快，但 q ≠ p（草稿会"猜错"）；</li>
+    <li><strong>手里的牌</strong>：草稿已经替我们按 q 采出了一个候选 token x。<strong>我们不能重新采样</strong>（那等于直接跑目标模型，没有加速了），只能对已有的 x 做"接受 / 拒绝 / 修正"。</li>
+  </ul>
+  <p>补充：p(x) 与 q(x) 的具体形态——它们是<strong>词表大小 |V| 的一维概率向量</strong>（如 Llama 32k、Qwen3 151k、DeepSeek 128k），每个元素 p(vᵢ) 是"给定前缀下下一个 token 恰好是词表中第 i 个 token"的概率：</p>
+  <ul class="cn">
+    <li><strong>形状</strong>：单请求解码时实现为 [1, |V|]（batch=1）；投机解码"一次前向多位置"（§2.3）时为 [seq_len, |V|]——每个位置一行，各是一个独立的分布；</li>
+    <li><strong>产生链路</strong>：hidden state h_t → LM Head 线性层 → logits z（[|V|]，未归一化的分数）→ softmax → p。softmax 保证 p(vᵢ) ≥ 0 且 Σᵢ p(vᵢ) = 1——这是 §3.3 六步证明中 Σ_x p(x) = 1、α = Σmin(q,p) 能算的前提；</li>
+    <li><strong>下标取值</strong>：接受概率 min(1, p(x)/q(x)) 里的 p(x) 就是 p[x]——取草稿采中的那个 token 在分布中的概率（一个标量），q(x) 同理；拒绝后的残差重采样也是在完整的 [|V|] 上构造 r ∝ max(0, p−q) 再归一化（呼应 §3.2"重采样是词表级"）；</li>
+    <li><strong>每个"下一步"都重新算</strong>：p 是"给定当前前缀下下一个 token"的条件分布，每前进一个 token 都要基于新前缀重算——投机解码"一次前向多位置"正是把多个这样的分布一次拿全；</li>
+    <li><strong>采样修饰发生在 softmax 前后</strong>：温度在 softmax 前缩放 logits（§3.8），top-k / top-p 在 softmax 后截断并重新归一化（截断后和不再是 1）——但最终交给拒绝采样的 p 始终是合法的概率分布。</li>
+  </ul>
+  <p>于是问题变成：<strong>如何设计一个"裁判"，把 q 采出的样本 x，改造成一个服从 p 的样本？</strong>要求有两个：</p>
+  <ul class="cn">
+    <li><strong>① 正确性</strong>：改造后的输出分布必须严格等于 p；</li>
+    <li><strong>② 效率</strong>：大多数时候能直接接受（白拿草稿的成果），只在必要时才额外花算力修正。</li>
+  </ul>
+
+  <h3>3.2 裁判的两条规则</h3>
+  <div class="formula">规则 1（接受）：采样 u ~ U[0,1]，若 u ≤ min(1, p(x) / q(x))，接受草稿 token <em>x</em><span class="tag">式 (1)</span></div>
+  <div class="formula">规则 2（拒绝）：从残差分布重采样：　r(x') ∝ max(0, p(x') − q(x'))<span class="tag">式 (2)</span></div>
+  <p><strong>规则 2 为什么长这样：三个设计要求逐条翻译。</strong>这个表达式不是随意写的，而是"拒绝后如何补抽"的三个要求逐条翻译的结果：</p>
+  <ul class="cn">
+    <li><strong>① 要求一：拒绝后从整个词表重新抽</strong>——拒绝后当前位置需要一个新 token，它来自定义在<strong>整个词表</strong>上的合法概率分布（不是围绕被拒 token 转，呼应下面图 3c 的"分水岭"）。→ 表达式用 ∝（正比于）：表示"归一化后才是分布"；</li>
+    <li><strong>② 要求二：只能补"草稿给少了"的 token</strong>——补抽的预算来自"给多了的 token 被拒时腾出的份额"（概率守恒），补到不缺的 token 上是白补。→ <code class="inline">max(0, ·)</code> 把差额为负（草稿给多了）和为零（刚好够）的位置全部截断归零；</li>
+    <li><strong>③ 要求三：缺多少补多少</strong>——无损红线要求输出频率恰好 = p：接受路已贡献 min(q,p)，剩余部分 p − min(q,p) = max(0, p−q) 必须由拒绝路<strong>原样补上</strong>。→ 补抽概率正比于缺口大小 p(x') − q(x')（缺口 0.2 的 token 被补抽的概率是缺口 0.1 的两倍）。</li>
+  </ul>
+  <p>三个符号各管一个约束：<strong>∝ 保证它是分布，max(0,·) 保证只补缺口，p−q 保证补得精确</strong>。而且这个表达式是被无损条件<strong>唯一决定</strong>的：输出 = min(q,p) + (1−α)·r 必须等于 p，解出 r = max(0, p−q)/(1−α)（式 6）——换成任何别的分布都会"有损"。含义一句话：<strong>规则 2 是一份"缺口清单"采样器——缺口越大的 token 越可能被补抽，没有缺口的（含给多了的）绝不补抽。</strong></p>
+  <p>把 min(1, p/q) 想成一个<strong>"概率折扣器"</strong>——把草稿的采样频率打折到目标模型认可的额度：</p>
+  <ul>
+    <li><strong>p(x) ≥ q(x)</strong>（目标比草稿更看好 x，含 p/q &gt; 1 的严格情况）：min(1, p/q) = 1 → <strong>无条件接受</strong>。注意接受概率被钳制在 1——它是概率，不能超过 1；而且此时草稿"给少了"（q(x) &lt; p(x)），全收都还不够目标要的份额，缺口 p(x) − q(x) 由规则 2 的补抽补齐（见 §3.4 中 B 行的完整账目）；</li>
+    <li><strong>p(x) &lt; q(x)</strong>（草稿过度自信）：以概率 p/q 接受（打个折扣），否则进入规则 2——<strong>从两种分布的差集里补抽</strong>，把草稿漏掉的目标概率找回来。</li>
+  </ul>
+  <p>一句话记住 min(1, p/q) 的哲学：<strong>只裁掉草稿的"过度自信"（q &gt; p 时打折），从不裁草稿的"谦逊"（q &lt; p 时全收，缺口由拒绝路补）</strong>。所以接受路最多贡献 min(q, p)，永远不可能超过草稿实际采到的份额。</p>
+  <p>注意规则 2 的重采样<strong>不依赖刚被拒绝的那个 x</strong>，而是看整个分布的差额——"哪些 token 是目标模型比草稿模型更看好的"。被拒绝只是触发了"盘点差额"这件事。</p>
+
+  <figure>
+    <img src="../../assets/images/inference/spec/wx3_accept.png" alt="候选 token 的接收与重采样">
+    <figcaption><span class="fno">图 4</span>　候选 token 的接收与重采样（来源：AI 大排档）。这里有一个理解"分水岭"：<strong>接收/拒绝判断只针对当前候选 token</strong>；拒绝后不是"再问候选一次"，而是回到当前位置，<strong>在整个词表上</strong>从残差分布重新抽一个新 token。</figcaption>
+  </figure>
+
+  <div class="box math">
+    <span class="bt">🧮 深入理解：为什么必须用随机数 r，而不是固定阈值？</span>
+    有人会问：既然接受概率是 min(1, p/q)，为什么不设个固定阈值（比如 p/q &gt; 0.5 才接受），省掉随机数？答案是：<strong>固定阈值会系统性扭曲输出分布</strong>。举例：目标模型认为 token A 应有 10% 的概率出现，草稿模型却高估到 90%——此时 p/q = 1/9 ≈ 0.11 &lt; 0.5，固定阈值会<strong>永远拒绝 A</strong>，A 的实际出现概率被压到 0%，而不是正确的 10%。而随机数机制下，A 仍有 1/9 的概率被"侥幸"放行，长期统计恰好还原 10%。随机性不是工程的妥协，而是精确还原分布 p 的数学保证（呼应 §3.5 误区 2；来源：糖嘟嘟的AI学习笔记）。
+  </div>
+
+  <div class="box key">
+    <span class="bt">💡 "长期统计恰好还原 10%"的原理</span>
+    核心就一个等式：<strong>接受频率 = 草稿频率 × 折扣率 = q × (p/q) = p</strong>——乘法里 q 被精确消掉了。草稿再怎么高估（q 再大），折扣率 p/q 就相应变小，两者相乘永远回到 p：
+    <div class="formula">"采到 A 且被接受"的频率 = q(A) × min(1, p(A)/q(A)) = 0.9 × 1/9 = 0.1 = p(A)<span class="tag">式 (3)</span></div>
+    <p style="margin:6px 0 4px;">"长期"的数学依据是<strong>大数定律</strong>：每次接受/拒绝是独立的伯努利试验，次数足够多时频率收敛到期望——草稿采样 1000 次，约 900 次采到 A，其中每次以 1/9 概率放行，900 × 1/9 ≈ 100 次接受 → A 出现约 10%。且 A 不会通过拒绝路再出现（残差质量 max(0, p−q) = 0，因 p &lt; q），所以总频率 = 接受路 0.1 + 拒绝路 0 = <strong>恰好 10%</strong>。</p>
+    <p style="margin:6px 0 0;">对比固定阈值：折扣率要么 0 要么 1，无法完成"q 到 p 的转换"（1/9 &lt; 0.5 → 永远拒绝 → 0.9×0 = 0 ≠ 0.1）；随机数机制下"侥幸放行"是<strong>精确设计的概率</strong>——每次放行的概率恰好是 p/q。这也就是 §3.3 式 (5) 的实例：P(接受且输出 A) = q·min(1, p/q) = min(q,p) = 0.1，每一次试验的期望贡献就是 0.1，大数定律保证频率收敛到它。</p>
+  </div>
+
+  <figure>
+    <svg viewBox="0 0 920 300" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="拒绝采样验证示意">
+      <style>
+        .vt { font:600 14.5px "Microsoft YaHei",sans-serif; fill:#2b2926; }
+        .vs { font:500 12.5px "LXGW WenKai","Microsoft YaHei",sans-serif; fill:#6f6a61; }
+        .vok { fill:#e6f0e6; stroke:#2e7d32; stroke-width:1.8; rx:10; }
+        .vno { fill:#f9e8e6; stroke:#b3261e; stroke-width:1.8; rx:10; }
+        .vnd { fill:#f3e4d8; stroke:#b3541e; stroke-width:1.8; rx:10; }
+        .vav { stroke:#2e7d32; stroke-width:2; fill:none; marker-end:url(#vag); }
+        .var { stroke:#b3261e; stroke-width:2; fill:none; marker-end:url(#vrg); }
+      </style>
+      <defs>
+        <marker id="vag" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto"><path d="M0,0 L10,4 L0,8 z" fill="#2e7d32"/></marker>
+        <marker id="vrg" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto"><path d="M0,0 L10,4 L0,8 z" fill="#b3261e"/></marker>
+      </defs>
+
+      <!-- 判断节点 -->
+      <rect x="40" y="40" width="230" height="90" class="vnd"/>
+      <text x="155" y="78" class="vt" text-anchor="middle">候选 x，采样 u ~ U[0,1]</text>
+      <text x="155" y="104" class="vs" text-anchor="middle">u ≤ min(1, p(x)/q(x)) ？</text>
+
+      <!-- 接受 -->
+      <path class="vav" d="M270,85 C360,85 380,85 430,85"/>
+      <text x="348" y="74" class="vs" fill="#2e7d32" font-size="13">是 →</text>
+      <rect x="435" y="42" width="230" height="86" class="vok"/>
+      <text x="550" y="78" class="vt" text-anchor="middle">接受 x</text>
+      <text x="550" y="104" class="vs" text-anchor="middle">x 直接输出，进入生成序列</text>
+
+      <!-- 拒绝 -->
+      <path class="var" d="M155,130 C155,180 155,195 155,215"/>
+      <text x="170" y="180" class="vs" fill="#b3261e" font-size="13">否 → 拒绝</text>
+      <rect x="40" y="218" width="230" height="70" class="vno"/>
+      <text x="155" y="248" class="vt" text-anchor="middle">从 r(x') ∝ max(0, p−q)</text>
+      <text x="155" y="270" class="vs" text-anchor="middle">重采样一个修正 token x'</text>
+
+      <!-- 分布说明 -->
+      <rect x="435" y="150" width="450" height="150" fill="#faf6ef" stroke="#e5ded2" stroke-width="1.5" rx="12"/>
+      <text x="660" y="178" class="vt" text-anchor="middle">为什么这样是对的？（六步推导）</text>
+      <text x="660" y="202" class="vs" text-anchor="middle">P(输出 x) = P(接受 x) + P(拒绝后补抽到 x)</text>
+      <text x="660" y="224" class="vs" text-anchor="middle">= q(x)·min(1,p/q) + (1−α)·r(x)</text>
+      <text x="660" y="246" class="vs" text-anchor="middle">= min(q,p)(x) + max(0, p−q)(x)</text>
+      <text x="660" y="268" class="vs" fill="#2e7d32" font-size="13.5" font-weight="700" text-anchor="middle">= p(x)　∎　输出严格服从目标分布</text>
+      <text x="660" y="290" class="vs" font-size="12" text-anchor="middle">α = Σ_y min(q(y), p(y))：草稿被接受的总概率</text>
+    </svg>
+    <figcaption><span class="fno">图 5</span>　拒绝采样验证：以概率 min(1, p/q) 接受候选，拒绝时从两种分布的"差集"重采样。两路合起来恰好还原目标分布 p(x)——这是投机解码"无损"的数学根基。</figcaption>
+  </figure>
+
+  <h4>图 5 推导框的逐步解读：公式怎么来、α 从哪来、u 到哪去</h4>
+  <p>推导框第一行 P(输出 x) = q(x)·min(1,p/q) + (1−α)·r(x) 是 §3.3 六步证明中第 1、2、5 步的合并写法，没有新东西：</p>
+  <table>
+    <tr><th style="width:30%">步骤</th><th style="width:42%">内容</th><th>贡献</th></tr>
+    <tr><td>第 1 步（拆分）</td><td>P(输出 x) = P(接受且输出 x) + P(拒绝后采样到 x)</td><td>公式的"+"结构</td></tr>
+    <tr><td>第 2 步（接受路）</td><td>P(接受且输出 x) = q(x)·min(1, p/q)</td><td>公式的第一项</td></tr>
+    <tr><td>第 5 步（拒绝路）</td><td>P(拒绝后采样到 x) = (1−α)·r(x)</td><td>公式的第二项</td></tr>
+  </table>
+  <ul class="cn">
+    <li><strong>① α 从哪来</strong>：α = Σ<sub>x</sub> min(q(x), p(x)) 是第 3 步把所有 token 的"采到且接受"概率求和得到的<strong>总接受概率</strong>（§3.4 例子中为 0.8）。公式第二项必须用它：拒绝路的贡献 = <strong>"拒绝发生的总概率 (1−α)" × "拒绝后抽到 x 的条件概率 r(x)"</strong>——r 是条件概率（已知拒绝发生），必须乘上拒绝事件本身的总量 (1−α) 才是绝对概率；</li>
+    <li><strong>② u 到哪去了</strong>：u 是<strong>单次试验</strong>的执行工具，公式是<strong>统计层面</strong>的语言——u 通过均匀分布的性质 P(u ≤ a) = a 被"吸收"进接受概率 min(1, p/q) 里了。单次试验：采 u、u ≤ min(1,p/q) 则接受；统计层面：P(接受) = P(u ≤ min(1,p/q)) = min(1,p/q)。u 没有消失，只是被它的概率本质取代（类比：掷硬币单次看正反，统计层面 P(正面) = 1/2）；</li>
+    <li><strong>③ 数字走一遍</strong>（§3.4 的 A）：q=0.7、p=0.6、min(1,p/q)=0.857、α=0.8、r(A)=0 → P(输出 A) = 0.7×0.857 + 0.2×0 = <strong>0.6 = p(A)</strong> ✓——第一项里 u 已吸收成接受概率，第二项里 1−α 是拒绝总量。</li>
+  </ul>
+
+  <figure>
+    <svg width="920" height="430" viewBox="0 0 920 430" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="分布账本：把 q 校准成 p">
+      <style>
+        .gt { font:600 14px "Microsoft YaHei",sans-serif; fill:#2b2926; }
+        .gs { font:500 12.5px "LXGW WenKai","Microsoft YaHei",sans-serif; fill:#6f6a61; }
+        .gl { font:500 12.5px "LXGW WenKai","Microsoft YaHei",sans-serif; fill:#4a3528; }
+      </style>
+      <text x="460" y="28" class="gt" text-anchor="middle" font-size="15">分布账本：把 q 校准成 p 的三步（数据同 §3.4 手算实例）</text>
+
+      <!-- 行 1：q -->
+      <text x="60" y="54" class="gl">① 草稿采出频率　q = [0.7, 0.1, 0.2]</text>
+      <rect x="60" y="62" width="567" height="40" fill="#b3541e"/>
+      <text x="343" y="87" class="gt" fill="#fff" text-anchor="middle">A　0.7</text>
+      <rect x="627" y="62" width="81" height="40" fill="#1e5a8a"/>
+      <text x="667" y="87" class="gt" fill="#fff" text-anchor="middle">B</text>
+      <rect x="708" y="62" width="162" height="40" fill="#2e7d32"/>
+      <text x="789" y="87" class="gt" fill="#fff" text-anchor="middle">C　0.2</text>
+
+      <!-- 行 2：p -->
+      <text x="60" y="116" class="gl">② 目标想要频率　p = [0.6, 0.3, 0.1]</text>
+      <rect x="60" y="124" width="486" height="40" fill="#b3541e"/>
+      <text x="303" y="149" class="gt" fill="#fff" text-anchor="middle">A　0.6</text>
+      <rect x="546" y="124" width="243" height="40" fill="#1e5a8a"/>
+      <text x="667" y="149" class="gt" fill="#fff" text-anchor="middle">B　0.3</text>
+      <rect x="789" y="124" width="81" height="40" fill="#2e7d32"/>
+      <text x="829" y="149" class="gt" fill="#fff" text-anchor="middle">C</text>
+
+      <!-- 对比注释 -->
+      <text x="60" y="188" class="gs">A：q=0.7 ＞ p=0.6 → 草稿多给 0.1 → 接受时打 0.857 折（多余的被裁掉）</text>
+      <text x="60" y="206" class="gs">B：q=0.1 ＜ p=0.3 → 草稿少给 0.2 → 缺口进入"差集"，待拒绝路补抽</text>
+
+      <!-- 行 3：min -->
+      <text x="60" y="230" class="gl">③ 接受路贡献　min(q, p) = [0.6, 0.1, 0.1]（草稿被认可的份额，全部收下）</text>
+      <rect x="60" y="238" width="486" height="40" fill="#b3541e"/>
+      <text x="303" y="263" class="gt" fill="#fff" text-anchor="middle">A　0.6</text>
+      <rect x="546" y="238" width="81" height="40" fill="#1e5a8a"/>
+      <text x="586" y="263" class="gt" fill="#fff" text-anchor="middle">B</text>
+      <rect x="627" y="238" width="81" height="40" fill="#2e7d32"/>
+      <text x="667" y="263" class="gt" fill="#fff" text-anchor="middle">C</text>
+
+      <!-- 行 4：max -->
+      <text x="60" y="304" class="gl">④ ＋ 拒绝路补抽　max(0, p−q) = [0, 0.2, 0]（"差集"＝目标想要、草稿没给够的部分）</text>
+      <rect x="546" y="312" width="162" height="40" fill="#1e5a8a"/>
+      <text x="627" y="337" class="gt" fill="#fff" text-anchor="middle">B　0.2 补上</text>
+
+      <!-- 行 5：min+max -->
+      <text x="60" y="380" class="gl">⑤ 合并两路：min + max = [0.6, 0.3, 0.1]</text>
+      <rect x="60" y="388" width="486" height="40" fill="#b3541e"/>
+      <text x="303" y="413" class="gt" fill="#fff" text-anchor="middle">A　0.6</text>
+      <rect x="546" y="388" width="243" height="40" fill="#1e5a8a"/>
+      <text x="667" y="413" class="gt" fill="#fff" text-anchor="middle">B　0.3</text>
+      <rect x="789" y="388" width="81" height="40" fill="#2e7d32"/>
+      <text x="829" y="413" class="gt" fill="#fff" text-anchor="middle">C</text>
+      <text x="868" y="380" class="gt" fill="#2e7d32" font-size="15" text-anchor="end">= p ∎</text>
+    </svg>
+    <figcaption><span class="fno">图 6</span>　分布账本：把 q 与 p 逐 token 对比——草稿多给的（A、C）接受时打折裁掉，草稿少给的（B）进入"差集"由拒绝路补抽；接受路 min(q,p) 与拒绝路 max(0, p−q) 合并恰好还原 p。这就是"两路合起来还原 p(x)"的直观含义。</figcaption>
+  </figure>
+
+  <h3>3.3 无损保证：六步证明</h3>
+  <p>下面把"输出分布 = p"完整推一遍。每一步都写清理由，一共只需要六步：</p>
+  <h4>第 1 步：把"最终输出 x"拆成两条互斥路径</h4>
+  <div class="formula">P(输出 x) = P(接受且输出 x) + P(拒绝后重采样到 x)<span class="tag">式 (4)</span></div>
+  <p>一个 token 要么走"接受"路直接输出，要么走"拒绝 → 重采样"路输出。两条路互斥（接受和拒绝不会同时发生），所以总概率等于两者之和。</p>
+  <h4>第 2 步：算"接受且输出 x"的概率</h4>
+  <div class="formula">P(接受且输出 x) = q(x) × min(1, p(x)/q(x)) = <strong>min(q(x), p(x))</strong><span class="tag">式 (5)</span></div>
+  <p>草稿先以概率 q(x) 采出 x，裁判再以概率 min(1, p/q) 放行。乘起来后化简：若 p ≥ q，则 q × 1 = q = min(q,p)；若 p &lt; q，则 q × p/q = p = min(q,p)。两种情况都得到 min(q,p)。</p>
+  <figure>
+    <img src="../../assets/images/inference/spec/wx2_venn.png" alt="概率质量的交集与差集">
+    <figcaption><span class="fno">图 7</span>　概率质量交集/差集的几何直觉（知乎网友手绘图，转引自 AI 大排档）。黄色 = 两个分布的公共部分（min(q,p)，接受保留，式 (5)）；红黑之间的白色区域 = 只属于 q 的部分（拒绝掉，其质量计入 1−α，式 (6)）；绿色 = 只属于 p 的部分（拒绝后补偿，式 (8)）。</figcaption>
+  </figure>
+  <h4>第 3 步：算总接受概率 α</h4>
+  <div class="formula">α = Σ<sub>x</sub> min(q(x), p(x))，　总拒绝概率 = 1 − α<span class="tag">式 (6)</span></div>
+  <p>把第 2 步对所有可能的 token 求和，得到"草稿被放行"的总概率。α 越大，草稿越合格——但注意：<strong>α 只决定效率，不决定正确性</strong>（正确性由第 6 步保证，与 α 无关）。</p>
+  <h4>第 4 步：给残差分布 r 归一化</h4>
+  <div class="formula">r(x) = max(0, p(x) − q(x)) / (1 − α)<span class="tag">式 (7)</span></div>
+  <p>先验证分母合法：Σ<sub>x</sub> max(0, p−q) = Σ<sub>x</sub> (p(x) − min(p(x), q(x))) = 1 − α。分子分母都是合法量，所以 r 是一个真正的概率分布（非负且和为 1）。</p>
+  <h4>第 5 步：算"拒绝后重采样到 x"的概率</h4>
+  <div class="formula">P(拒绝后采样到 x) = (1 − α) × r(x) = <strong>max(0, p(x) − q(x))</strong><span class="tag">式 (8)</span></div>
+  <p>拒绝概率 (1−α) 乘以 r(x)，恰好把归一化因子消掉——结果正是"目标与草稿的差额"。这一步说明重采样不是随便补一个 token，而是精确地补在草稿"给少了"的地方。</p>
+  <h4>第 6 步：合并两路，见证等式</h4>
+  <div class="formula">P(输出 x) = min(q(x), p(x)) + max(0, p(x) − q(x)) = <strong>p(x)</strong>　∎<span class="tag">式 (9)</span></div>
+  <p>最后一步用到一个对<strong>任意两个数都成立</strong>的恒等式：min(q,p) + max(0, p−q) = p。分两种情况验证：p ≥ q 时左边 = q + (p−q) = p；p &lt; q 时左边 = p + 0 = p。<strong>无论草稿多不靠谱，两条路拼起来都恰好还原完整的 p——这就是"无损"的全部秘密。</strong></p>
+
+  <figure>
+    <img src="../../assets/images/inference/spec/wx5_close.png" alt="为什么输出分布仍然是 p">
+    <figcaption><span class="fno">图 8</span>　为什么输出分布仍然是 p（来源：AI 大排档）。接受阶段留下重叠部分 min(q,p)，拒绝后补回缺口 max(0,p−q)，两块拼起来就是目标分布 p——式 (9) 的图形化表达。</figcaption>
+  </figure>
+
+  <div class="box key">
+    <span class="bt">💡 一句话读懂证明</span>
+    <strong>接受路补"草稿不自信的部分"（min(q,p)），拒绝路补"草稿过于自信而漏掉的部分"（max(0, p−q)），两路拼起来 = 完整的 p。</strong>拒绝采样最优雅的地方在于：纠错代价被压到了最低——只有 q 与 p 不一致的 token 才需要额外的重采样计算，其余全部白拿。
+  </div>
+
+  <h3>3.4 手算实例：三个 token 的完整流程</h3>
+  <p>抽象的证明看完了，用一个具体数字例子走一遍。假设词表只有三个 token {A, B, C}，某位置目标模型给出 p = [0.6, 0.3, 0.1]，草稿模型给出 q = [0.7, 0.1, 0.2]——草稿过度偏爱 A、冷落了 B。逐项计算：</p>
+  <table>
+    <tr><th class="c">token</th><th class="c">q(x) 草稿</th><th class="c">p(x) 目标</th><th class="c">放行概率 min(1, p/q)</th><th class="c">接受路贡献 min(q,p)</th><th class="c">差额 max(0, p−q)</th><th class="c">最终 P(输出 x)</th></tr>
+    <tr><td class="c">A</td><td class="c">0.7</td><td class="c">0.6</td><td class="c">min(1, 0.857) = 0.857</td><td class="c">0.6</td><td class="c">0</td><td class="c"><strong>0.6</strong></td></tr>
+    <tr><td class="c">B</td><td class="c">0.1</td><td class="c">0.3</td><td class="c">min(1, 3) = 1（无条件）</td><td class="c">0.1</td><td class="c">0.2</td><td class="c"><strong>0.3</strong></td></tr>
+    <tr><td class="c">C</td><td class="c">0.2</td><td class="c">0.1</td><td class="c">min(1, 0.5) = 0.5</td><td class="c">0.1</td><td class="c">0</td><td class="c"><strong>0.1</strong></td></tr>
+  </table>
+
+  <figure>
+    <img src="../../assets/images/inference/spec/wx4_split.png" alt="p 与 q 的概率质量拆分">
+    <figcaption><span class="fno">图 9</span>　p 与 q 的概率质量拆分（来源：AI 大排档，5-token 算例）。与图 6 是同一视角的两种呈现：每行 token 上"接受阶段留下 min(q,p)，还需要补的 [p−q]⁺"，缺口合计恰为 1−α。</figcaption>
+  </figure>
+  <p>流程走读：</p>
+  <ul class="cn">
+    <li><strong>①</strong> 草稿按 q 采样——70% 概率采到 A。若采到 A：p=0.6 &lt; q=0.7，裁判以 0.857 的概率放行（打 8.6 折），0.143 的概率拒绝；若采到 B（10%），p=0.3 &gt; q=0.1，无条件放行；</li>
+    <li><strong>②</strong> 总接受概率 α = 0.6 + 0.1 + 0.1 = <strong>0.8</strong>（80% 的草稿被直接放行），总拒绝概率 = 0.2；</li>
+    <li><strong>③</strong> 拒绝发生后，残差分布 r ∝ max(0, p−q) = [0, 0.2, 0]，归一化后 r = [0, <strong>1</strong>, 0]：<strong>被拒绝后 100% 补抽到 B</strong>——因为 B 是草稿唯一"给少了"的 token；</li>
+    <li><strong>④</strong> 汇总：A 的输出概率 = 0.6 + 0.2×0 = 0.6；B = 0.1 + 0.2×1 = 0.3；C = 0.1 + 0.2×0 = 0.1。恰好等于 p = [0.6, 0.3, 0.1] ∎</li>
+  </ul>
+  <p>观察：草稿的"偏爱"被折扣（A 从 0.7 打到 0.6），草稿的"冷落"被补齐（B 从 0.1 补到 0.3），最终账目分毫不差——拒绝采样是一个<strong>完美的"分布校准器"</strong>。</p>
+
+  <h3>3.5 五个常见误区</h3>
+  <ul>
+    <li><strong>误区 1："无损 = 每次生成的文本都一样"</strong>。不是。随机采样时每次输出本来就不同；"无损"指的是<strong>统计分布相同</strong>——投机解码产出的文本流，与目标模型直接解码产出的文本流，在分布上不可区分。只有在贪心（T=0）模式下，两者才逐 token 完全相同；</li>
+    <li><strong>误区 2："接受率越高越好，干脆全接受"</strong>。不能。全部接受 = 输出服从 q（草稿的分布），除非 q ≡ p 否则就"有损"了。拒绝采样正是用"折扣接受 + 差额补抽"这套机制，在<strong>严格保住 p 的前提下</strong>最大化接受率——接受率是效率指标，无损是正确性指标，两者由式 (1)(2) 统一保证；</li>
+    <li><strong>误区 3："被拒绝的草稿 token 浪费了"</strong>。没有浪费。拒绝触发重采样，补抽出的 token 依然会输出——每轮验证<strong>至少前进 1 个 token</strong>，最差情况也只是多花一次小草稿的前向；</li>
+    <li><strong>误区 4："拒绝采样会降低生成质量 / 多样性"</strong>。不会。它精确还原 p 的多样性——p 里概率小的 token 依然以同样的小概率出现，质量与直接跑目标模型完全一致；</li>
+    <li><strong>误区 5："Medusa 的 typical acceptance 也是无损的"</strong>。不是。它用温度阈值放宽接受条件来换取更高接受率，是有意偏离严格无损的工程取舍——大多数场景损失可忽略，但性质上已不是"精确保持"。凡是强调 lossless 的场合（如评测对比），应使用标准拒绝采样。</li>
+  </ul>
+
+  <h3>3.6 "无损"的准确含义、验证方法与生产意义</h3>
+  <h4>（1）精确定义</h4>
+  <div class="formula">对任意前缀与任意生成长度：P_speculative(完整输出序列) = P_vanilla(完整输出序列)<span class="tag">式 (10)</span></div>
+  <p>即：投机解码产出的<strong>整个序列的联合分布</strong>，与目标模型自回归解码完全一致。逐 token 成立后，序列层面由<strong>链式法则</strong>自然成立——但"从左到右"这个顺序不是惯例，而是硬约束：</p>
+  <ul>
+    <li>语言模型建模的是<strong>条件分布</strong> p(x_t | x<sub>&lt;t</sub>)：第 3 个 token 的概率依赖第 1、2 个 token；</li>
+    <li>如果第 2 个草稿 token 被拒绝并替换成了别的，那么<strong>第 3 个候选就不再可靠</strong>——它是在包含旧第 2 个 token 的上下文里生成的，而现在上下文已经"换了地基"；</li>
+    <li>所以一旦中间某个位置被替换，<strong>后面的草稿 token 必须全部丢掉</strong>，下一轮从新上下文重新猜。这不是算法保守，而是条件分布已经改变。</li>
+  </ul>
+  <p>序列级一致性因此是单 token 证明的反复套用：前面的 token 都被接受时，当前位置的上下文与目标模型直接采样时一致 → 在此上下文中单 token 的拒绝采样证明成立 → 一旦拒绝并重采样，当前 token 已经服从目标分布，后续在新上下文重新开始。沿着链式法则走下去，整段序列的联合分布与目标模型自回归采样一致。</p>
+
+  <figure>
+    <img src="../../assets/images/inference/spec/wx6_verify.png" alt="多 token 验证流程">
+    <figcaption><span class="fno">图 10</span>　多 token 验证必须从左到右（来源：AI 大排档）。第 i 个位置被拒绝并替换后，第 i+1 个及之后的草稿 token 全部作废——条件分布已经换了地基，下一轮从新上下文重新开始。</figcaption>
+  </figure>
+  <h4>（2）如何验证</h4>
+  <ul>
+    <li><strong>统计检验</strong>：Leviathan 等（2023）提出用卡方检验等方法，比较两套解码器大量输出的 n-gram 频率分布——分布不可区分则通过；</li>
+    <li><strong>经验验证</strong>：工程上最简单的方式是贪心模式下逐 token 比对——实现正确时，投机解码与 vanilla 的输出<strong>逐 token 完全相同</strong>（附录 A.1 的 AIInfra 实验正是这样验证"生成文本完全一致"的）；</li>
+    <li><strong>实现审计</strong>：检查拒绝规则用的是否是真实的 p、q（而不是阈值或启发式），是否处理了 q=0 的除零与温度缩放。</li>
+  </ul>
+  <h4>（3）与量化、蒸馏的本质区别</h4>
+  <p>量化（INT8/FP8/INT4）和蒸馏是<strong>确定性近似</strong>——权重被改动，输出分布必然偏移，只是"偏移小到可接受"；投机解码<strong>没有改动任何权重</strong>，只是换了一套采样执行顺序，分布严格不变。这也是投机解码可以放心与量化叠加的原因：量化负责"压缩模型"，投机解码负责"加速解码"，两者正交。</p>
+  <h4>（4）生产意义</h4>
+  <ul>
+    <li><strong>上线零风险</strong>：切换投机解码开关，输出质量评测<strong>无需重跑</strong>；</li>
+    <li><strong>可叠加性</strong>：与温度、top-p、重复惩罚、结构化约束等任何采样策略正交（温度的影响见 §3.8）；</li>
+    <li><strong>规模无关</strong>：草稿模型水平只影响<strong>加速多少</strong>，不影响<strong>输出对不对</strong>——哪怕草稿完全随机，输出分布依然是 p，只是加速接近 1×。</li>
+  </ul>
+
+  <h3>3.7 两个重要的特例</h3>
+  <h4>（1）贪心解码（temperature = 0）</h4>
+  <p>此时目标分布 p 退化为 one-hot（argmax 处为 1）。接受规则退化为一个简单判定：<strong>草稿 token 是否等于目标模型此刻的 argmax</strong>。等于 → 接受（min(1, 1)=1）；不等于 → 拒绝，残差分布只剩 argmax，重采样必然得到它。这等价于"草稿猜对了直接白拿，猜错就纠正"，且此时"无损"升级为<strong>逐 token 输出完全相同</strong>（比分布相同更强）。</p>
+  <h4>（2）无条件接受（p 为退化分布）</h4>
+  <p class="em-ul">如果目标分布只有唯一合法 token（例如 JSON 语法强制的位置），min(1, p/q) = 1，草稿必然被接受。这解释了为什么在代码补全、JSON 生成、结构化输出等"高确定性"场景里，投机解码的接受率最高。</p>
+
+  <div class="box math">
+    <span class="bt">🧮 无损（Lossless）意味着什么</span>
+    投机解码不会像量化和蒸馏那样改变生成质量——它只是把"从 p 中采样"的预算从目标模型转移到"目标模型 + 草稿模型 + 拒绝采样"。因此：<strong>生成文本的分布与直接跑目标模型完全一致</strong>，任何下游评测（包括要求严格一致性的场景）都无需重跑。这也是 EAGLE、Medusa、MTP 等所有主流方案都强调 lossless 的原因。
+  </div>
+
+  <div class="box info">
+    <span class="bt">ℹ️ 温度的影响</span>
+    接受率强烈依赖采样温度：低温（T ≈ 0.1–0.3）时分布尖锐、草稿容易猜中，接受率可达 70–90%；高温（T ≥ 0.7）时分布平坦、随机性强，接受率会掉到 30–50%。因此生产系统通常在<strong>低温场景</strong>（代码生成、推理、结构化输出）部署投机解码。温度影响采样的完整机制见 §3.8。
+  </div>
+
+  <h3>3.8 温度如何影响最终的采样：公式、代码与场景选择</h3>
+
+  <h4>（1）公式：带温度的 softmax</h4>
+  <p>温度 <em>T</em> 的作用只有一个：在 softmax 之前把 logits 整体缩放。它<strong>不改变 token 的相对排序</strong>，只改变概率分布的<strong>锐度</strong>。式中 z 是 logits 向量（未归一化分数，与 §3.1 的符号一致；这里不用 u 是为了避免与规则 1 的随机数 u 混淆）：</p>
+  <div class="formula">P(x<sub>t</sub> = v<sub>l</sub> | x<sub>1</sub>, …, x<sub>t−1</sub>) = exp(z<sub>l</sub> / T) / Σ<sub>j</sub> exp(z<sub>j</sub> / T)<span class="tag">式 (11)</span></div>
+  <ul>
+    <li><strong>T → 0⁺</strong>：logits 被放大到无穷，分布退化为 one-hot（argmax 概率 → 1），即贪婪解码；</li>
+    <li><strong>T = 1</strong>：标准随机采样（温度不生效）；</li>
+    <li><strong>T → ∞</strong>：logits 被压平到 0，概率趋近均匀分布（纯随机）。</li>
+  </ul>
+  <p>数值示例：设 logits = [2.0, 1.0, 0.5]（三个候选 token 的分数），不同温度下实际采到的概率分布：</p>
+  <table>
+    <tr><th class="c">T</th><th class="c">缩放后 logits/T</th><th class="c">softmax 后概率</th><th>效果</th></tr>
+    <tr><td class="c"><strong>0.2</strong></td><td class="c">[10, 5, 2.5]</td><td class="c">[99.3%, 0.67%, 0.05%]</td><td>≈ 贪婪：几乎必选第一名</td></tr>
+    <tr><td class="c"><strong>0.5</strong></td><td class="c">[4, 2, 1]</td><td class="c">[84.4%, 11.4%, 4.2%]</td><td>锐利：第一名占绝对优势</td></tr>
+    <tr><td class="c"><strong>1.0</strong></td><td class="c">[2, 1, 0.5]</td><td class="c">[62.9%, 23.1%, 14.0%]</td><td>标准随机采样</td></tr>
+    <tr><td class="c"><strong>2.0</strong></td><td class="c">[1, 0.5, 0.25]</td><td class="c">[48.1%, 29.2%, 22.7%]</td><td>平坦：三个候选几乎等可能</td></tr>
+  </table>
+
+  <h4>（2）代码：手写实现 + transformers 源码</h4>
+  <pre class="code"><span class="c"># 手写实现：完整流程只有三步</span>
+<span class="k">def</span> <span class="f">sample_with_temperature</span>(logits, temperature=<span class="n">1.0</span>):
+    scaled = logits / temperature                  <span class="c"># ① 除以 T（核心一步）</span>
+    probs = torch.softmax(scaled, dim=-<span class="n">1</span>)       <span class="c"># ② softmax 归一化成概率</span>
+    <span class="k">return</span> torch.multinomial(probs, num_samples=<span class="n">1</span>)  <span class="c"># ③ 按概率采样一个 token</span></pre>
+  <div class="code-cap">清单 1 · 带温度的采样：缩放 → softmax → multinomial</div>
+
+  <pre class="code"><span class="c"># transformers 实际实现（generation/logits_process.py，核心就一行）</span>
+<span class="k">class</span> <span class="f">TemperatureLogitsWarper</span>(LogitsWarper):
+    <span class="k">def</span> <span class="f">__init__</span>(self, temperature: float):
+        <span class="k">if</span> <span class="k">not</span> isinstance(temperature, float) <span class="k">or</span> <span class="k">not</span> (<span class="n">0.0</span> &lt; temperature):
+            <span class="k">raise</span> ValueError(<span class="s">f"`temperature` has to be a strictly positive float, but is {temperature}"</span>)
+        self.temperature = temperature
+
+    <span class="k">def</span> <span class="f">__call__</span>(self, input_ids, scores):
+        scores = scores / self.temperature          <span class="c"># 全部魔力在这一行</span>
+        <span class="k">return</span> scores</pre>
+  <div class="code-cap">清单 2 · transformers 的 TemperatureLogitsWarper（在采样前对 logits 统一缩放；新版另有极小温度 clamp 防 NaN）</div>
+
+  <h4>（3）不同场景选什么 T，为什么</h4>
+  <p class="em-ul">选择原则只有一条：<strong>任务的信息熵越低（答案越唯一），T 越小；任务越开放（答案越多样），T 越大</strong>。T 对生成质量的影响通常非单调——太低会重复/死板，太高会跑题/编造，需要在验证集或人工评测上找到甜点（sweet spot）。</p>
+  <table>
+    <tr><th style="width:30%">场景</th><th class="c" style="width:14%">典型 T</th><th>为什么选这个值</th></tr>
+    <tr><td>代码生成 / 补全</td><td class="c">0.1–0.3（可 greedy）</td><td>代码语义确定性强；低 T 显著降低语法与逻辑错误、提高可编译率。OpenAI Codex 用 0.2 采样提升 pass@k；DeepSeek-Coder 官方建议 0.2</td></tr>
+    <tr><td>数学推理 / 逻辑</td><td class="c">0–0.3</td><td>答案唯一，需要稳定、可复现的推导链，低 T 减少中间步骤跑偏</td></tr>
+    <tr><td>结构化输出（JSON / 函数调用 / 表格）</td><td class="c">0.1–0.2（可 greedy）</td><td>格式合法性优先于多样性，确定性输出可被下游程序直接解析</td></tr>
+    <tr><td>通用对话助手</td><td class="c">0.6–0.8</td><td>自然度与多样性的平衡点。Llama 3 默认 0.6、Mistral 默认 0.7、GPT 系列默认 1.0（配合 top_p）</td></tr>
+    <tr><td>创意写作 / 头脑风暴</td><td class="c">0.8–1.2</td><td>需要新奇与发散，多样性优先；再高则连贯性崩塌</td></tr>
+    <tr><td>翻译 / 摘要</td><td class="c">0.3–0.5</td><td>适度确定，避免过度重复措辞，同时不牺牲忠实度</td></tr>
+    <tr><td>DeepSeek-R1 类推理链</td><td class="c">0.6（top_p=0.95，禁 top_k）</td><td>官方建议：推理链很长，T 太低容易陷入自我循环，太高会编造（"幻觉"）</td></tr>
+    <tr><td><strong>投机解码服务</strong></td><td class="c"><strong>0.1–0.5</strong></td><td>保证草稿接受率 70%+：低温下草稿与目标分布同尖锐、argmax 一致率高；高温下接受率跌至 30–50%，投机收益消失（见下）</td></tr>
+  </table>
+
+  <h4>（4）为什么温度直接决定投机解码的接受率</h4>
+  <p class="em-ul">回到 §3.2 的接受规则：草稿 token <em>x</em> 被接受的概率是 min(1, p(x)/q(x))。温度从两端影响它：</p>
+  <ul class="em-ul-group">
+    <li><strong>低 T（分布尖锐）</strong>：p、q 都把质量集中在 argmax 附近。只要草稿模型学得好（argmax 与目标一致），采出来的 x 大概率就是目标的 argmax，此时 p(x) ≥ q(x)，接受概率 ≈ 1。接受率近似退化为<strong>单事件</strong>：P(argmax_q = argmax_p)，所以能到 70–90%；</li>
+    <li><strong>高 T（分布平坦）</strong>：每个位置都要做一次"逐 token 的 p/q 匹配"。平坦分布下草稿很容易采到目标概率低的 token，p(x)/q(x) 远小于 1 → 拒绝。整个草稿串的期望接受长度 E[min(1, p/q)] 逐位置衰减，接受率掉到 30–50%；</li>
+    <li><strong>推论</strong>：贪心（T=0）时接受条件退化为"argmax 是否相等"（§3.7）；T 越大，投机解码的"确定性红利"越薄。生产上要同时拿质量和加速，就把 T 定在 0.1–0.5——这也是为什么投机解码的主流部署场景是代码、推理、结构化输出。</li>
+  </ul>
+</section>
+
+<!-- ==================== 第 4 章 ==================== -->
+<section id="s4">
+  <h2 class="sec"><span class="no">04</span> 加速比分析：接受率是唯一的杠杆</h2>
+  <div class="sec-en">ACCEPTANCE RATE — WHERE THE SPEEDUP REALLY COMES FROM</div>
+
+  <h3>4.1 期望接受长度</h3>
+  <p>设每个位置草稿被接受的概率为 <em>α</em>（接受率，acceptance rate），投机长度为 <em>γ</em>。每轮验证时，连续接受的 token 数期望为：</p>
+  <div class="formula">τ = (1 − α<sup>γ+1</sup>) / (1 − α)<span class="tag">式 (12)</span></div>
+  <p>这个公式分两步推导——<strong>先写出前进量的分布，再用"尾概率求和"把它变成等比数列</strong>：</p>
+  <h4>（1）本轮前进量 T 的分布</h4>
+  <p>一轮验证 γ 个候选位置，从左到右检验，前进量 T 只有两类结局：</p>
+  <table>
+    <tr><th class="c" style="width:22%">前进量 T</th><th style="width:48%">发生条件</th><th>概率</th></tr>
+    <tr><td class="c">t 个（1 ≤ t ≤ γ）</td><td>前 t−1 个候选接受、第 t 个被拒（重采样修正产出第 t 个）</td><td class="c">α<sup>t−1</sup> × (1−α)</td></tr>
+    <tr><td class="c">γ+1 个</td><td>全部 γ 个候选接受 + 奖励 token（bonus 直接采自目标分布 p，必然得）</td><td class="c">α<sup>γ</sup></td></tr>
+  </table>
+  <h4>（2）期望 = 尾概率之和</h4>
+  <div class="em-block">
+  <p><strong>先明确"期望"是什么</strong>：期望（expected value）= <strong>加权平均</strong>——每个可能取值 × 它的概率，全部加起来：E[T] = Σ t·P(T=t)。"期望"不是"希望"，而是"平均而言"：长期重复很多轮，每轮前进数的平均值（大数定律保证频率收敛到它）。类比掷骰子：期望 = 1×1/6 + 2×1/6 + … + 6×1/6 = 3.5——"掷很多次平均约 3.5 点"，虽然单次永远掷不出 3.5。</p>
+  <p><strong>为什么可以换成"尾概率之和"</strong>：Σ t·P(T=t) 与 Σ P(T≥t) 是<strong>同一笔账的两种算法</strong>——把定义式展开，P(T=t) 会在 P(T≥1)、P(T≥2)、…、P(T≥t) 中各出现一次（共 t 次），所以"横着加（取值×概率）"等价于"竖着加（至少到达概率累加）"：</p>
+  <div class="formula">E[T] = Σ<sub>t≥1</sub> P(T ≥ t)<span class="tag">尾概率公式（= 定义式的等价变形）</span></div>
+  <p>数字验证（γ=5, α=0.8）：定义式 1×0.2 + 2×0.16 + 3×0.128 + 4×0.1024 + 5×0.0819 + 6×0.3277 = 3.69；尾概率式 1 + 0.8 + 0.64 + 0.512 + 0.4096 + 0.3277 = 3.69 ✓——同一个期望，两种算法。</p>
+  <p><strong>为什么这里用尾概率版</strong>：因为 P(T ≥ t) = α<sup>t−1</sup> 恰好是<strong>等比数列</strong>（几何概率），求和有闭式解；而定义式 Σ t·α<sup>t−1</sup>(1−α) 是带 t 的加权和，化简绕圈。同一个期望，哪个视角好算用哪个。而 P(T ≥ t) = 前 t−1 个位置都接受 = α<sup>t−1</sup>——注意 t = γ+1 时依然成立（前 γ 个候选全接受 + bonus 必得，概率 α<sup>γ</sup>），<strong>奖励 token 被这个公式天然包含</strong>：</p>
+  <div class="formula">τ = Σ<sub>t=1</sub><sup>γ+1</sup> α<sup>t−1</sup> = 1 + α + α² + … + α<sup>γ</sup><span class="tag">等比数列，共 γ+1 项</span></div>
+  </div>
+  <h4>（3）等比数列求和（错位相减）</h4>
+  <div class="formula">S = 1 + α + α² + … + α<sup>γ</sup>，　αS = α + α² + … + α<sup>γ</sup> + α<sup>γ+1</sup><span class="tag">两边同乘公比，错开一位</span></div>
+  <div class="formula">S − αS = 1 − α<sup>γ+1</sup>　→　τ = S = (1 − α<sup>γ+1</sup>) / (1 − α)<span class="tag">中间 γ 项全部抵消</span></div>
+  <p>错位相减的精髓：<strong>乘公比后数列整体平移一位，相减时中间所有项一一抵消，只留下首项 1 和越界的尾项 −α<sup>γ+1</sup></strong>——"γ+1 项求和"被压缩成"两项相减"。数字验证（α = 0.6, γ = 5）：1 + 0.6 + 0.36 + 0.216 + 0.1296 + 0.07776 = 2.38336 = (1 − 0.6⁶) / 0.4 ✓。</p>
+  <p>边界检查：α → 1 时 τ → γ+1（全部接受 + 奖励 token），α → 0 时 τ → 1（只剩重采样保底的那个 token）。每项 α<sup>t−1</sup> 的概率含义是<strong>"能走到第 t 个位置"</strong>（前 t−1 个候选都被接受），把这些概率全部加起来就是期望前进数——这也是为什么 τ(α) 曲线在 α 接近 1 时急速上升（§4.3 模拟器可拖动验证）。</p>
+
+  <figure>
+    <svg viewBox="0 0 920 380" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="接受率与期望接受长度曲线">
+      <style>
+        .ax { stroke:#8b8378; stroke-width:1.5; }
+        .gx { stroke:#e0d9cc; stroke-width:1; }
+        .tx { font:500 13px "Cascadia Code",Consolas,monospace; fill:#6f6a61; }
+        .tl { font:600 14px "Microsoft YaHei",sans-serif; fill:#2b2926; }
+      </style>
+      <!-- 坐标系：x = 90 + 1520·(α−0.5)，y = 330 − 58·(τ−1)，即 α∈[0.5,1.0]→x∈[90,850]，τ∈[1,6]→y∈[330,40] -->
+      <rect x="90" y="40" width="760" height="290" fill="#fffdf9" stroke="#e5ded2" stroke-width="1.5" rx="8"/>
+      <g class="gx">
+        <line x1="90" y1="98"  x2="850" y2="98"/>
+        <line x1="90" y1="156" x2="850" y2="156"/>
+        <line x1="90" y1="214" x2="850" y2="214"/>
+        <line x1="90" y1="272" x2="850" y2="272"/>
+      </g>
+      <line x1="90" y1="330" x2="850" y2="330" class="ax"/>
+      <line x1="90" y1="40"  x2="90"  y2="330" class="ax"/>
+      <!-- 刻度（τ 刻度与曲线共用同一映射） -->
+      <g class="tx" text-anchor="middle">
+        <text x="90"  y="352">0.5</text>
+        <text x="242" y="352">0.6</text>
+        <text x="394" y="352">0.7</text>
+        <text x="546" y="352">0.8</text>
+        <text x="698" y="352">0.9</text>
+        <text x="850" y="352">1.0</text>
+      </g>
+      <g class="tx" text-anchor="end">
+        <text x="80" y="54">6</text>
+        <text x="80" y="112">5</text>
+        <text x="80" y="170">4</text>
+        <text x="80" y="228">3</text>
+        <text x="80" y="286">2</text>
+        <text x="80" y="344">1</text>
+      </g>
+      <text x="470" y="378" class="tl" text-anchor="middle" font-size="15">接受率 α</text>
+      <text x="34"  y="185" class="tl" transform="rotate(-90 34,185)" font-size="15">期望接受长度 τ</text>
+
+      <!-- 曲线 τ = (1−α⁶)/(1−α)，γ=5；采样点 α: 0.50→1.969; 0.55→2.161; 0.60→2.383; 0.65→2.642; 0.70→2.941; 0.75→3.288; 0.80→3.690; 0.85→4.154; 0.90→4.690; 0.95→5.298; 1.00→6.000 -->
+      <polyline fill="none" stroke="#b3541e" stroke-width="3"
+        points="90,273.8 166,262.7 242,249.8 318,234.8 394,217.4 470,197.3 546,174.0 622,147.2 698,116.2 774,80.7 850,40.0"/>
+      <text x="808" y="26" class="tl" fill="#b3541e" font-size="13.5" text-anchor="middle">τ = (1−α⁶)/(1−α)</text>
+      <!-- 标注点 -->
+      <circle cx="242" cy="249.8" r="6" fill="#fff" stroke="#b3541e" stroke-width="2.5"/>
+      <text x="242" y="230" class="tx" fill="#b3541e" text-anchor="middle">α=0.6 → τ≈2.38</text>
+      <circle cx="622" cy="147.2" r="6" fill="#fff" stroke="#b3541e" stroke-width="2.5"/>
+      <text x="622" y="131" class="tx" fill="#b3541e" text-anchor="middle">α=0.85 → τ≈4.15</text>
+      <circle cx="698" cy="116.2" r="6" fill="#fff" stroke="#b3541e" stroke-width="2.5"/>
+      <text x="698" y="100" class="tx" fill="#b3541e" text-anchor="middle">α=0.9 → τ≈4.69</text>
+      <text x="630" y="245" class="tx" fill="#2e7d32" text-anchor="middle" font-size="13">接受率提升 0.6→0.9，同样 γ=5 时每轮多拿 ≈2.3 个 token（≈97% 提升）</text>
+    </svg>
+    <figcaption><span class="fno">图 11</span>　固定投机长度 γ=5 时，期望接受长度 τ 随接受率 α 的变化。曲线高度非线性——接受率是投机解码"唯一的杠杆"：从 α=0.6 提到 α=0.9，每轮产出几乎翻倍。</figcaption>
+  </figure>
+
+  <h3>4.2 墙钟时间与盈亏平衡</h3>
+  <p>每轮的墙钟时间 ≈ 草稿阶段耗时 + 目标模型一次前向耗时。设草稿模型与目标模型速度比为 <em>c</em>（例如草稿 20× 快，c = 0.05），加速比近似为：</p>
+  <div class="formula">加速比 ≈ τ / (1 + γ·c)<span class="tag">式 (13)</span></div>
+  <ul>
+    <li><strong>α 是分子</strong>：接受率越高，每轮拿到的 token 越多；</li>
+    <li><strong>γ·c 是分母成本</strong>：草稿阶段越慢、投机越长，代价越大；</li>
+    <li><strong>盈亏平衡点</strong>：业界经验值 α ≈ 0.5–0.6。低于这个值，投机解码在高并发下反而<strong>净亏损</strong>（每次拒绝都白搭一次目标模型前向）。</li>
+  </ul>
+
+  <div class="box key">
+    <span class="bt">💡 由此得到的设计原则</span>
+    <ul class="cn">
+      <li><strong>①</strong> 一切算法优化的核心目标都是<strong>提高接受率 α</strong>（而不是盲目加长 γ）；</li>
+      <li><strong>②</strong> 草稿模型必须<strong>与目标模型对齐</strong>——对齐得越好，α 越高；</li>
+      <li><strong>③</strong> γ 的选择是"草稿成本 vs 更多候选"的权衡，通常取 3–7；</li>
+      <li><strong>④</strong> 经验数据：普通独立小模型 α ≈ 0.55–0.70（约 2×）；EAGLE 类 α ≈ 0.70–0.80；EAGLE-2/3 与并行草稿 α ≈ 0.85–0.95（4–6.5×）。</li>
+    </ul>
+  </div>
+
+  <h3>4.3 交互式模拟器：拖动滑块看曲线</h3>
+  <p>拖动四个滑块实时联动：<strong>投机长度 γ</strong>、<strong>接受率 α</strong>、<strong>期望接受长度 τ</strong>（与 α 双向联动——拖动任一个，另一个按式 (12) 自动反解）、<strong>草稿/目标速度比 c</strong>。右侧图实时显示 τ(α) 曲线与本轮前进量分布，信息面板给出参考加速比：</p>
+  <div class="sim">
+    <div class="sim-controls">
+      <label>投机长度 γ <input type="range" id="simG" min="1" max="16" step="1" value="5"> <span id="simGv">5</span></label>
+      <label>接受率 α <input type="range" id="simA" min="5" max="99" step="1" value="80"> <span id="simAv">0.80</span></label>
+      <label>期望接受长度 τ <input type="range" id="simT" min="1" max="6" step="0.05" value="3.69"> <span id="simTv">3.69</span></label>
+      <label>草稿/目标速度比 c <input type="range" id="simC" min="2" max="50" step="1" value="10"> <span id="simCv">0.10</span></label>
+    </div>
+    <div class="sim-panels">
+      <figure class="sim-fig">
+        <canvas id="simTau" width="560" height="340"></canvas>
+        <figcaption>期望接受长度 τ 随接受率 α 的变化——灰虚线：γ = 1 / 3 / 5 / 8 参考曲线；橙粗线：当前 γ；橙点：当前参数位置</figcaption>
+      </figure>
+      <figure class="sim-fig">
+        <canvas id="simDist" width="420" height="340"></canvas>
+        <figcaption>本轮前进量分布 P(T = t)，t = 1 … γ+1（绿色柱为"全部接受 + 奖励 token"）</figcaption>
+      </figure>
+    </div>
+    <div class="sim-info" id="simInfo"></div>
+  </div>
+  <script>
+  (function(){
+    var G = document.getElementById('simG'), A = document.getElementById('simA'),
+        T = document.getElementById('simT'), C = document.getElementById('simC');
+    var gv = document.getElementById('simGv'), av = document.getElementById('simAv'),
+        tv = document.getElementById('simTv'), cv = document.getElementById('simCv');
+    var tauC = document.getElementById('simTau'), distC = document.getElementById('simDist');
+    var info = document.getElementById('simInfo');
+    function tau(a, g) { return a >= 1 ? g + 1 : (1 - Math.pow(a, g + 1)) / (1 - a); }
+    function alphaFromTau(g, target) {           // 二分反解：给定 γ 与目标 τ，求 α
+      if (target >= g + 1) return 0.9999;
+      if (target <= 1) return 0.0001;
+      var lo = 0.0001, hi = 0.9999;
+      for (var i = 0; i < 60; i++) {
+        var mid = (lo + hi) / 2;
+        if (tau(mid, g) < target) lo = mid; else hi = mid;
+      }
+      return lo;
+    }
+
+    function drawTau(a, g) {
+      var ctx = tauC.getContext('2d'), W = tauC.width, H = tauC.height;
+      var padL = 46, padR = 14, padT = 18, padB = 34;
+      var x = function(v) { return padL + (W - padL - padR) * v; };
+      var y = function(t) { return padT + (H - padT - padB) * (1 - t / 16); };
+      ctx.clearRect(0, 0, W, H);
+      ctx.strokeStyle = '#e0d9cc'; ctx.lineWidth = 1; ctx.fillStyle = '#6f6a61';
+      ctx.font = '12px Consolas, monospace'; ctx.textAlign = 'center';
+      for (var i = 0; i <= 10; i++) {
+        var v = i / 10, px = x(v);
+        ctx.beginPath(); ctx.moveTo(px, padT); ctx.lineTo(px, H - padB); ctx.stroke();
+        ctx.fillText(v.toFixed(1), px, H - padB + 16);
+      }
+      ctx.textAlign = 'right';
+      for (var t = 0; t <= 16; t += 2) {
+        var py = y(t);
+        ctx.beginPath(); ctx.moveTo(padL, py); ctx.lineTo(W - padR, py); ctx.stroke();
+        ctx.fillText(String(t), padL - 6, py + 4);
+      }
+      ctx.fillStyle = '#2b2926'; ctx.textAlign = 'center';
+      ctx.fillText('接受率 α', W / 2, H - 4);
+      ctx.save(); ctx.translate(12, H / 2); ctx.rotate(-Math.PI / 2);
+      ctx.fillText('期望接受长度 τ', 0, 0); ctx.restore();
+      [1, 3, 5, 8].forEach(function(g0) {
+        if (g0 === g) return;
+        ctx.strokeStyle = '#c9c2b5'; ctx.lineWidth = 1.5; ctx.setLineDash([4, 4]);
+        ctx.beginPath();
+        for (var i = 0; i <= 100; i++) {
+          var a0 = 0.02 + i / 100 * 0.97, t0 = Math.min(tau(a0, g0), 16);
+          var px = x(a0), py = y(t0);
+          i === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py);
+        }
+        ctx.stroke(); ctx.setLineDash([]);
+      });
+      ctx.strokeStyle = '#b3541e'; ctx.lineWidth = 3;
+      ctx.beginPath();
+      for (var i = 0; i <= 100; i++) {
+        var a0 = 0.02 + i / 100 * 0.97, t0 = Math.min(tau(a0, g), 16);
+        var px = x(a0), py = y(t0);
+        i === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py);
+      }
+      ctx.stroke();
+      var t = Math.min(tau(a, g), 16);
+      ctx.beginPath(); ctx.arc(x(a), y(t), 6, 0, Math.PI * 2);
+      ctx.fillStyle = '#b3541e'; ctx.fill();
+      ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.stroke();
+    }
+
+    function drawDist(a, g) {
+      var ctx = distC.getContext('2d'), W = distC.width, H = distC.height;
+      var padL = 40, padR = 14, padT = 18, padB = 34;
+      var n = g + 1, bw = (W - padL - padR) / n;
+      ctx.clearRect(0, 0, W, H);
+      ctx.strokeStyle = '#e0d9cc'; ctx.lineWidth = 1; ctx.fillStyle = '#6f6a61';
+      ctx.font = '12px Consolas, monospace';
+      for (var i = 0; i <= 4; i++) {
+        var py = padT + (H - padT - padB) * i / 4;
+        ctx.beginPath(); ctx.moveTo(padL, py); ctx.lineTo(W - padR, py); ctx.stroke();
+        ctx.fillText((1 - i / 4).toFixed(1), padL - 6, py + 4);
+      }
+      var probs = [];
+      for (var t = 1; t <= g; t++) probs.push(Math.pow(a, t - 1) * (1 - a));
+      probs.push(Math.pow(a, g));
+      probs.forEach(function(p, i) {
+        var bx = padL + i * bw + 2, by = padT + (H - padT - padB) * (1 - p);
+        ctx.fillStyle = i === g ? '#2e7d32' : '#1e5a8a';
+        ctx.fillRect(bx, by, bw - 4, H - padB - by);
+        ctx.fillStyle = '#2b2926'; ctx.textAlign = 'center';
+        ctx.fillText(String(i + 1), bx + (bw - 4) / 2, H - padB + 16);
+      });
+      ctx.fillStyle = '#2b2926'; ctx.textAlign = 'center';
+      ctx.fillText('前进量 T', W / 2, H - 4);
+      ctx.save(); ctx.translate(12, H / 2); ctx.rotate(-Math.PI / 2);
+      ctx.fillText('P(T = t)', 0, 0); ctx.restore();
+    }
+
+    function redraw(a, g) {
+      drawTau(a, g);
+      drawDist(a, g);
+    }
+    function showInfo(a, g, c) {
+      var t = tau(a, g);
+      var speedup = t / (1 + g * c);
+      info.innerHTML = '期望接受长度 τ = <strong>' + t.toFixed(2) + '</strong>（上限 ' + (g + 1) + '，全部接受概率 α<sup>γ</sup> = ' + Math.pow(a, g).toFixed(3) + '）' +
+        ' ｜ 参考加速比 ≈ τ / (1 + γ·c) = <strong>' + speedup.toFixed(2) + '×</strong>（相对直接解码）';
+    }
+    function syncTauSlider(g, t) {
+      T.max = g + 1;
+      T.value = Math.min(t, g + 1);
+      tv.textContent = T.value;
+    }
+    // γ 变化：保持 α，τ 跟随重算
+    G.addEventListener('input', function() {
+      var g = +G.value, a = A.value / 100;
+      gv.textContent = g;
+      syncTauSlider(g, tau(a, g));
+      redraw(a, g); showInfo(a, g, C.value / 100);
+    });
+    // α 变化：τ 跟随
+    A.addEventListener('input', function() {
+      var g = +G.value, a = A.value / 100;
+      av.textContent = a.toFixed(2);
+      syncTauSlider(g, tau(a, g));
+      redraw(a, g); showInfo(a, g, C.value / 100);
+    });
+    // τ 变化：二分反解 α，α 跟随
+    T.addEventListener('input', function() {
+      var g = +G.value, target = +T.value;
+      tv.textContent = target.toFixed(2);
+      var a = alphaFromTau(g, target);
+      A.value = Math.round(a * 100);
+      av.textContent = a.toFixed(2);
+      redraw(a, g); showInfo(a, g, C.value / 100);
+    });
+    // c 变化：只更新加速比
+    C.addEventListener('input', function() {
+      var a = A.value / 100, g = +G.value;
+      cv.textContent = (C.value / 100).toFixed(2);
+      showInfo(a, g, C.value / 100);
+    });
+    // 初始化
+    var a0 = A.value / 100, g0 = +G.value;
+    syncTauSlider(g0, tau(a0, g0));
+    redraw(a0, g0); showInfo(a0, g0, C.value / 100);
+  })();
+  </script>
+</section>
+
+<!-- ==================== 第 5 章 ==================== -->
+<section id="s5">
+  <h2 class="sec"><span class="no">05</span> 草稿来源全景：六类方案一览</h2>
+  <div class="sec-en">A TAXONOMY OF DRAFT MECHANISMS</div>
+
+  <p class="lead">"草稿从哪来"决定了算法的训练成本、接受率上限和部署复杂度。六类主流方案按"草稿智能程度"递进：</p>
+
+  <figure>
+    <svg viewBox="0 0 920 430" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="投机解码方案分类树">
+      <style>
+        .tn { font:600 15px "Microsoft YaHei",sans-serif; fill:#fff; text-anchor:middle; }
+        .tn2 { font:600 14px "Microsoft YaHei",sans-serif; fill:#2b2926; text-anchor:middle; }
+        .ts { font:500 12px "LXGW WenKai","Microsoft YaHei",sans-serif; fill:#6f6a61; text-anchor:middle; }
+        .te { stroke:#b3541e; stroke-width:2; fill:none; marker-end:url(#tear); }
+      </style>
+      <defs><marker id="tear" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto"><path d="M0,0 L10,4 L0,8 z" fill="#b3541e"/></marker></defs>
+
+      <rect x="330" y="20" width="260" height="58" rx="12" fill="#45332a"/>
+      <text x="460" y="55" class="tn" font-size="17">投机解码 Speculative Decoding</text>
+
+      <path class="te" d="M360,78 C300,110 260,125 230,135"/>
+      <path class="te" d="M460,78 C460,110 460,120 460,140"/>
+      <path class="te" d="M560,78 C620,110 660,125 690,135"/>
+
+      <!-- 左：无模型 -->
+      <rect x="40" y="140" width="280" height="120" rx="12" fill="#f3e4d8" stroke="#b3541e" stroke-width="1.6"/>
+      <text x="180" y="172" class="tn2" fill="#b3541e">① 无模型草稿（零训练）</text>
+      <text x="180" y="198" class="ts">n-gram / Prompt Lookup / Suffix</text>
+      <text x="180" y="218" class="ts">在上下文里找重复片段当草稿</text>
+      <text x="180" y="238" class="ts">成本：0 训练 · 接受率低</text>
+
+      <!-- 中：模型内 -->
+      <rect x="360" y="150" width="200" height="110" rx="12" fill="#e2ecf4" stroke="#1e5a8a" stroke-width="1.6"/>
+      <text x="460" y="182" class="tn2" fill="#1e5a8a">② 独立草稿模型</text>
+      <text x="460" y="208" class="ts">经典投机解码（2023）</text>
+      <text x="460" y="228" class="ts">小模型 + 目标模型两套权重</text>
+      <text x="460" y="248" class="ts">成本：1 次预训练 · 接受率低~中</text>
+
+      <rect x="360" y="290" width="200" height="110" rx="12" fill="#e6f0e6" stroke="#2e7d32" stroke-width="1.6"/>
+      <text x="460" y="322" class="tn2" fill="#2e7d32">③ 解码头草稿</text>
+      <text x="460" y="348" class="ts">Medusa（多解码头）</text>
+      <text x="460" y="368" class="ts">MTP（DeepSeek 训练目标）</text>
+      <text x="460" y="388" class="ts">成本：轻量微调 · 接受率中</text>
+
+      <!-- 右：特征层/并行 -->
+      <rect x="600" y="140" width="280" height="110" rx="12" fill="#f7f0d9" stroke="#8a6d1a" stroke-width="1.6"/>
+      <text x="740" y="172" class="tn2" fill="#8a6d1a">④ 特征层草稿（自回归）</text>
+      <text x="740" y="198" class="ts">EAGLE / EAGLE-2 / EAGLE-3</text>
+      <text x="740" y="218" class="ts">在目标模型 hidden states 上外推</text>
+      <text x="740" y="238" class="ts">成本：轻量训练 · 接受率高</text>
+
+      <rect x="600" y="280" width="280" height="120" rx="12" fill="#e6f0e6" stroke="#2e7d32" stroke-width="1.6"/>
+      <text x="740" y="312" class="tn2" fill="#2e7d32">⑤ 并行草稿生成</text>
+      <text x="740" y="338" class="ts">P-EAGLE / DFlash / DSpark</text>
+      <text x="740" y="358" class="ts">一次前向产出整个 token 块</text>
+      <text x="740" y="378" class="ts">成本：轻量训练 · 接受率高 · 延迟与 K 解耦</text>
+
+      <path class="te" d="M460,262 C460,275 460,285 460,288"/>
+      <path class="te" d="M560,205 C580,205 590,205 598,205"/>
+      <path class="te" d="M740,252 C740,265 740,275 740,278"/>
+      <path class="te" d="M180,260 C180,275 180,285 180,300"/>
+      <rect x="40" y="305" width="280" height="95" rx="12" fill="#faf6ef" stroke="#e5ded2" stroke-width="1.6"/>
+      <text x="180" y="337" class="tn2">⑥ 组合 / 混合方案</text>
+      <text x="180" y="363" class="ts">草稿模型级联、多层草稿树、</text>
+      <text x="180" y="383" class="ts">动态草稿长度、负载感知调度</text>
+    </svg>
+    <figcaption><span class="fno">图 12</span>　草稿来源分类。从零训练的 n-gram，到独立小模型，再到寄生在目标模型内部的解码头、特征层外推头，最后到一次前向产出整块的并行草稿——智能程度与接受率逐级上升。</figcaption>
+  </figure>
+
+  <h3>5.1 一页纸对比</h3>
+  <table>
+    <tr><th style="width:20%">方案</th><th style="width:12%" class="c">训练成本</th><th style="width:13%" class="c">额外显存</th><th style="width:14%" class="c">典型接受率 α</th><th style="width:14%" class="c">典型加速</th><th>代表工作</th></tr>
+    <tr><td>n-gram / Prompt Lookup</td><td class="c">零</td><td class="c">零</td><td class="c">低（重复文本高）</td><td class="c">1.5–2.5×</td><td>Prompt Lookup Decoding（2023）</td></tr>
+    <tr><td>独立草稿模型</td><td class="c">预训练</td><td class="c">模型权重</td><td class="c">0.55–0.70</td><td class="c">~2×</td><td>Leviathan 2023；Chen 2023</td></tr>
+    <tr><td>Medusa 解码头</td><td class="c">轻量微调</td><td class="c">~10%</td><td class="c">0.60–0.75</td><td class="c">2.3–3.6×</td><td>Medusa（ICML 2024）</td></tr>
+    <tr><td>MTP 模块</td><td class="c">训练时附带</td><td class="c">~5%</td><td class="c">0.6–0.8</td><td class="c">1.8–3×</td><td>DeepSeek-V3（2024）</td></tr>
+    <tr><td>EAGLE 特征层</td><td class="c">轻量训练</td><td class="c">草稿头 + KV</td><td class="c">0.70–0.80</td><td class="c">3–5.6×</td><td>EAGLE / EAGLE-2 / EAGLE-3</td></tr>
+    <tr><td>并行草稿（P-EAGLE / DFlash / DSpark）</td><td class="c">轻量训练</td><td class="c">草稿块 + KV</td><td class="c">0.85–0.95</td><td class="c">> EAGLE-3（1.2–1.5×↑）</td><td>P-EAGLE 2026；DFlash 2026；DSpark 2026</td></tr>
+  </table>
+
+  <p>后面的章节将按这条主线逐个展开：先讲数学最干净的双模型经典方案（§6）与零训练的 n-gram（§7），再进入"寄生在目标模型内部"的 Medusa（§8）、EAGLE（§9）、MTP（§10），最后是 2026 年的最新浪潮——并行草稿生成（§11）。</p>
+
+  <h3>5.2 选型决策路径</h3>
+  <p>各方案的优劣不是绝对的，取决于你能改到哪一层（来源：糖嘟嘟的AI学习笔记《投机解码深度技术解析》）：</p>
+  <ul>
+    <li><strong>无法修改目标模型</strong> → 标准投机解码（挑一个与目标分布对齐良好的小模型即可）；</li>
+    <li><strong>可微调目标模型、想快速落地</strong> → Medusa（只训几个解码头，侵入最小，草稿开销极低）；</li>
+    <li><strong>可获取中间层特征、追求最高接受率</strong> → EAGLE 系列（接受率常达 0.7–0.8+，可设更大的 γ）；</li>
+    <li><strong>从训练阶段就规划</strong> → MTP（模型自带多步预测能力，推理零额外开销，但迁移到已有模型成本高）；</li>
+    <li><strong>极致加速 + 生产级调度</strong> → DSpark（半自回归草稿 + 置信度调度，配合 vLLM / Speculators 生态）。</li>
+  </ul>
+</section>
+
+<!-- ==================== 第 6 章 ==================== -->
+<section id="s6">
+  <h2 class="sec"><span class="no">06</span> 经典投机解码：独立草稿模型</h2>
+  <div class="sec-en">THE ORIGINAL — DUAL-MODEL SPECULATIVE DECODING (2023)</div>
+
+  <h3>6.1 起源与两个奠基工作</h3>
+  <p>投机解码的现代形式由两个团队在 2023 年独立提出，结论几乎相同：</p>
+  <ul>
+    <li><strong>Leviathan, Kalman &amp; Matias</strong>（Google，<em>Fast Inference from Transformers via Speculative Decoding</em>，arXiv 2211.17192）：正式给出接受率与加速比分析；</li>
+    <li><strong>Chen 等</strong>（<em>Accelerating LLM Inference with Staged Speculative Decoding</em>，arXiv 2308.04623）：独立发现同样的采样修正方案。</li>
+  </ul>
+  <p>方案朴素而优雅：<strong>用一个独立的小模型（如 125M–1.3B）当草稿，用大模型验证</strong>。草稿模型可以完全独立训练，不要求与目标模型有任何共享结构——只要求它"在任务分布上尽量模仿目标模型"。</p>
+
+  <h3>6.2 完整算法（可实现的最短版本）</h3>
+  <pre class="code"><span class="k">import</span> numpy <span class="k">as</span> np
+
+<span class="k">def</span> <span class="f">speculative_generate</span>(draft, target, prefix, gamma=5, temperature=1.0):
+    <span class="s">"""经典投机解码主循环（示意实现）。
+    draft / target : 输入 token 序列、返回下一个位置 logits 的函数
+    prefix         : list[int]，当前已生成的前缀
+    gamma          : 每轮草稿 token 数（投机长度 K）"""</span>
+    <span class="k">while</span> <span class="k">not</span> is_eos(prefix):
+        <span class="c"># ── ① 草稿：小模型自回归生成 gamma 个候选 ──</span>
+        drafts = []
+        <span class="k">for</span> _ <span class="k">in</span> range(gamma):
+            logits_q = draft(prefix + drafts)                 <span class="c"># 小模型单步前向</span>
+            drafts.append(sample_token(logits_q, temperature))
+
+        <span class="c"># ── ② 验证：大模型一次并行前向，拿到所有位置的真实分布 ──</span>
+        logits_p = target(prefix + drafts)                    <span class="c"># 关键：只跑一次！</span>
+
+        <span class="c"># ── ③ 拒绝采样：逐位置检验 ──</span>
+        <span class="k">for</span> i, x <span class="k">in</span> enumerate(drafts):
+            p = softmax(logits_p[i]); q = softmax(logits_q[i])
+            <span class="k">if</span> np.random.rand() &lt; min(1.0, p[x] / q[x]):   <span class="c"># 式 (1) 接受</span>
+                <span class="k">continue</span>
+            r = np.maximum(0.0, p - q)                        <span class="c"># 式 (2) 残差重采样</span>
+            r /= r.sum()
+            drafts[i] = sample_from(r)
+            <span class="k">break</span>                                     <span class="c"># 首个失败位置停止</span>
+
+        <span class="c"># ── ④ 前进：接受串 + 修正 token（最多 accepted+1 个）──</span>
+        accepted = <span class="n">0</span>
+        <span class="k">for</span> x <span class="k">in</span> drafts:
+            <span class="k">if</span> verified(x): accepted += <span class="n">1</span>
+            <span class="k">else</span>: <span class="k">break</span>
+        prefix.extend(drafts[:accepted + <span class="n">1</span>])
+    <span class="k">return</span> prefix</pre>
+  <div class="code-cap">清单 3 · 经典投机解码核心循环（约 20 行）——草稿、验证、拒绝采样、前进四步</div>
+
+  <h3>6.3 为什么这个方案很快被超越</h3>
+  <p>双模型方案有两个结构性弱点：</p>
+  <ul class="cn">
+    <li><strong>① 能力鸿沟</strong>：独立小模型与大模型的知识/能力差距巨大，在复杂推理任务上"猜不中"——接受率 α 往往只有 0.5–0.7；</li>
+    <li><strong>② 对齐难题</strong>：小模型是独立预训练的，其分布 q 与大模型 p 没有约束关系，刻意对齐需要额外蒸馏；</li>
+    <li><strong>③ 部署成本</strong>：需要同时维护两套权重、两个 KV cache，显存开销接近翻倍。</li>
+  </ul>
+  <p>后续所有主流方案（Medusa、EAGLE、MTP、并行草稿）的进化方向高度一致：<strong>让草稿"寄生"在目标模型内部</strong>——共享它的权重、它的 hidden states、甚至它的 KV cache，从而既获得对齐，又省掉额外权重。</p>
+</section>
+
+<!-- ==================== 第 7 章 ==================== -->
+<section id="s7">
+  <h2 class="sec"><span class="no">07</span> 零训练方案：n-gram / Prompt Lookup</h2>
+  <div class="sec-en">ZERO-TRAINING DRAFTING — LOOK FOR REPETITION IN THE CONTEXT</div>
+
+  <h3>7.1 思路：文本会自我重复</h3>
+  <p>Prompt Lookup Decoding（2023，<a href="https://github.com/apoorvumang/prompt-lookup-decoding">apoorvumang/prompt-lookup-decoding</a>）提出一个几乎"免费"的草稿来源：<strong>把当前已生成的后缀当作 n-gram，在 prompt 里找它最近一次出现的位置，把那个位置之后的 token 直接当作草稿</strong>。</p>
+  <ul>
+    <li>代码补全：函数调用、模板结构高度重复 → 草稿命中率极高；</li>
+    <li>长篇续写：重复句式、列表、引用反复出现；</li>
+    <li>JSON / 结构化输出：花括号、引号、字段名循环出现。</li>
+  </ul>
+  <p><strong>为什么叫 n-gram</strong>："gram" 源自希腊语 gramma（书写），计算语言学里指"一个语言单元"（词、字符、token）；n-gram 就是<strong>连续的 n 个单元组成的序列</strong>（1-gram 叫 unigram、2-gram 叫 bigram、3-gram 叫 trigram，如 "我 爱 投机解码" 的 bigram = [我爱, 爱投机解码]）。这个词来自<strong>统计语言模型时代</strong>——神经网络之前的主流语言模型就是 n-gram 语言模型，用"前 n−1 个词出现后第 n 个词的条件频率"预测下一个词。Prompt Lookup 借用了这个术语：<strong>把当前上下文最后 n 个 token 当作"查询 n-gram"，在更早的位置找相同的 n-gram</strong>——n 越大匹配越精准但越难命中（长 n-gram 在上下文中出现次数少），n 越小越容易命中但误匹配多，vLLM 默认 5/5 是经验平衡点。</p>
+  <p>整个过程<strong>不需要任何模型、零训练、零额外显存</strong>——只需要在上下文里做一次字符串匹配。核心函数只有十几行：</p>
+  <pre class="code"><span class="k">def</span> <span class="f">find_candidate_pred_tokens</span>(input_ids, max_ngram_size, num_pred_tokens):
+    <span class="s">"""在 input_ids 中找当前后缀的 n-gram 匹配，返回匹配后的延续作为候选草稿"""</span>
+    input_length = input_ids.size(<span class="n">1</span>)
+    <span class="k">for</span> ngram_size <span class="k">in</span> range(min(max_ngram_size, input_length - <span class="n">1</span>), <span class="n">0</span>, -<span class="n">1</span>):
+        <span class="c"># 当前最后 ngram_size 个 token 作为查询片段</span>
+        query = input_ids[<span class="n">0</span>, -ngram_size:]
+        <span class="c"># 在更早的位置滑动搜索相同的片段</span>
+        positions = find_overlapping_windows(input_ids[<span class="n">0</span>, :-ngram_size], query)
+        <span class="k">if</span> positions:
+            match_start = positions[-<span class="n">1</span>] + ngram_size      <span class="c"># 取最近一次匹配</span>
+            <span class="k">return</span> input_ids[<span class="n">0</span>, match_start:match_start + num_pred_tokens]
+    <span class="k">return</span> torch.tensor([], dtype=input_ids.dtype)</pre>
+  <div class="code-cap">清单 4 · Prompt Lookup 的核心匹配函数（摘自原仓库，略有简化）</div>
+  <p><strong>匹配范围：只在本条请求的上下文中找</strong>。搜索空间是当前请求的 input_ids（prompt + 已生成部分），多轮对话时包括整条对话历史——但<strong>绝不跨请求、不跨用户、没有全局索引</strong>。所以"代码文件、长文档、重复模板"这类<strong>单条上下文内重复多</strong>的场景命中率高；不同请求之间的重复（如许多用户问同一个问题）完全利用不到。找不到匹配时函数返回空候选，这一轮退化为普通解码（零风险，不猜就不错）。</p>
+  <p><strong>匹配查找的开销</strong>：时间 O(L·n<sub>max</sub>)（L = 上下文长度）——对每个候选 n 在序列上滑动窗口比对，实际实现用向量化（torch.eq 整行比较），1M token 长上下文也只需毫秒级；且每轮投机开始时只匹配<strong>一次</strong>（一次匹配拿到 γ 个候选再统一验证），相对目标模型每轮一次前向（几百毫秒量级）可忽略（&lt; 1%）；<strong>显存开销为零</strong>（不加载任何模型、不建索引，直接扫描现有 token 序列）——这是所有草稿方案里成本最低的，也是它"零训练、零显存"定位的来源。</p>
+
+  <h3>7.2 一行代码接入：Transformers</h3>
+  <p>该方案已直接内置于 HuggingFace Transformers：</p>
+  <pre class="code"><span class="c"># prompt_lookup_num_tokens = 每轮草稿的候选 token 数</span>
+outputs = model.generate(
+    **inputs,
+    max_new_tokens=<span class="n">128</span>,
+    prompt_lookup_num_tokens=<span class="n">5</span>,      <span class="c"># ← 开启 n-gram 投机解码（无需草稿模型）</span>
+)</pre>
+
+  <h3>7.3 vLLM 中一行配置</h3>
+  <pre class="code"><span class="c"># 在线服务</span>
+vllm serve Qwen/Qwen3-30B-A3B --max-model-len <span class="n">16384</span> \
+  --speculative-config <span class="s">'{"method": "ngram",
+    "num_speculative_tokens": 5,
+    "prompt_lookup_max": 5}'</span>
+
+<span class="c"># 离线（Python API）</span>
+llm = LLM(
+    model=<span class="s">"meta-llama/Meta-Llama-3.1-8B-Instruct"</span>,
+    speculative_config={
+        <span class="s">"method"</span>: <span class="s">"ngram"</span>,
+        <span class="s">"num_speculative_tokens"</span>: <span class="n">5</span>,
+        <span class="s">"prompt_lookup_max"</span>: <span class="n">4</span>,     <span class="c"># 不设置时默认 5/5</span>
+    },
+)</pre>
+  <div class="code-cap">清单 5 · vLLM 的 ngram 投机解码配置（prompt_lookup_min / max 控制 n-gram 匹配范围）</div>
+  <p class="em-ul"><strong>两个参数的区别与联系</strong>——它们是 n-gram 投机解码的两个独立旋钮：</p>
+  <ul class="em-ul-group cn">
+    <li><strong>① prompt_lookup_min / max</strong>（默认 5/5）：<strong>匹配参数</strong>——决定"查询 n-gram 多长"：取上下文最后 n 个 token 作为查询片段去匹配，n 从 max 向下尝试到 min（找不到就缩短）。n 越大匹配越精准但越难命中；</li>
+    <li><strong>② num_speculative_tokens</strong>：<strong>产量参数</strong>——匹配成功后，从匹配点之后最多取多少个 token 作为草稿候选（投机长度 γ）。</li>
+  </ul>
+  <p class="em-ul">两者协作：<strong>先匹配、后取量</strong>——prompt_lookup 决定"拿多长的指纹去找"，num_speculative_tokens 决定"找到后拿多少"。改前者不影响候选数，改后者不影响匹配长度，相互独立。</p>
+
+  <div class="box warn">
+    <span class="bt">⚠️ 适用边界</span>
+    n-gram 方案在<strong>代码、结构化输出、长上下文重复文本</strong>上效果突出；但在开放式创作、推理链等低重复度文本上接受率很低。它是"零成本垫底方案"——适合作为基线，或与模型类草稿组合使用（比如先用 n-gram 快速命中模板，命不中再交给 EAGLE）。
+  </div>
+</section>
+
+<!-- ==================== 第 8 章 ==================== -->
+<section id="s8">
+  <h2 class="sec"><span class="no">08</span> Medusa：多解码头 + 树注意力</h2>
+  <div class="sec-en">MULTIPLE DECODING HEADS WITH TREE ATTENTION (ICML 2024)</div>
+
+  <h3>8.1 动机：不要第二个模型，加几个"头"</h3>
+  <p><a href="https://arxiv.org/abs/2401.10774">Medusa</a>（Princeton / Together AI / UIUC 等，ICML 2024）提出：与其训练独立草稿模型，不如在<strong>目标模型最后一层的 hidden states 上直接挂 K 个轻量解码头</strong>。第 k 个头负责预测位置 t+k 的 token。主干模型完全冻结，只训练几个 MLP 头——训练成本与显存开销都极小。</p>
+  <p>关键创新在于验证阶段：K 个候选可以组成一棵<strong>候选树</strong>（每个位置取 top-s 个候选，做笛卡尔积组合），Medusa 用修改过的<strong>树注意力掩码</strong>在一次前向里验证整棵树的所有路径——树中每个节点只关注自己所在分支的祖先，互不干扰。</p>
+
+  <figure>
+    <svg viewBox="0 0 920 540" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Medusa 架构图">
+      <style>
+        .mt { font:600 14.5px "Microsoft YaHei",sans-serif; fill:#2b2926; }
+        .ms { font:500 12.5px "LXGW WenKai","Microsoft YaHei",sans-serif; fill:#6f6a61; }
+        .mh { fill:#e2ecf4; stroke:#1e5a8a; stroke-width:1.8; rx:10; }
+        .mc { fill:#fff; stroke:#4a3428; stroke-width:1.5; rx:7; }
+        .mb { fill:#e6f0e6; stroke:#2e7d32; stroke-width:1.8; rx:10; }
+        .ma { stroke:#1e5a8a; stroke-width:2; fill:none; marker-end:url(#mar); }
+        .mtree { stroke:#8a6d1a; stroke-width:1.8; fill:none; marker-end:url(#mtr); }
+      </style>
+      <defs>
+        <marker id="mar" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto"><path d="M0,0 L10,4 L0,8 z" fill="#1e5a8a"/></marker>
+        <marker id="mtr" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto"><path d="M0,0 L10,4 L0,8 z" fill="#8a6d1a"/></marker>
+      </defs>
+
+      <!-- 左列标题 -->
+      <text x="310" y="30" class="mt" text-anchor="middle">① 生成结构：h_t → 解码头 → 候选</text>
+      <text x="310" y="205" class="ms" text-anchor="middle">每头输出 logits → top-s 采样（s=2）</text>
+
+      <!-- 候选层（head 的输出，4 组 top-2） -->
+      <g>
+        <rect x="60"  y="220" width="125" height="64" rx="10" class="mc"/>
+        <text x="122" y="247" class="ms" text-anchor="middle">c₁　c₂</text>
+        <text x="122" y="268" class="ms" text-anchor="middle" font-size="11">t+1 的 top-2</text>
+        <rect x="195" y="220" width="125" height="64" rx="10" class="mc"/>
+        <text x="257" y="247" class="ms" text-anchor="middle">d₁　d₂</text>
+        <text x="257" y="268" class="ms" text-anchor="middle" font-size="11">t+2 的 top-2</text>
+        <rect x="330" y="220" width="125" height="64" rx="10" class="mc"/>
+        <text x="392" y="247" class="ms" text-anchor="middle">e₁　e₂</text>
+        <text x="392" y="268" class="ms" text-anchor="middle" font-size="11">t+3 的 top-2</text>
+        <rect x="445" y="220" width="125" height="64" rx="10" class="mc"/>
+        <text x="507" y="247" class="ms" text-anchor="middle">f₁　f₂</text>
+        <text x="507" y="268" class="ms" text-anchor="middle" font-size="11">t+4 的 top-2</text>
+      </g>
+
+      <!-- K 个解码头 -->
+      <g>
+        <rect x="60"  y="330" width="125" height="70" rx="10" class="mh"/>
+        <text x="122" y="358" class="mt" fill="#1e5a8a" text-anchor="middle" font-size="13.5">head₁</text>
+        <text x="122" y="380" class="ms" text-anchor="middle" font-size="12">预测 x_{t+1}</text>
+        <rect x="195" y="330" width="125" height="70" rx="10" class="mh"/>
+        <text x="257" y="358" class="mt" fill="#1e5a8a" text-anchor="middle" font-size="13.5">head₂</text>
+        <text x="257" y="380" class="ms" text-anchor="middle" font-size="12">预测 x_{t+2}</text>
+        <rect x="330" y="330" width="125" height="70" rx="10" class="mh"/>
+        <text x="392" y="358" class="mt" fill="#1e5a8a" text-anchor="middle" font-size="13.5">head₃</text>
+        <text x="392" y="380" class="ms" text-anchor="middle" font-size="12">预测 x_{t+3}</text>
+        <rect x="445" y="330" width="125" height="70" rx="10" class="mh"/>
+        <text x="507" y="358" class="mt" fill="#1e5a8a" text-anchor="middle" font-size="13.5">head₄</text>
+        <text x="507" y="380" class="ms" text-anchor="middle" font-size="12">预测 x_{t+4}</text>
+      </g>
+
+      <!-- h_t 输入 -->
+      <rect x="60" y="440" width="520" height="52" rx="10" fill="#45332a"/>
+      <text x="320" y="460" class="mt" fill="#f2e8dd" text-anchor="middle" font-size="14">主干 LLM（冻结）→ 最后层 hidden states h_t</text>
+      <text x="320" y="480" class="ms" fill="#d9cdbf" text-anchor="middle">t 时刻全部上下文的语义压缩</text>
+
+      <!-- 数据流箭头（h_t → 头 → 候选，全部向上） -->
+      <path class="ma" d="M122,440 L122,402"/>
+      <path class="ma" d="M257,440 L257,402"/>
+      <path class="ma" d="M392,440 L392,402"/>
+      <path class="ma" d="M507,440 L507,402"/>
+      <path class="ma" d="M122,330 L122,286"/>
+      <path class="ma" d="M257,330 L257,286"/>
+      <path class="ma" d="M392,330 L392,286"/>
+      <path class="ma" d="M507,330 L507,286"/>
+
+      <!-- 右列：候选树 -->
+      <text x="740" y="30" class="mt" text-anchor="middle">② 候选树：一次前向验证所有路径</text>
+      <rect x="710" y="44" width="60" height="36" rx="18" class="mb"/>
+      <text x="740" y="67" class="ms" fill="#2e7d32" text-anchor="middle">x_t 根</text>
+      <circle cx="660" cy="130" r="20" class="mc"/><text x="660" y="136" class="ms" text-anchor="middle">a₁</text>
+      <circle cx="820" cy="130" r="20" class="mc"/><text x="820" y="136" class="ms" text-anchor="middle">a₂</text>
+      <path class="mtree" d="M725,80 L660,128"/>
+      <path class="mtree" d="M755,80 L820,128"/>
+      <circle cx="590" cy="210" r="20" class="mc"/><text x="590" y="216" class="ms" text-anchor="middle">b₁</text>
+      <circle cx="700" cy="210" r="20" class="mc"/><text x="700" y="216" class="ms" text-anchor="middle">b₂</text>
+      <circle cx="780" cy="210" r="20" class="mc"/><text x="780" y="216" class="ms" text-anchor="middle">b₃</text>
+      <circle cx="860" cy="210" r="20" class="mc"/><text x="860" y="216" class="ms" text-anchor="middle">b₄</text>
+      <path class="mtree" d="M650,150 L590,208"/>
+      <path class="mtree" d="M670,150 L700,208"/>
+      <path class="mtree" d="M810,150 L780,208"/>
+      <path class="mtree" d="M830,150 L860,208"/>
+      <text x="740" y="254" class="ms" text-anchor="middle">… 共 K 层</text>
+
+      <!-- 树注意力说明 -->
+      <rect x="600" y="290" width="290" height="112" rx="10" fill="#f7f0d9" stroke="#8a6d1a" stroke-width="1.5"/>
+      <text x="745" y="318" class="mt" fill="#8a6d1a" text-anchor="middle" font-size="13">树注意力：一次前向验证所有路径</text>
+      <text x="745" y="342" class="ms" text-anchor="middle">每条路径 = 笛卡尔积的一个组合</text>
+      <text x="745" y="362" class="ms" text-anchor="middle">每个节点只 attend 自己分支的祖先</text>
+      <text x="745" y="382" class="ms" text-anchor="middle">取最长可接受前缀，其余路径剪枝</text>
+
+      <!-- 中间连接：候选层 → 笛卡尔积 → 候选树 -->
+      <path class="mtree" d="M565,252 C620,225 690,150 730,86"/>
+      <text x="600" y="274" class="ms" fill="#8a6d1a" font-size="12">笛卡尔积 → 候选树</text>
+    </svg>
+    <figcaption><span class="fno">图 13</span>　Medusa 架构（数据流自下而上）：主干最后层 hidden states h_t → K 个轻量解码头并行预测未来 K 个 token → 每头输出 logits 经 top-s 采样得到候选层（每位置 top-2）→ 笛卡尔积组合成候选树 → 树注意力一次前向验证所有路径，取最长可接受前缀。</figcaption>
+  </figure>
+
+  <h4>解码头：shape 与计算范式</h4>
+  <p>输入是主干最后一层的 hidden state h_t（<strong>[batch, d_model]</strong>，d_model 如 LLaMA-7B 的 4096、Qwen 的 2048–8192），输出是 K 个词表 logits（每个 <strong>[batch, |V|]</strong>，|V| 如 32k / 128k / 151k）——d_model 维向量映射到词表大小，与主干自己的 LM Head 是同一类投影，只是挂在更浅的位置、各预测一个不同的未来位置。典型实现是 <strong>1–2 层小 MLP + 输出投影</strong>，且 K 个头<strong>共享一个 base</strong>、只各留一个独立输出头（省参数，类似多头注意力的共享投影）：</p>
+  <pre class="code"><span class="k">class</span> <span class="f">MedusaHeads</span>(nn.Module):
+    <span class="k">def</span> <span class="f">__init__</span>(self, d_model, vocab_size, K, hidden=<span class="k">None</span>):
+        <span class="k">super</span>().__init__()
+        hidden = hidden <span class="k">or</span> d_model
+        self.base = nn.Sequential(              <span class="c"># 共享 base（1–2 层）</span>
+            nn.Linear(d_model, hidden),
+            nn.SiLU(),
+        )
+        self.heads = nn.ModuleList([            <span class="c"># K 个独立输出头</span>
+            nn.Linear(hidden, vocab_size) <span class="k">for</span> _ <span class="k">in</span> range(K)
+        ])
+
+    <span class="k">def</span> <span class="f">forward</span>(self, h_t):                    <span class="c"># h_t: [batch, d_model]</span>
+        x = self.base(h_t)                      <span class="c"># [batch, hidden]</span>
+        <span class="k">return</span> [head(x) <span class="k">for</span> head <span class="k">in</span> self.heads]  <span class="c"># K × [batch, |V|] logits</span></pre>
+  <div class="code-cap">清单 6 · Medusa 解码头结构示意（PyTorch）：第 k 个头预测位置 t+k 的 token</div>
+  <p><strong>参数规模</strong>：主要来自输出投影 d×|V|（词表投影没法省）——以 d=4096、|V|=32k 为例，每头输出投影 4096×32000 ≈ 131M，K=3 头 + 共享 base 合计约 426M（7B 主干的 ~6%）；典型配置 <code class="inline">medusa_num_heads=3</code>、<code class="inline">medusa_num_layers=1</code>（K=3–5 头、1–2 层）。对比：EAGLE 草稿头预测"下一个特征"（d→d），输出投影只有 d×d，所以更小（§9.1 的 ~300–500M）——Medusa 必须输出完整词表分布（每头要独立采样 top-s），输出投影躲不掉。</p>
+  <p><strong>推理计算链</strong>：主干前向取 h_t → K 个头并行算 logits（可 batch 成一次矩阵乘，相对主干前向可忽略）→ 每头 top-s 采样 → 笛卡尔积候选树 → 树注意力一次前向验证（对应图 13）。</p>
+
+  <h4>笛卡尔积组合：候选怎么拼成完整序列</h4>
+  <p>笛卡尔积（Cartesian product）= 把所有集合的选项"两两全配对"：A × B = {(a, b) | a ∈ A, b ∈ B}。例：{a₁, a₂} × {b₁, b₂} = {(a₁,b₁), (a₁,b₂), (a₂,b₁), (a₂,b₂)}（2×2 = 4 个组合）。在 Medusa 里，K 个头各预测未来一个位置、每个头取 top-s 候选，<strong>笛卡尔积就是从每层各取一个、拼成完整序列</strong>：</p>
+  <div class="formula">{a₁,a₂} × {b₁,b₂} × {c₁,c₂} × {d₁,d₂} → 2⁴ = <strong>16 条完整候选序列</strong><span class="tag">候选路径数 = s^K</span></div>
+  <ul class="cn">
+    <li><strong>① 为什么必须组合</strong>：验证需要<strong>完整的 token 串</strong>——第 2 个位置接受与否依赖第 1 个位置是什么（条件分布，§3.6 链式法则），只给"各层独立候选"不够，必须拼成 (a₁,b₁)、(a₁,b₂)… 这样的具体序列才能验证；</li>
+    <li><strong>② 与候选树的对应</strong>：树的每条路径 = 笛卡尔积的一个元素（16 条叶子路径 = 16 个组合），树注意力掩码保证这些路径互不干扰地一次前向验证完；</li>
+    <li><strong>③ 生活类比</strong>：点套餐——主食 2 选 1 × 饮料 2 选 1 × 甜点 2 选 1 = 8 种套餐。候选树就是"预测套餐"：每层的 top-s 是一道菜的选项，笛卡尔积枚举出所有完整套餐，验证时看哪个最靠谱。</li>
+  </ul>
+
+  <h4>K 个头与 top-s 的关系：深度 × 宽度的两个旋钮</h4>
+  <p>图 13 里有两个参数决定候选树的大小，它们是<strong>正交的两个维度</strong>——K 管"预测多远"（深度），s 管"每层留几个选项"（宽度）：</p>
+  <table>
+    <tr><th style="width:20%">参数</th><th style="width:34%">含义</th><th style="width:18%">管什么</th><th>代价</th></tr>
+    <tr><td><strong>K 个头</strong></td><td>第 k 个头预测位置 t+k</td><td>深度：草稿的"远见"</td><td>越远接受率衰减（离当前上下文越远信息越少，尾部候选几乎随机）</td></tr>
+    <tr><td><strong>top-s</strong></td><td>每个头从分布里取概率最高的前 s 个 token</td><td>宽度：每层的容错</td><td>树指数膨胀 s<sup>K</sup>，一次前向验证的路径数爆炸</td></tr>
+  </table>
+  <ul class="cn">
+    <li><strong>① 树的形状</strong>：深度 = K、宽度 = s，完整路径数 = s<sup>K</sup>——图 13 中 K=4、s=2 → 理论 2⁴ = 16 条候选路径，树注意力一次前向全部验证，取<strong>最长可接受前缀</strong>；</li>
+    <li><strong>② 权衡</strong>：两者乘积 = 探索预算，必须一起调——加 K 就得压 s（否则树爆炸），加 s 就得减 K（否则尾部衰减拖累收益）；</li>
+    <li><strong>③ 退化与典型值</strong>：s=1 → 树退化为单一路径（每头只取 argmax 的逐层贪心草稿，失去树结构容错）；典型配置 K=3–5 个头、s=2–3（vLLM 的 <code class="inline">medusa_choices</code> 参数即手动指定树形状）。</li>
+  </ul>
+
+  <h3>8.2 训练配方：Medusa-1 与 Medusa-2</h3>
+  <ul>
+    <li><strong>Medusa-1</strong>：冻结主干，只训 K 个头，任意数据集即可（也可用模型<strong>自我蒸馏</strong>生成数据，适配 RLHF 后的模型）。> 2.2× 加速；</li>
+    <li><strong>Medusa-2</strong>：头与主干联合微调（分学习率、头预热），2.3–3.6× 加速；</li>
+    <li><strong>Typical acceptance</strong>：以温度阈值替代严格拒绝采样，放宽接受条件，进一步提高接受率（代价是偏离严格无损，工程上常用）；</li>
+  </ul>
+  <h4>Typical acceptance（典型接受）详解：用"典型集合"换接受率</h4>
+  <p>与严格拒绝采样的对照——严格版看 <strong>p/q 比值</strong>（u ≤ min(1, p/q)，数学上保证输出分布 = p，无损）；Typical acceptance 看 <strong>p 的绝对水平</strong>（候选 token 的温度化概率 ≥ 阈值就放行，不再比较 p/q）：</p>
+  <table>
+    <tr><th style="width:22%"></th><th>严格拒绝采样（§3.2）</th><th>Typical acceptance（Medusa 工程版）</th></tr>
+    <tr><td>接受条件</td><td>u ≤ min(1, p(x)/q(x))——看 p 与 q 的比值</td><td>候选 token 的（温度化）概率 ≥ 阈值（如 <code class="inline">posterior_threshold = 0.09</code>）——只看 p 的绝对水平</td></tr>
+    <tr><td>数学性质</td><td>输出分布严格 = p（无损）</td><td>输出分布近似 p（有损但偏差小）</td></tr>
+    <tr><td>接受率</td><td>数学上限（由 p、q 决定）</td><td>更高（放宽条件）</td></tr>
+  </table>
+  <p><strong>机制</strong>：先把目标分布 p 做温度缩放，把概率不低于阈值的 token 划入<strong>"典型集合"</strong>（模型"认真的候选"）；草稿 token 落在典型集合内 → <strong>直接接受</strong>（不再看 p/q 比值）；只有落在集合外的"离谱"token 才走严格拒绝采样。直觉：正常生成时绝大多数 token 都是高概率的"典型 token"（如 "the"、句号、常见词），直接放行，接受率大幅提升。</p>
+  <p><strong>为什么接受率更高</strong>：严格版即使草稿 token 合理（p 不小），只要 q 更大（p/q &lt; 1）就有被拒风险；Typical 版绕开比值比较，避免大量"合理但 p/q &lt; 1"的误拒。</p>
+  <p><strong>代价与取舍</strong>：放行了一些"p 不够高但还算合理"的 token → 输出分布偏离 p（严格说有损，呼应 §3.5 误区 5）；但偏差通常很小——被放宽的 token 在 p 中概率本来不低，文本质量下降难以察觉（Medusa 论文在 MT-Bench 上验证质量不降）。这是用"可忽略的质量偏差"换"显著更高的加速"的工程取舍：<strong>追求极致吞吐的生产环境用它，需要严格无损的评测场景用标准拒绝采样</strong>。</p>
+
+  <h3>8.3 代码：训练与推理</h3>
+  <pre class="code"><span class="c"># 训练 Medusa-1（只训头，4 GPU 示例，来自官方仓库）</span>
+torchrun --nproc_per_node=<span class="n">4</span> medusa/train/train_legacy.py \
+  --model_name_or_path mistralai/Mistral-7B-Instruct-v0.2 \
+  --data_path sharegpt_prepared.json \
+  --bf16 True --output_dir ./medusa_out \
+  --num_train_epochs <span class="n">2</span> --learning_rate <span class="n">1e-3</span> \
+  --medusa_num_heads <span class="n">3</span> --medusa_num_layers <span class="n">1</span> \
+  --deepspeed deepspeed.json
+
+<span class="c"># 推理（单卡 batch=1）</span>
+python -m medusa.inference.cli --model FasterDecoding/medusa-vicuna-7b-v1.3
+
+<span class="c"># vLLM 集成（heads 加载为草稿模型）</span>
+vllm serve YOUR_MODEL --speculative-config <span class="s">'{
+  "model": "path/to/medusa-heads",
+  "num_speculative_tokens": 3,
+  "method": "medusa"
+}'</span></pre>
+  <div class="code-cap">清单 7 · Medusa 训练（train_legacy）、单卡推理 CLI、vLLM 部署配置</div>
+</section>
+
+<!-- ==================== 第 9 章 ==================== -->
+<section id="s9">
+  <h2 class="sec"><span class="no">09</span> EAGLE 系列：特征层草稿</h2>
+  <div class="sec-en">FEATURE-LEVEL DRAFTING — EAGLE / EAGLE-2 / EAGLE-3</div>
+
+  <h3>9.1 核心洞察：在"特征空间"而不是"token 空间"猜测</h3>
+  <p>EAGLE（<a href="https://arxiv.org/abs/2401.15077">arXiv 2401.15077</a>，SafeAILab，ICML 2024）有一个深刻观察：<strong>草稿模型猜不中的根源，是它只能看到 token 级别的表面信息</strong>。而目标模型倒数第二层的 hidden states 里，已经编码了"模型正在想什么"的高层语义。</p>
+  <p>EAGLE 的做法：在目标模型的<strong>第二顶层特征</strong>上训练一个很小的自回归"特征外推器"：</p>
+  <div class="formula">f<sub>t+1</sub> = F(f<sub>t</sub>, E(x<sub>t+1</sub>))，　x<sub>t+2</sub> ~ LMHead(f<sub>t+1</sub>)<span class="tag">特征级自回归草稿</span></div>
+  <p>其中 f<sub>t</sub> 是目标模型倒数第二层的特征向量，E(x<sub>t+1</sub>) 是刚生成 token 的 embedding。草稿头 F 只是一两个轻量层，但它在"特征空间"里自回归——每一环都携带目标模型自身的深层语义，因此<strong>接受率远高于任何独立小模型</strong>。且 F 不预测最终 logits 而预测特征，训练时共享目标的 LM Head，推理时用目标自己的 LM Head 解码 —— 天然对齐。</p>
+
+  <figure>
+    <svg viewBox="0 0 920 600" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="EAGLE 架构图">
+      <style>
+        .et { font:600 14.5px "Microsoft YaHei",sans-serif; fill:#2b2926; }
+        .es { font:500 12.5px "LXGW WenKai","Microsoft YaHei",sans-serif; fill:#6f6a61; }
+        .el { fill:#f7f0d9; stroke:#8a6d1a; stroke-width:1.6; rx:10; }
+        .eh { fill:#e2ecf4; stroke:#1e5a8a; stroke-width:1.8; rx:10; }
+        .eo { fill:#e6f0e6; stroke:#2e7d32; stroke-width:1.8; rx:10; }
+        .ea { stroke:#8a6d1a; stroke-width:2; fill:none; marker-end:url(#ear); }
+        .eb { stroke:#1e5a8a; stroke-width:2; fill:none; marker-end:url(#ebr); }
+      </style>
+      <defs>
+        <marker id="ear" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto"><path d="M0,0 L10,4 L0,8 z" fill="#8a6d1a"/></marker>
+        <marker id="ebr" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto"><path d="M0,0 L10,4 L0,8 z" fill="#1e5a8a"/></marker>
+      </defs>
+
+      <!-- 主链标题 -->
+      <text x="260" y="30" class="et" text-anchor="middle">EAGLE 完整推理计算链：一轮循环</text>
+
+      <!-- ① 主干前向 -->
+      <rect x="60" y="50" width="400" height="64" rx="10" class="eh"/>
+      <text x="260" y="74" class="et" fill="#1e5a8a" text-anchor="middle" font-size="13.5">① 主干前向（每轮循环的起点）</text>
+      <text x="260" y="96" class="es" text-anchor="middle" font-size="12">前缀 x_1…x_t 过目标模型，取第二顶层特征 f_t</text>
+
+      <!-- ② 草稿循环 -->
+      <rect x="60" y="160" width="400" height="110" rx="10" class="el"/>
+      <text x="260" y="184" class="et" fill="#8a6d1a" text-anchor="middle" font-size="13">② 特征外推循环 ×γ：f_{t+i+1} = F(f_{t+i}, E(x′_{t+i+1}))</text>
+      <text x="260" y="210" class="es" text-anchor="middle">共享 LM Head 解码 → 草稿 x′_{t+i+2}；特征与 token 同步前移</text>
+      <text x="260" y="236" class="es" text-anchor="middle" font-size="12">轻量层低代价串出 x′_{t+1}…x′_{t+γ}（右侧为单步展开）</text>
+
+      <!-- ③ 拼接验证 -->
+      <rect x="60" y="316" width="400" height="64" rx="10" class="eh"/>
+      <text x="260" y="340" class="et" fill="#1e5a8a" text-anchor="middle" font-size="13.5">③ 拼接 + 一次前向：草稿序列接入前缀</text>
+      <text x="260" y="362" class="es" text-anchor="middle" font-size="12">因果掩码同时算出全部 γ 个位置的分布 p_1…p_γ</text>
+
+      <!-- ④ 拒绝采样 -->
+      <rect x="60" y="416" width="400" height="64" rx="10" class="eh"/>
+      <text x="260" y="440" class="et" fill="#1e5a8a" text-anchor="middle" font-size="13.5">④ 逐位拒绝采样：min(1, p/q) 接受</text>
+      <text x="260" y="462" class="es" text-anchor="middle" font-size="12">遇拒即停；k&lt;γ 时用残差 r ∝ max(0, p−q) 补抽第 k+1 个</text>
+
+      <!-- ⑤ 更新 -->
+      <rect x="60" y="516" width="400" height="56" rx="10" class="eo"/>
+      <text x="260" y="540" class="et" fill="#2e7d32" text-anchor="middle" font-size="13.5">⑤ 以 x_{t+k+1} 为新起点（每轮保底前进 1 个 token）</text>
+      <text x="260" y="560" class="es" text-anchor="middle" font-size="12">回到 ①，进入下一轮</text>
+
+      <!-- 主链箭头 -->
+      <path class="eb" d="M260,114 L260,158"/>
+      <path class="eb" d="M260,270 L260,314"/>
+      <path class="eb" d="M260,380 L260,414"/>
+      <path class="eb" d="M260,480 L260,514"/>
+      <!-- 回环 ⑤→① -->
+      <path class="ea" d="M60,544 L35,544 L35,82 L58,82"/>
+
+      <!-- 右侧：② 单步展开 -->
+      <text x="765" y="30" class="et" text-anchor="middle">② 单步展开：草稿头 F 如何推进</text>
+      <rect x="640" y="72" width="250" height="46" rx="8" class="eh"/>
+      <text x="765" y="91" class="et" fill="#1e5a8a" text-anchor="middle" font-size="12.5">E(x′_{t+i+1})：刚出 token 的 embedding</text>
+      <text x="765" y="108" class="es" text-anchor="middle" font-size="11">（与特征拼接，前移一步）</text>
+      <rect x="640" y="150" width="250" height="46" rx="8" class="eh"/>
+      <text x="765" y="169" class="et" fill="#1e5a8a" text-anchor="middle" font-size="12.5">f_{t+i}：当前特征</text>
+      <text x="765" y="186" class="es" text-anchor="middle" font-size="11">（来自主干 ①，或上一环输出）</text>
+      <rect x="640" y="228" width="250" height="52" rx="8" class="el"/>
+      <text x="765" y="248" class="et" fill="#8a6d1a" text-anchor="middle" font-size="13">草稿头 F：单层轻量解码器</text>
+      <text x="765" y="268" class="es" text-anchor="middle" font-size="11">（唯一可训练部分）</text>
+      <rect x="640" y="312" width="250" height="46" rx="8" class="el"/>
+      <text x="765" y="331" class="et" fill="#8a6d1a" text-anchor="middle" font-size="12.5">f_{t+i+1}：下一特征</text>
+      <text x="765" y="348" class="es" text-anchor="middle" font-size="11">（回喂给下一环）</text>
+      <rect x="640" y="390" width="250" height="46" rx="8" class="eh"/>
+      <text x="765" y="409" class="et" fill="#1e5a8a" text-anchor="middle" font-size="12.5">共享 LM Head（目标模型自带）</text>
+      <text x="765" y="426" class="es" text-anchor="middle" font-size="11">（冻结，无需训练）</text>
+      <rect x="640" y="468" width="250" height="46" rx="8" class="eo"/>
+      <text x="765" y="487" class="et" fill="#2e7d32" text-anchor="middle" font-size="12.5">草稿 token x′_{t+i+2}</text>
+      <text x="765" y="504" class="es" text-anchor="middle" font-size="11">（拼入草稿序列，参与 ③ 验证）</text>
+
+      <!-- 右列箭头 -->
+      <path class="eb" d="M790,118 L790,226"/>
+      <path class="eb" d="M740,196 L740,226"/>
+      <path class="eb" d="M765,280 L765,310"/>
+      <path class="eb" d="M765,358 L765,388"/>
+      <path class="eb" d="M765,436 L765,466"/>
+      <!-- 主链 ② → 展开图 -->
+      <path class="ea" d="M460,215 C540,215 570,95 638,95"/>
+    </svg>
+    <figcaption><span class="fno">图 14</span>　EAGLE 完整推理计算链：① 主干前向取第二顶层特征 f_t → ② 草稿头 F 特征级自回归 γ 次串出草稿序列（右侧为单步展开：特征与刚出 token 的 embedding 喂入轻量解码器，产出下一特征，再经共享 LM Head 解码成草稿 token）→ ③ 草稿拼接后目标模型一次前向批量验证 → ④ 逐位拒绝采样、遇拒即停、残差补抽 → ⑤ 以接受位置为新起点循环。EAGLE-2 只改 ②（置信度驱动的树展开），EAGLE-3 只改 ②（直接预测 token + 多层特征 + TTT），骨架不变。</figcaption>
+  </figure>
+
+  <h3>9.2 完整推理计算链：一轮循环的五个阶段</h3>
+  <p>EAGLE 系列（1/2/3）的推理不是"草稿模型生成 + 目标验证"两个割裂阶段，而是下面这条<strong>五阶段循环</strong>——每轮循环只付一次目标前向 + γ 次轻量层前向，换来约 γ 个 token 的产出，且<strong>每轮保底前进 1 个 token</strong>：</p>
+  <ul class="cn">
+    <li><strong>① 主干前向（取得特征起点）</strong>：当前前缀 x₁…x_t 过目标模型——代价与普通解码完全相同；拿到第二顶层特征 f_t 作为草稿起点。EAGLE-3 改为同时取低/中/高三层特征并剪枝，起点信息更丰富；</li>
+    <li><strong>② 特征外推循环（轻量层快速串 token，γ 次）</strong>：草稿头 F 自回归推进特征：f_{t+i+1} = F(f_{t+i}, E(x′_{t+i+1}))，再用<strong>共享 LM Head</strong>把 f_{t+i+1} 解码成草稿 token x′_{t+i+2}。特征 f 与 token x′ 同步前移，γ 步串出 x′_{t+1}…x′_{t+γ}。这一步只跑 1 个轻量解码层，几乎不消耗带宽；</li>
+    <li><strong>③ 拼接 + 一次前向（批量验证）</strong>：把草稿序列接到前缀后面，整体喂给目标模型。因果掩码保证这一次前向同时算出全部 γ 个位置的完整分布 p₁…p_γ——与经典投机解码完全相同的"免费午餐"；</li>
+    <li><strong>④ 逐位拒绝采样（对齐）</strong>：从位置 1 到 γ 逐位比较草稿分布 q 与目标分布 p，按 min(1, p/q) 接受；遇到第一个拒绝位置 k 即停，若 k &lt; γ，用残差分布 r ∝ max(0, p − q) 补抽第 k+1 个 token；</li>
+    <li><strong>⑤ 更新起点（回到 ①）</strong>：接受链作为正式输出（保底 1 个 token），以 x_{t+k+1} 为新前缀进入下一轮。</li>
+  </ul>
+  <p>一句话概括这条计算链：<span class="em-red">草稿阶段用轻量特征外推器低代价串出候选，验证阶段用目标模型一次前向批量"对答案"，更新阶段把已确认的 token 送回上下文——每轮循环只付一次目标前向 + γ 次轻量层前向，换来 γ 个 token 的产出。</span></p>
+  <p>EAGLE-2 只改 ② 的展开策略（置信度驱动的动态草稿树），EAGLE-3 只改 ② 的草稿头结构与训练（直接预测 token、多层特征融合、TTT），①③④⑤ 的骨架在三个版本中完全不变。</p>
+
+  <h3>9.3 EAGLE-2：动态草稿树（EMNLP 2024）</h3>
+  <p><a href="https://arxiv.org/abs/2406.16858">EAGLE-2</a> 不改变训练，只改推理：用草稿模型输出的<strong>置信度近似接受率</strong>，在草稿阶段动态地决定每一步展开哪些分支（树越深，位置越靠后的节点越不确定），从而在同样算力预算下最大化期望接受长度。无需任何额外训练。</p>
+
+  <h3>9.4 EAGLE-3：直接预测 token + 多层特征融合 + 训练时测试（NeurIPS 2025）</h3>
+  <p><a href="https://arxiv.org/abs/2503.01840">EAGLE-3</a> 做了三件事，把加速推向新的量级：</p>
+  <ul class="cn">
+    <li><strong>① 放弃特征预测，直接预测 token</strong>：EAGLE-1/2 在特征空间自回归，训练目标必须拟合特征，限制了扩展性；EAGLE-3 用草稿头直接预测 token logits，解除了"特征预测"约束，从而可以从更多训练数据中获益，形成<strong>推理加速的缩放定律（scaling law）</strong>；</li>
+    <li><strong>② 多层特征融合</strong>：不再只用第二顶层，而是融合<strong>低、中、高</strong>三层语义特征（典型取 layer {1, L/2−1, L−4}），让草稿头同时看到局部句法、结构语义与高层意图；</li>
+    <li><strong>③ 训练时测试（Training-Time Test, TTT）</strong>：训练时模拟推理的误差传播——把草稿头<strong>自己上一步的输出</strong>（而非 ground truth）喂给下一步，使模型对推理时的累积误差免疫，接受率在长草稿序列上不再衰减。</li>
+  </ul>
+
+  <table>
+    <tr><th>版本</th><th>核心机制</th><th>相对 vanilla 加速（13B）</th><th>亮点</th></tr>
+    <tr><td>EAGLE (ICML'24)</td><td>特征级自回归草稿 + 共享 LM Head</td><td>3×（vs gpt-fast 2×，vs Medusa 1.6×）</td><td>结构对齐、lossless 证明</td></tr>
+    <tr><td>EAGLE-2 (EMNLP'24)</td><td>+ 置信度驱动的动态草稿树</td><td>4×（vs EAGLE 1.4×）</td><td>零额外训练</td></tr>
+    <tr><td>EAGLE-3 (NeurIPS'25)</td><td>直接 token 预测 + 多层特征融合 + TTT</td><td>5.6×（vs EAGLE 1.8×；DeepSeek-R1 上 5.0×）</td><td>加速缩放定律，大 batch 也有效</td></tr>
+  </table>
+
+  <h3>9.5 代码：训练与推理</h3>
+  <pre class="code"><span class="c"># 训练 EAGLE-3（官方仓库 SafeAILab/EAGLE，DeepSpeed）</span>
+cd eagle/traineagle3
+deepspeed main.py --deepspeed_config ds_config.json
+
+<span class="c"># 推理：EaModel 一键加载目标模型 + 草稿头</span>
+<span class="k">from</span> eagle.model.ea_model <span class="k">import</span> EaModel
+<span class="k">from</span> transformers <span class="k">import</span> AutoTokenizer
+
+model = EaModel.from_pretrained(
+    base_model_path=<span class="s">"YOUR_TARGET_MODEL"</span>,
+    ea_model_path=<span class="s">"yuhuili/EAGLE-3-LLaMA3-8B"</span>,  <span class="c"># 草稿头权重</span>
+    torch_dtype=<span class="s">"auto"</span>,
+    device_map=<span class="s">"auto"</span>,
+)
+output_ids = model.eagenerate(
+    input_ids, temperature=<span class="n">0.5</span>, max_new_tokens=<span class="n">512</span>,
+)
+
+<span class="c"># vLLM 部署（method: eagle3）</span>
+vllm serve YOUR_MODEL --speculative-config <span class="s">'{
+  "model": "yuhuili/EAGLE-3-LLaMA3-8B",
+  "num_speculative_tokens": 5,
+  "method": "eagle3"
+}'</span></pre>
+  <div class="code-cap">清单 8 · EAGLE-3 训练（DeepSpeed）与推理（EaModel / vLLM）。社区用 SpecForge + SGLang 训练 EAGLE-3 也已成为标配</div>
+
+  <div class="box info">
+    <span class="bt">ℹ️ 生态状态</span>
+    EAGLE 系列是目前投机解码领域生态最完整的方案：vLLM（eagle / eagle3）、SGLang、TensorRT-LLM、MLC-LLM、NVIDIA NeMo、llama.cpp 等主流引擎均有原生支持；HuggingFace 上有大量社区训练的 EAGLE-3 草稿头（Qwen、Llama、DeepSeek、GLM 等）。
+  </div>
+</section>
+
+<!-- ==================== 第 10 章 ==================== -->
+<section id="s10">
+  <h2 class="sec"><span class="no">10</span> MTP：DeepSeek 的多 Token 预测</h2>
+  <div class="sec-en">MULTI-TOKEN PREDICTION — TRAINING OBJECTIVE AS DRAFT HEAD</div>
+
+  <h3>10.1 思路：把草稿头"焊进"预训练</h3>
+  <p>DeepSeek-V3（2024）在预训练阶段引入<strong>多 Token 预测（Multi-Token Prediction, MTP）</strong>：每个位置不仅预测下一个 token，还额外预测未来 D 个 token。MTP 模块由 D 个轻量顺序模块组成，每个模块在给定前面 token 的条件下预测一个未来 token——训练时它是<strong>强化学习信号</strong>（加速收敛、提升推理能力），推理时它直接充当<strong>内置草稿模型</strong>，无需任何额外训练。</p>
+
+  <figure>
+    <svg viewBox="0 0 920 430" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="DeepSeek MTP 模块结构">
+      <style>
+        .pt { font:600 14.5px "Microsoft YaHei",sans-serif; fill:#2b2926; }
+        .ps { font:500 12.5px "LXGW WenKai","Microsoft YaHei",sans-serif; fill:#6f6a61; }
+        .pb { fill:#e2ecf4; stroke:#1e5a8a; stroke-width:1.8; rx:8; }
+        .pk { fill:#f3e4d8; stroke:#b3541e; stroke-width:1.8; rx:8; }
+        .po { fill:#e6f0e6; stroke:#2e7d32; stroke-width:1.8; rx:8; }
+        .pa { stroke:#1e5a8a; stroke-width:2; fill:none; marker-end:url(#par); }
+        .pd { stroke:#8a6d1a; stroke-width:2; stroke-dasharray:6 4; fill:none; marker-end:url(#pdr); }
+      </style>
+      <defs>
+        <marker id="par" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto"><path d="M0,0 L10,4 L0,8 z" fill="#1e5a8a"/></marker>
+        <marker id="pdr" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto"><path d="M0,0 L10,4 L0,8 z" fill="#8a6d1a"/></marker>
+      </defs>
+
+      <!-- 模块 1 -->
+      <rect x="60" y="70" width="340" height="266" rx="12" fill="#faf6ef" stroke="#e5ded2" stroke-width="1.5"/>
+      <text x="230" y="94" class="pt" text-anchor="middle" font-size="14">MTP 模块 1 → 预测 x_{t+2}</text>
+      <rect x="85" y="100" width="290" height="44" rx="8" class="pb"/>
+      <text x="230" y="119" class="ps" text-anchor="middle" font-size="12">h_t（主干特征）</text>
+      <text x="230" y="137" class="ps" text-anchor="middle" font-size="11">＋ E(x_{t+1})（上一 token 嵌入）</text>
+      <rect x="85" y="162" width="290" height="44" rx="8" class="pb"/>
+      <text x="230" y="188" class="ps" text-anchor="middle" font-size="12">RMSNorm → 线性投影 → 拼接</text>
+      <rect x="85" y="224" width="290" height="44" rx="8" fill="#fff" stroke="#4a3428" stroke-width="1.6"/>
+      <text x="230" y="250" class="ps" text-anchor="middle" font-size="12">Transformer 块（共享主干层）</text>
+      <rect x="85" y="286" width="145" height="40" rx="8" class="pk"/>
+      <text x="157" y="310" class="ps" fill="#b3541e" text-anchor="middle" font-size="11.5">logits → 预测 x_{t+2}</text>
+      <rect x="240" y="286" width="135" height="40" rx="8" class="po"/>
+      <text x="307" y="310" class="ps" fill="#2e7d32" text-anchor="middle" font-size="11.5">特征 h′_{t+1}</text>
+      <path class="pa" d="M230,144 L230,160"/>
+      <path class="pa" d="M230,206 L230,222"/>
+      <path class="pa" d="M230,268 L157,284"/>
+      <path class="pa" d="M230,268 L307,284"/>
+
+      <!-- 模块 2 -->
+      <rect x="470" y="70" width="340" height="266" rx="12" fill="#faf6ef" stroke="#e5ded2" stroke-width="1.5"/>
+      <text x="640" y="94" class="pt" text-anchor="middle" font-size="14">MTP 模块 2 → 预测 x_{t+3}</text>
+      <rect x="495" y="100" width="290" height="44" rx="8" class="pb"/>
+      <text x="640" y="119" class="ps" text-anchor="middle" font-size="12">h′_{t+1}（模块 1 特征）</text>
+      <text x="640" y="137" class="ps" text-anchor="middle" font-size="11">＋ E(x_{t+2})（上一 token 嵌入）</text>
+      <rect x="495" y="162" width="290" height="44" rx="8" class="pb"/>
+      <text x="640" y="188" class="ps" text-anchor="middle" font-size="12">RMSNorm → 线性投影 → 拼接</text>
+      <rect x="495" y="224" width="290" height="44" rx="8" fill="#fff" stroke="#4a3428" stroke-width="1.6"/>
+      <text x="640" y="250" class="ps" text-anchor="middle" font-size="12">Transformer 块（共享主干层）</text>
+      <rect x="495" y="286" width="145" height="40" rx="8" class="pk"/>
+      <text x="567" y="310" class="ps" fill="#b3541e" text-anchor="middle" font-size="11.5">logits → 预测 x_{t+3}</text>
+      <rect x="650" y="286" width="135" height="40" rx="8" class="po"/>
+      <text x="717" y="310" class="ps" fill="#2e7d32" text-anchor="middle" font-size="11.5">特征 h′_{t+2}</text>
+      <path class="pa" d="M640,144 L640,160"/>
+      <path class="pa" d="M640,206 L640,222"/>
+      <path class="pa" d="M640,268 L567,284"/>
+      <path class="pa" d="M640,268 L717,284"/>
+
+      <!-- 省略号：共 D 个模块 -->
+      <rect x="410" y="92" width="60" height="38" rx="8" fill="none" stroke="#c9bfae" stroke-width="1.5" stroke-dasharray="4 3"/>
+      <text x="440" y="110" class="ps" text-anchor="middle" font-size="12">…</text>
+      <text x="440" y="125" class="ps" text-anchor="middle" font-size="10.5">共 D 个</text>
+
+      <!-- 特征接力：模块 1 特征框 → 模块 2 输入框 -->
+      <path class="pd" d="M375,306 C420,306 440,122 493,122"/>
+      <text x="435" y="280" class="ps" fill="#8a6d1a" font-size="11" text-anchor="middle">h′ 特征接力</text>
+
+      <!-- 训练/推理双模式标注 -->
+      <rect x="60" y="356" width="750" height="46" rx="10" fill="#faf6ef" stroke="#e5ded2" stroke-width="1.5"/>
+      <text x="435" y="376" class="ps" text-anchor="middle" font-size="12">训练模式：E(x_{t+k}) 用真实 token 嵌入 —— MTP 是辅助目标，加速主干收敛</text>
+      <text x="435" y="395" class="ps" text-anchor="middle" font-size="12">推理模式：E(x) 用已确认 / 草稿 token 嵌入 —— MTP 零额外训练，直接当草稿头</text>
+    </svg>
+    <figcaption><span class="fno">图 15</span>　DeepSeek-V3 的 MTP：D 个顺序轻量模块链式接力——模块 k 把主干/上一模块特征与"上一 token 嵌入"拼接，过共享 Transformer 块，同时输出 logits（预测 x_{t+k+1}）与特征 h′（传给下一模块）。训练时 E(x) 取真实 token，MTP 是加速收敛的辅助目标；推理时 E(x) 取已确认/草稿 token，MTP 即零额外训练的草稿头。</figcaption>
+  </figure>
+
+  <h3>10.2 推理用法与工程现状</h3>
+  <ul>
+    <li>vLLM 支持 <code class="inline">deepseek_mtp</code> / <code class="inline">mtp</code> 方法，DeepSeek-V3/R1 开箱即用；</li>
+    <li>NVIDIA TensorRT-LLM 提供两条路径：<strong>MTP Vanilla</strong>（多个顺序 MTP 模块）与 <strong>MTP Eagle</strong>（默认：复用单个 MTP 模块反复草稿并复用同一 KV cache，效率更高）；</li>
+    <li>官方只发布<strong>单层 MTP 权重</strong>，因此 MTP 深度 ≥ 2 时效果不保证（vLLM-Ascend 文档明确指出）——实践中常以 <code class="inline">num_speculative_tokens: 1</code> 起步；</li>
+    <li><strong>改进方向</strong>：Nebius 用 LK loss（直接优化接受率的训练目标，而非 KL 代理）微调 MTP 模块，平均接受长度从 3.2 提升到 4.8+（在 DeepSeek-V3-0324 上）。</li>
+  </ul>
+
+  <pre class="code"><span class="c"># vLLM：DeepSeek-V3 自带 MTP 草稿</span>
+vllm serve deepseek-ai/DeepSeek-V3 --speculative-config <span class="s">'{
+  "model": "deepseek-ai/DeepSeek-V3",
+  "num_speculative_tokens": 1,
+  "method": "deepseek_mtp"
+}'</span>
+
+<span class="c"># TensorRT-LLM：一键启用（MTP Eagle 路径）</span>
+python quickstart_advanced.py --model_dir &lt;DIR&gt; \
+  --spec_decode_algo MTP --spec_decode_max_draft_len 5</pre>
+  <div class="code-cap">清单 9 · MTP 在生产引擎中的一行配置</div>
+</section>
+
+<!-- ==================== 第 11 章 ==================== -->
+<section id="s11">
+  <h2 class="sec"><span class="no">11</span> 并行草稿生成：P-EAGLE / DFlash / DSpark</h2>
+  <div class="sec-en">PARALLEL DRAFTING — THE 2026 WAVE</div>
+
+  <p class="lead">EAGLE-3 这类方案已经很强了，但它们仍受制于一个结构性约束：<strong>自回归草稿</strong>——每多投机一个 token，就要多跑一次草稿模型前向。2026 年，<a href="https://github.com/vllm-project/speculators">Speculators</a>（vLLM 团队）与 <a href="https://github.com/vllm-project/vllm">vLLM</a> 完整开源了三套<strong>并行草稿生成（parallel drafting）</strong>算法：P-EAGLE、DFlash、DSpark，把草稿阶段压平成一次前向传播。</p>
+
+  <h3>11.1 自回归草稿的两堵墙</h3>
+  <p>即便 EAGLE-3 把接受率推到了 0.9 以上，自回归式的草稿生成在生产中仍有两个代价：</p>
+  <ul>
+    <li><strong>模型规模受限</strong>：草稿开销随投机长度 K 线性增长——草稿模型被迫做得极小极轻，否则验证阶段省下的时间会被草稿本身吃掉；</li>
+    <li><strong>运维调参复杂</strong>：K 成了一个敏感变量，工程团队必须按场景与实时负载反复精调。</li>
+  </ul>
+
+  <h4>先厘清一个容易混淆的点：Medusa 不也是并行的吗？</h4>
+  <p>是，而且 Medusa 正是"并行草稿"这条路的<strong>开创者</strong>（与 PARD 并列）。这里的分类维度不是"有没有独立草稿模型"，而是两条正交的轴：</p>
+  <ul class="cn">
+    <li><strong>① 草稿阶段是否串行（时间轴）</strong>：自回归草稿的每个 draft token 依赖前一个（EAGLE 的特征递归、小模型逐步生成），草稿延迟 ∝ K；并行草稿一次前向同时输出所有位置的候选（Medusa 的 K 个头），草稿延迟与 K 解耦；</li>
+    <li><strong>② 草稿信息来自 token 还是特征（信息轴）</strong>：token 级草稿只看词嵌入（经典小模型、Medusa 的头）；特征级草稿读目标模型的 hidden states（EAGLE 系列，以及 P-EAGLE / DFlash / DSpark）。</li>
+  </ul>
+  <table>
+    <tr><th>草稿方案</th><th>串行 / 并行</th><th>token 级 / 特征级</th></tr>
+    <tr><td>经典双模型（小模型）</td><td class="c">串行（逐步生成）</td><td class="c">token 级</td></tr>
+    <tr><td><strong>Medusa / PARD</strong></td><td class="c">并行（一次前向 K 头）</td><td class="c">token 级</td></tr>
+    <tr><td>EAGLE-1/2/3</td><td class="c">串行（特征递归）</td><td class="c">特征级</td></tr>
+    <tr><td><strong>P-EAGLE / DFlash / DSpark</strong></td><td class="c">并行（解码头 / 扩散）</td><td class="c">特征级</td></tr>
+  </table>
+  <p>所以 Medusa 是"并行 × token 级"，EAGLE 是"串行 × 特征级"，2026 年的三件套是<strong>"并行 × 特征级"</strong>——把 Medusa 的并行结构与 EAGLE 的特征级质量合二为一。它们的新不在并行本身（Medusa 早已并行），而在三处：<strong>① 并行 × 特征级结合</strong>，草稿质量贴近 EAGLE；<strong>② 并行让草稿网络可以更深更大</strong>（深度不再线性增加延迟，每块只跑一次）；<strong>③ 补偿并行的固有代价</strong>——Medusa 的 K 个头互相独立，位置越靠后、条件越不准确（后缀接受率衰减），DSpark 用 Markov 修正头、DFlash 用双向注意力去噪补上位置间的依赖。</p>
+  <p class="em-red">并行的代价在 Medusa 身上已经存在：头与头之间没有依赖——head_k 预测 x_{t+k} 时看不到前 k−1 个位置实际生成了什么。所以 Medusa 才需要候选树（每层 top-s、笛卡尔积组合）来覆盖这种不确定性；这也正是 DSpark 的 Markov 修正头要解决的多模态碰撞问题（"of course" / "no problem" 各自高概率、拼起来却不连贯）。</p>
+
+  <figure>
+    <svg viewBox="0 0 920 320" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="自回归草稿与并行草稿对比">
+      <style>
+        .qt { font:600 15px "Microsoft YaHei",sans-serif; fill:#2b2926; }
+        .qs { font:500 12.5px "LXGW WenKai","Microsoft YaHei",sans-serif; fill:#6f6a61; }
+        .q1 { fill:#f3e4d8; stroke:#b3541e; stroke-width:1.8; rx:8; }
+        .q2 { fill:#e6f0e6; stroke:#2e7d32; stroke-width:1.8; rx:10; }
+        .qa { stroke:#b3541e; stroke-width:2; fill:none; marker-end:url(#qar); }
+        .qb { stroke:#2e7d32; stroke-width:2; fill:none; marker-end:url(#qbr); }
+      </style>
+      <defs>
+        <marker id="qar" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto"><path d="M0,0 L10,4 L0,8 z" fill="#b3541e"/></marker>
+        <marker id="qbr" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto"><path d="M0,0 L10,4 L0,8 z" fill="#2e7d32"/></marker>
+      </defs>
+
+      <!-- 左：自回归草稿 -->
+      <text x="230" y="36" class="qt" text-anchor="middle">自回归草稿（EAGLE-3 等）</text>
+      <g>
+        <rect x="40"  y="66" width="86" height="52" rx="8" class="q1"/><text x="83"  y="90" class="qs" text-anchor="middle" font-size="12">step 1</text><text x="83" y="108" class="qs" text-anchor="middle" font-size="12">→ d₁</text>
+        <rect x="148" y="66" width="86" height="52" rx="8" class="q1"/><text x="191" y="90" class="qs" text-anchor="middle" font-size="12">step 2</text><text x="191" y="108" class="qs" text-anchor="middle" font-size="12">→ d₂</text>
+        <rect x="256" y="66" width="86" height="52" rx="8" class="q1"/><text x="299" y="90" class="qs" text-anchor="middle" font-size="12">step 3</text><text x="299" y="108" class="qs" text-anchor="middle" font-size="12">→ d₃</text>
+        <rect x="364" y="66" width="86" height="52" rx="8" class="q1"/><text x="407" y="90" class="qs" text-anchor="middle" font-size="12">step 4</text><text x="407" y="108" class="qs" text-anchor="middle" font-size="12">→ d₄</text>
+      </g>
+      <path class="qa" d="M128,92 L146,92"/>
+      <path class="qa" d="M236,92 L254,92"/>
+      <path class="qa" d="M344,92 L362,92"/>
+      <text x="230" y="152" class="qs" text-anchor="middle">延迟 = 4 × 单步草稿前向</text>
+      <text x="230" y="172" class="qs" text-anchor="middle">（草稿延迟与 K 线性相关）</text>
+      <rect x="40" y="196" width="410" height="96" rx="10" fill="#faf6ef" stroke="#e5ded2" stroke-width="1.5"/>
+      <text x="245" y="222" class="qs" text-anchor="middle" font-size="13">→ 草稿模型被迫做小（否则吃掉验证收益）</text>
+      <text x="245" y="244" class="qs" text-anchor="middle" font-size="13">→ K 是敏感参数，需按负载反复精调</text>
+      <text x="245" y="266" class="qs" text-anchor="middle" font-size="13">→ 无法使用更大、更有表达力的草稿架构</text>
+
+      <!-- 右：并行草稿 -->
+      <text x="690" y="36" class="qt" text-anchor="middle">并行草稿（P-EAGLE / DFlash / DSpark）</text>
+      <rect x="560" y="60" width="330" height="64" rx="10" class="q2"/>
+      <text x="725" y="86" class="qs" fill="#2e7d32" text-anchor="middle" font-size="13">一次前向传播</text>
+      <text x="725" y="108" class="qs" fill="#2e7d32" text-anchor="middle" font-size="12">（非因果 / 并行解码头 / 扩散）</text>
+      <path class="qb" d="M725,124 C725,136 725,142 725,146"/>
+      <rect x="560" y="150" width="330" height="52" rx="10" fill="#fff" stroke="#2e7d32" stroke-width="1.8"/>
+      <text x="725" y="172" class="qs" text-anchor="middle" font-size="13">d₁ d₂ d₃ d₄ d₅ d₆ d₇</text>
+      <text x="725" y="192" class="qs" text-anchor="middle" font-size="12">整块草稿 token 一次产出</text>
+      <text x="690" y="236" class="qs" text-anchor="middle">延迟 = 单次块前向（与 K 解耦）</text>
+      <rect x="560" y="256" width="330" height="48" rx="10" fill="#e6f0e6" stroke="#2e7d32" stroke-width="1.5"/>
+      <text x="725" y="286" class="qs" fill="#2e7d32" text-anchor="middle" font-size="13">✓ 可用更大的草稿模型 → 更高接受率</text>
+      <text x="725" y="302" class="qs" fill="#2e7d32" text-anchor="middle" font-size="12.5">✓ 免去对 K 的反复精调</text>
+    </svg>
+    <figcaption><span class="fno">图 16</span>　并行草稿生成把顺序执行从草稿阶段彻底移除：候选块由一次前向并发产出，草稿延迟与投机长度 K 解耦（对应 Speculators 博客 Figure 2）。注意：Medusa 也属于并行草稿（一次前向、K 个并行解码头），是这条路的先行者；2026 年三件套的增量是"并行 × 特征级"——把 Medusa 的并行结构与 EAGLE 的特征级质量合体（分类详见 11.1 的双轴表格）。</figcaption>
+  </figure>
+
+  <div class="box info">
+    <span class="bt">ℹ️ 草稿模型的两难困境（四路线对比）</span>
+    "自回归草稿<strong>准但慢</strong>，纯并行草稿<strong>快但烂</strong>"——平均接受长度、草稿生成成本、验证效率三者之间存在根本性张力（来源：糖嘟嘟的AI学习笔记）：
+    <table>
+      <tr><th style="width:20%">路线</th><th style="width:22%">代表</th><th style="width:30%">机制</th><th>优点 / 核心问题</th></tr>
+      <tr><td>独立小模型</td><td>经典 SD</td><td>小模型自回归生成</td><td>通用、理论清晰；但太弱则接受率低，太强则自身开销大</td></tr>
+      <tr><td>特征增强自回归</td><td>EAGLE 系列</td><td>利用 target 的 hidden states 做自回归 draft</td><td>贴近 target 分布、接受率高；但仍需串行 K 步，延迟随块长线性增长</td></tr>
+      <tr><td>纯并行草稿</td><td>DFlash</td><td>一次 forward 并行预测整个块</td><td>延迟与块长无关、极快；但各位置独立预测、缺乏 token 间依赖，后缀接受率快速衰减（多模态碰撞）</td></tr>
+      <tr><td>原生 MTP</td><td>部分预训练模型</td><td>训练阶段内建多 token prediction</td><td>表征天然对齐；但需预训练阶段设计，迁移成本高</td></tr>
+    </table>
+  </div>
+
+  <p>把草稿压平成一次前向之后，两个生产难题同时消解：草稿模型可以做得<strong>更大、更深、更有表达力</strong>（每块只跑一次，深度不增加顺序延迟），投机参数也不再需要随负载精调。并行草稿的思路此前已有探索——Medusa 与 PARD 是代表——而 P-EAGLE、DFlash、DSpark 在此基础上，把并行执行与"深度利用验证模型状态"（EAGLE 成功的核心洞察）结合起来。</p>
+
+  <h3>11.2 三套架构，一条主线</h3>
+  <p>三者都基于验证模型的 hidden states 生成草稿，但注入方式截然不同：</p>
+
+  <figure>
+    <svg viewBox="0 0 920 500" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="P-EAGLE、DFlash、DSpark 架构对比">
+      <style>
+        .wt { font:600 14.5px "Microsoft YaHei",sans-serif; fill:#2b2926; }
+        .ws { font:500 12px "LXGW WenKai","Microsoft YaHei",sans-serif; fill:#5f5a51; }
+        .wv { fill:#f0e7dc; stroke:#c9b398; stroke-width:1.6; rx:10; }
+        .wv t, .wv text { fill:#4a3528; }
+        .wp { fill:#f3e4d8; stroke:#b3541e; stroke-width:1.7; rx:9; }
+        .wf { fill:#e2ecf4; stroke:#1e5a8a; stroke-width:1.7; rx:9; }
+        .wg { fill:#e6f0e6; stroke:#2e7d32; stroke-width:1.7; rx:9; }
+        .wo { fill:#fff; stroke:#4a3428; stroke-width:1.7; rx:9; }
+        .wa { stroke:#8a6d1a; stroke-width:1.8; fill:none; marker-end:url(#war); }
+        .wb { stroke:#2e7d32; stroke-width:2.2; fill:none; marker-end:url(#wbr); }
+      </style>
+      <defs>
+        <marker id="war" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto"><path d="M0,0 L10,4 L0,8 z" fill="#8a6d1a"/></marker>
+        <marker id="wbr" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto"><path d="M0,0 L10,4 L0,8 z" fill="#2e7d32"/></marker>
+      </defs>
+
+      <!-- ===== 栏 1：P-EAGLE ===== -->
+      <text x="180" y="34" class="wt" text-anchor="middle" font-size="16">P-EAGLE</text>
+      <rect x="60" y="48" width="240" height="54" rx="10" class="wv"/>
+      <text x="180" y="70" class="wt" fill="#4a3528" text-anchor="middle" font-size="13">验证模型 hidden states</text>
+      <text x="180" y="90" class="ws" fill="#6f6a61" text-anchor="middle">（作为草稿模型输入的一部分）</text>
+
+      <rect x="60" y="136" width="240" height="78" rx="10" class="wp"/>
+      <text x="180" y="160" class="wt" fill="#b3541e" text-anchor="middle" font-size="13.5">并行解码头 ×K</text>
+      <text x="180" y="182" class="ws" text-anchor="middle" font-size="11.5">COD 采样：以整体分布为条件</text>
+      <text x="180" y="200" class="ws" text-anchor="middle" font-size="11.5">同时映射到 K 个未来位置</text>
+
+      <rect x="60" y="248" width="240" height="54" rx="10" class="wo"/>
+      <text x="180" y="270" class="wt" text-anchor="middle" font-size="13">草稿块</text>
+      <text x="180" y="290" class="ws" text-anchor="middle" font-size="12">d₁ d₂ d₃ d₄ … d_K（一次前向）</text>
+
+      <rect x="60" y="348" width="240" height="118" rx="10" fill="#faf6ef" stroke="#e5ded2" stroke-width="1.5"/>
+      <text x="180" y="374" class="wt" text-anchor="middle" font-size="13">训练：草稿块稀疏化</text>
+      <text x="180" y="396" class="ws" text-anchor="middle">沿前瞻维度 K 按衰减比例丢 token，</text>
+      <text x="180" y="414" class="ws" text-anchor="middle">算力聚焦近端 token，远端剪掉</text>
+      <text x="180" y="440" class="ws" fill="#b3541e" font-size="12" text-anchor="middle">继承 EAGLE-3 架构 + 并行化</text>
+
+      <path class="wa" d="M180,102 C180,114 180,124 180,134"/>
+      <path class="wa" d="M180,214 C180,226 180,236 180,246"/>
+
+      <!-- ===== 栏 2：DFlash ===== -->
+      <text x="470" y="34" class="wt" text-anchor="middle" font-size="16">DFlash</text>
+      <rect x="340" y="48" width="260" height="54" rx="10" class="wv"/>
+      <text x="470" y="70" class="wt" fill="#4a3528" text-anchor="middle" font-size="13">验证模型 hidden states</text>
+      <text x="470" y="90" class="ws" fill="#6f6a61" text-anchor="middle">（投影后注入草稿 KV cache）</text>
+
+      <rect x="340" y="136" width="260" height="52" rx="10" class="wf"/>
+      <text x="470" y="158" class="wt" fill="#1e5a8a" text-anchor="middle" font-size="13">线性投影 → 注入草稿 KV cache</text>
+      <text x="470" y="178" class="ws" text-anchor="middle" font-size="11.5">注意力紧密锚定验证模型状态，不撑大输入</text>
+
+      <rect x="340" y="202" width="260" height="78" rx="10" class="wf"/>
+      <text x="470" y="226" class="wt" fill="#1e5a8a" text-anchor="middle" font-size="13">Block Diffusion 层</text>
+      <text x="470" y="248" class="ws" text-anchor="middle" font-size="11.5">双向注意力（非因果）+ mask tokens</text>
+      <text x="470" y="266" class="ws" text-anchor="middle" font-size="11.5">一次去噪出整块高精度候选</text>
+
+      <rect x="340" y="314" width="260" height="54" rx="10" class="wo"/>
+      <text x="470" y="336" class="wt" text-anchor="middle" font-size="13">草稿块</text>
+      <text x="470" y="356" class="ws" text-anchor="middle" font-size="12">从每个锚点预测 block_size 个 token</text>
+
+      <rect x="340" y="402" width="260" height="80" rx="10" fill="#faf6ef" stroke="#e5ded2" stroke-width="1.5"/>
+      <text x="470" y="428" class="wt" text-anchor="middle" font-size="13">训练：序列长度稀疏化</text>
+      <text x="470" y="450" class="ws" text-anchor="middle">沿时间轴随机取锚点，只在这些</text>
+      <text x="470" y="468" class="ws" text-anchor="middle">交叉点算块损失 → 省显存保覆盖</text>
+
+      <path class="wa" d="M470,102 C470,114 470,124 470,134"/>
+      <path class="wa" d="M470,188 C470,194 470,197 470,200"/>
+      <path class="wa" d="M470,280 C470,294 470,302 470,312"/>
+
+      <!-- ===== 栏 3：DSpark ===== -->
+      <text x="760" y="34" class="wt" text-anchor="middle" font-size="16">DSpark</text>
+      <rect x="640" y="48" width="240" height="54" rx="10" class="wv"/>
+      <text x="760" y="70" class="wt" fill="#4a3528" text-anchor="middle" font-size="13">验证模型 hidden states</text>
+      <text x="760" y="90" class="ws" fill="#6f6a61" text-anchor="middle">（DFlash 并行主干之上）</text>
+
+      <rect x="640" y="136" width="240" height="52" rx="10" class="wf"/>
+      <text x="760" y="158" class="wt" fill="#1e5a8a" text-anchor="middle" font-size="13">DFlash 主干（并行块预测）</text>
+      <text x="760" y="178" class="ws" text-anchor="middle" font-size="11.5">继承 DFlash 检查点可热启动</text>
+
+      <rect x="640" y="202" width="240" height="52" rx="10" class="wp"/>
+      <text x="760" y="224" class="wt" fill="#b3541e" text-anchor="middle" font-size="13">Markov 修正头（轻量自回归）</text>
+      <text x="760" y="244" class="ws" text-anchor="middle" font-size="11.5">块内每个位置以块内前一个 token 为条件</text>
+
+      <rect x="640" y="268" width="240" height="52" rx="10" class="wg"/>
+      <text x="760" y="290" class="wt" fill="#2e7d32" text-anchor="middle" font-size="13">置信度头（confidence head）</text>
+      <text x="760" y="310" class="ws" text-anchor="middle" font-size="11.5">逐位置打分，预测接受概率</text>
+
+      <rect x="640" y="352" width="240" height="54" rx="10" class="wo"/>
+      <text x="760" y="374" class="wt" text-anchor="middle" font-size="13">只转发高分候选 → 验证模型</text>
+      <text x="760" y="394" class="ws" text-anchor="middle" font-size="11.5">削减被浪费的验证算力</text>
+
+      <rect x="640" y="440" width="240" height="42" rx="10" fill="#faf6ef" stroke="#e5ded2" stroke-width="1.5"/>
+      <text x="760" y="466" class="ws" font-size="12" text-anchor="middle">生产版还带负载感知调度器</text>
+
+      <path class="wa" d="M760,102 C760,114 760,124 760,134"/>
+      <path class="wa" d="M760,188 C760,195 760,198 760,200"/>
+      <path class="wa" d="M760,254 C760,261 760,264 760,266"/>
+      <path class="wa" d="M760,320 C760,336 760,344 760,350"/>
+
+      <!-- 底部总箭头 -->
+      <path class="wb" d="M180,302 C180,320 180,326 180,346" style="stroke:#b3541e;marker-end:url(#war)"/>
+      <path class="wb" d="M470,368 C470,386 470,392 470,400" style="stroke:#b3541e;marker-end:url(#war)"/>
+    </svg>
+    <figcaption><span class="fno">图 17</span>　三条技术路线（对应 Speculators 博客 Figure 3）：P-EAGLE 把 hidden states 作为草稿输入并并行映射到未来位置；DFlash 把 hidden states 投影进草稿 KV cache，用双向注意力一次扩散出整块；DSpark 在 DFlash 主干上叠加 Markov 顺序修正头与置信度过滤头。</figcaption>
+  </figure>
+
+  <h3>11.3 逐个拆解</h3>
+  <h4>P-EAGLE（arXiv 2602.01469）</h4>
+  <p>直接沿用 EAGLE 的思路——把验证模型的 hidden states 当作输入特征——区别在于不再顺序消费这些特征，而是把它们<strong>同时映射到多个未来位置</strong>，一步输出整串候选。采样采用 COD（Conditional-On-Distribution）机制，让并行分支之间保持分布上的合理条件依赖。训练上实现<strong>草稿块稀疏化</strong>：沿前瞻维度 K 按衰减比例丢弃 token，把优化算力集中在最关键（最容易被接受）的近端 token 上。</p>
+
+  <h4>DFlash（arXiv 2602.06036）</h4>
+  <p>对验证模型特征的处理与众不同：<strong>先投影、再直接注入草稿模型的 KV cache</strong>，而不是作为常规输入喂入。好处有二：草稿注意力可以紧密以验证模型的确切状态为条件；同时不撑大输入序列长度。然后通过 block diffusion（带 mask token 的双向注意力）生成一整块高精度候选。训练上实现<strong>序列长度稀疏化</strong>：在长度为 N 的序列上沿时间轴随机选取若干锚点，只在这些交叉点计算 block 损失——省下 GPU 显存，同时保持有代表性的覆盖度。两种采样模式由 <code class="inline">sample_from_anchor</code> 控制（DFlash 默认：锚点为 bonus token，只训练 mask 位置，产出 block_size−1 个投机 token）。</p>
+
+  <h4>DSpark（arXiv 2607.05147）：半自回归草稿 + 置信度调度</h4>
+  <p>以 DFlash 并行主干为基座，DSpark 重新设计了投机解码中最关键、最难的一环——<strong>草稿生成器</strong>。核心是<strong>半自回归（semi-autoregressive）</strong>架构与系统级调度设计（本节综合 Speculators 文档与糖嘟嘟的AI学习笔记的深度解析）：</p>
+  <p><strong>① Block-Parallel Backbone（并行主干）</strong>：沿用 DFlash 风格一次性生成整个草稿块的特征，草稿延迟与块大小几乎无关，避免 EAGLE 类串行生成带来的 kernel launch 与 KV 管理开销。</p>
+  <p><strong>② Markov Head（顺序修正头）</strong>：解决纯并行草稿的<strong>多模态碰撞（multi-modal collision）</strong>——上下文后接 "of course" 和 "no problem" 都合理时，纯并行草稿可能在位置 1 选 "of"、位置 2 选 "problem"，拼出 "of problem"：单看每个位置都是高概率 token，组合起来却不连贯。修正机制极轻量：</p>
+  <div class="formula">final_logits_i = base_logits_i + markov_bias_i，　markov_bias_i = f(prev_draft_token)<span class="tag">式 (14)</span></div>
+  <p>实现是一个低秩 token transition（prev_token_id → embedding(rank=512) → 词表偏置），参数极少；语义是"如果前一个 draft token 是 A，下一个 token 的词表偏置应该怎么变"。它不给块内做完整自回归（没有深层 Transformer 依赖），但足以给并行生成的"骨架"补上局部 token 依赖，显著缓解后缀接受率衰减（DSpark 另支持 RNN Head 建模更长的局部转移）。</p>
+  <p><strong>③ 与目标模型深度融合</strong>：DSpark 不是独立小模型——直接读取目标模型后层 hidden states（开源配置：<code class="inline">dspark_target_layer_ids = [58, 59, 60]</code>、<code class="inline">dspark_block_size = 5</code>、<code class="inline">dspark_markov_rank = 512</code>），"站在 target 内部表征上做短程预测"。草稿与目标分布的 Total Variation 距离天然更小，且无需独立加载额外权重，部署更轻量。</p>
+  <p><strong>④ 置信度头 + 硬件感知前缀调度</strong>：对每个位置估计<strong>前缀存活概率</strong> a_k = P(位置 1~k 全部被接受)，用马尔可夫链建模 a_k = a<sub>k−1</sub>·c_k（c_k 为条件接受概率）；离线分析引擎吞吐曲线 SPS(B)（每秒生成 token 数随批大小的变化），在线按 Θ<sub>ℓ</sub> = (1 + a<sub>ℓ</sub>)·SPS(B + ℓ) 选择验证长度 ℓ，剪掉低置信度的后缀 token——发散请求（如开放域聊天）不再浪费验证算力。</p>
+  <p><strong>⑤ 异步因果屏障（asynchronous causality barrier）</strong>：现代推理引擎（CUDA Graph / Zero-Overhead Scheduling）要求下一步的 batch size 提前确定、计算图结构不能每步都变，动态验证长度会直接卡死 GPU 流水线。DSpark 把调度拆成两个时间维度：<strong>验证容量上限 K 用"两步前"的历史置信度决定</strong>（与当前 token 完全隔离，调度器没有"偷看"，拒绝采样的数学前提不被破坏、无损性保持）；<strong>具体选哪 K 个候选则按当前最新置信度排序</strong>——"容量靠历史，排序靠当下"。</p>
+  <p><strong>⑥ 训练设计</strong>：位置权重 w_k = exp(−(k−1)/γ) 强调靠前位置（对接受长度的边际贡献更大）；三个损失：交叉熵 ℒ_ce（标准 next-token prediction）、分布匹配 ℒ_tv（直接最小化草稿与目标分布的 TV 距离，理论上最大化期望接受率）、置信度损失 ℒ_conf（训练置信度头估计接受概率）。草稿模型共享目标的嵌入层与 LM Head（冻结），只更新主干、顺序头与置信度头。</p>
+  <p><strong>⑦ 实测</strong>：离线（固定验证长度、关闭调度器）在 Qwen3-4B/8B/14B 上，DSpark 相比 EAGLE-3 提升 <strong>26.7–30.9%</strong>，相比 DFlash 提升 <strong>16.3–18.4%</strong>；一个反直觉发现——<strong>纯并行草稿在位置 1 的准确率反而高于自回归草稿</strong>（并行可以用更深网络），这正是并行路线整体占优的关键。DeepSeek-V4 生产环境（匹配吞吐量下）每用户生成速度提升 60–85%。</p>
+
+  <h3>11.4 实测表现（Speculators 官方基准）</h3>
+  <table>
+    <tr><th>目标模型</th><th>并行算法</th><th>使用场景</th><th>硬件</th><th>相对 EAGLE-3</th></tr>
+    <tr><td>Qwen3-8B</td><td>P-EAGLE</td><td>数学推理（GSM8k）</td><td class="c">1×A100</td><td rowspan="3" style="vertical-align:middle">全场景显著改善（具体数值随模型 / 任务 / 硬件变化）</td></tr>
+    <tr><td>Qwen3-30B-A3B</td><td>DFlash</td><td>代码生成（HumanEval）</td><td class="c">2×A100</td></tr>
+    <tr><td>gemma-4-31B-it</td><td>DSpark</td><td>代码生成（HumanEval）</td><td class="c">2×A100</td></tr>
+  </table>
+  <p>社区侧的数据同样积极：DeepSeek 报告 DSpark 在 DeepSeek-V4 上对 MTP-1 基线有 <strong>60–85% 的逐用户生成加速</strong>，平均接受长度较 DFlash / EAGLE-3 提升 16–31%；llama.cpp（PR #25173）中 DSpark 在 Qwen3-8B 上相对 DFlash 基线有约 3.3× 的几何平均加速。三套方法都保持<strong>无损</strong>——通过拒绝采样精确保持验证模型的输出分布。</p>
+
+  <h3>11.5 生产部署：vLLM 一行配置</h3>
+  <pre class="code"><span class="c"># DFlash 驱动 Qwen3-30B-A3B（Speculators 官方示例）</span>
+vllm serve Qwen/Qwen3-30B-A3B \
+  --tensor-parallel-size <span class="n">2</span> \
+  --reasoning-parser qwen3 \
+  --speculative-config <span class="s">'{
+    "model": "RedHatAI/Qwen3-30B-A3B-speculator.dflash",
+    "num_speculative_tokens": 7,
+    "method": "dflash"
+  }'</span></pre>
+  <div class="code-cap">清单 10 · 并行草稿驱动的投机解码引擎，初始化时传入 <code>speculative_config</code> 即可（P-EAGLE / DSpark 同理，替换 method 与模型名）</div>
+
+  <div class="box info">
+    <span class="bt">ℹ️ Speculators 生态</span>
+    草稿模型权重发布在 <a href="https://huggingface.co/collections/RedHatAI/speculator-models">RedHatAI Speculators Collection</a>（Hugging Face）；训练与评估教程见 <a href="https://github.com/vllm-project/speculators/blob/main/docs/user_guide/tutorials/index.md">Speculators 教程</a>。训练支持 MoE / 非 MoE / 视觉语言模型，提供离线（vLLM 预提取 hidden states 存盘）与在线（vLLM hidden extraction 系统实时生成）两条数据路径，产出 HuggingFace 兼容格式，可直接被 vLLM 以 <code>speculator_config</code> 字段加载。
+  </div>
+</section>
+
+<!-- ==================== 第 12 章 ==================== -->
+<section id="s12">
+  <h2 class="sec"><span class="no">12</span> 代码实战：从最小实现到生产部署</h2>
+  <div class="sec-en">CODE IN PRACTICE — TRANSFORMERS → VLLM → TRAINING</div>
+
+  <h3>12.1 Transformers：三行代码用起来</h3>
+  <p>HuggingFace Transformers 把投机解码封装成了 <code class="inline">generate()</code> 的参数，四种模式开箱即用：</p>
+  <pre class="code"><span class="k">from</span> transformers <span class="k">import</span> AutoModelForCausalLM, AutoTokenizer
+
+target = AutoModelForCausalLM.from_pretrained(<span class="s">"big-model"</span>)
+draft  = AutoModelForCausalLM.from_pretrained(<span class="s">"small-draft-model"</span>)
+tok    = AutoTokenizer.from_pretrained(<span class="s">"big-model"</span>)
+inputs = tok(<span class="s">"法国的首都是"</span>, return_tensors=<span class="s">"pt"</span>)
+
+<span class="c"># ① 投机解码：独立草稿模型（经典双模型方案）</span>
+out = target.generate(**inputs, assistant_model=draft,
+                      do_sample=True, temperature=<span class="n">0.5</span>, max_new_tokens=<span class="n">128</span>)
+
+<span class="c"># ② Prompt Lookup：n-gram 草稿（不需要任何草稿模型）</span>
+out = target.generate(**inputs, prompt_lookup_num_tokens=<span class="n">5</span>,
+                      max_new_tokens=<span class="n">128</span>)
+
+<span class="c"># ③ 自投机解码：assistant_early_exit 提前退出中间层当草稿</span>
+out = target.generate(**inputs, assistant_early_exit=<span class="n">6</span>,
+                      max_new_tokens=<span class="n">128</span>)
+
+<span class="c"># ④ 通用辅助解码：tokenizer 都不同的小模型（universal assisted）</span>
+out = target.generate(**inputs, tokenizer=tok, assistant_model=draft,
+                      assistant_tokenizer=draft_tok, max_new_tokens=<span class="n">128</span>)</pre>
+  <div class="code-cap">清单 11 · transformers 的四种辅助解码模式（官方 assisted_decoding 文档）</div>
+
+  <h3>12.2 vLLM：方法对照表</h3>
+  <table>
+    <tr><th style="width:16%">method</th><th style="width:38%">草稿来源</th><th>配置要点</th></tr>
+    <tr><td><code class="inline">ngram</code></td><td>上下文 n-gram 匹配（零训练）</td><td><code class="inline">num_speculative_tokens</code>、<code class="inline">prompt_lookup_min/max</code>（默认 5/5）</td></tr>
+    <tr><td><code class="inline">draft_model</code></td><td>独立小模型 / EAGLE 草稿头</td><td>指定 <code class="inline">model</code> 路径</td></tr>
+    <tr><td><code class="inline">eagle / eagle3</code></td><td>EAGLE 特征层草稿头</td><td><code class="inline">draft_tensor_parallel_size</code> 必须为 1</td></tr>
+    <tr><td><code class="inline">medusa</code></td><td>Medusa 多解码头</td><td>加载训练好的 heads 权重</td></tr>
+    <tr><td><code class="inline">mtp / deepseek_mtp</code></td><td>DeepSeek 训练时 MTP 模块</td><td>官方仅单层权重，K 不宜大</td></tr>
+    <tr><td><code class="inline">peagle / dflash / dspark</code></td><td>并行草稿（一次前向出整块）</td><td>配合 RedHatAI Speculators Collection 模型</td></tr>
+    <tr><td><code class="inline">suffix</code></td><td>Suffix Decoding（后缀匹配）</td><td>无外部草稿模型</td></tr>
+  </table>
+
+  <h3>12.3 训练自己的草稿模型：Speculators 流水线</h3>
+  <pre class="code"><span class="c"># ① 安装</span>
+pip install speculators
+
+<span class="c"># ② 离线路径：用 vLLM 为训练语料预提取 hidden states 并落盘</span>
+<span class="c">#    （vLLM 的 hidden extraction 系统支持输出层间特征）</span>
+vllm serve YOUR_MODEL --enable-hidden-states-extraction ...
+
+<span class="c"># ③ 训练（示意）：不同算法对应不同 CLI 选项，如 DFlash 的：</span>
+<span class="c">#    --sliding-window（滑动窗口注意力省 KV）</span>
+<span class="c">#    --full-attention-indices（指定层用全注意力）</span>
+<span class="c">#    --sample-from-anchor / --no-sample-from-anchor（两种块采样模式）</span>
+speculators train --algorithm dflash --verifier YOUR_MODEL ...
+
+<span class="c"># ④ 产出 HuggingFace 兼容权重（含 speculator_config 字段），直接 vllm serve</span>
+vllm serve YOUR_MODEL --speculative-config <span class="s">'{"model": "./my-speculator.dflash",
+  "num_speculative_tokens": 7, "method": "dflash"}'</span></pre>
+  <div class="code-cap">清单 12 · Speculators 训练-部署流水线（具体 CLI 参数以仓库文档为准）</div>
+
+  <p>训练 DFlash / DSpark / P-EAGLE 的通用挑战是：任何并行草稿模型都必须在训练序列的<strong>每一个 token 位置上做 next-K 预测</strong>。对长度 N 的序列、大小为 K 的前瞻窗口，朴素地在整个矩阵上算损失，显存与算力开销不可接受——这正是上节三种"稀疏化"策略（块稀疏 / 序列锚点稀疏）存在的意义。</p>
+</section>
+
+<!-- ==================== 第 13 章 ==================== -->
+<section id="s13">
+  <h2 class="sec"><span class="no">13</span> 评估指标、调参与工程陷阱</h2>
+  <div class="sec-en">EVALUATION, TUNING &amp; PITFALLS</div>
+
+  <h3>13.1 该看哪些指标</h3>
+  <table>
+    <tr><th style="width:26%">指标</th><th style="width:34%">定义</th><th>意义</th></tr>
+    <tr><td>接受率 α</td><td>草稿 token 被验证通过的比例</td><td>算法好坏的"根指标"，一切优化围绕它</td></tr>
+    <tr><td>平均接受长度 τ</td><td>每轮验证平均前进的 token 数</td><td>与 α、γ 的关系见式 (12)，直接决定加速比</td></tr>
+    <tr><td>位置衰减曲线</td><td>α 随草稿位置 i 的变化</td><td>暴露草稿质量衰减（DSpark Markov 头正是治它）</td></tr>
+    <tr><td>端到端 tok/s</td><td>墙钟吞吐（含草稿+验证全流程）</td><td>生产唯一真正重要的数字</td></tr>
+    <tr><td>相对加速比</td><td>speculative tok/s ÷ vanilla tok/s</td><td>跨算法比较（固定温度、batch、硬件）</td></tr>
+    <tr><td>分布一致性</td><td>生成分布与 vanilla 的统计差异（lossless 检验）</td><td>验证拒绝采样实现是否正确</td></tr>
+  </table>
+
+  <h3>13.2 调参清单</h3>
+  <ul>
+    <li><strong>投机长度 γ / K</strong>：常用 3–7。草稿质量高（EAGLE-3 / 并行草稿）可加大；独立小模型建议 3–5；</li>
+    <li><strong>温度</strong>：低温（0–0.5）时接受率最高；高温采样时投机收益骤降；</li>
+    <li><strong>树结构</strong>（Medusa / EAGLE-2）：fanout 与深度的组合要匹配算力预算——树越宽越深，单次验证越贵；</li>
+    <li><strong>typical acceptance 阈值</strong>（Medusa）：放宽接受条件换接受率，注意偏离严格无损的代价；</li>
+    <li><strong>batch 大小</strong>：单请求/小 batch 收益最大；大 batch 下转为计算受限，收益递减——上线前务必在目标并发下测；</li>
+    <li><strong>负载感知</strong>：DeepSeek 的做法是按 GPU 负载动态决定验证多少个候选（DSpark 调度器）。</li>
+  </ul>
+
+  <h3>13.3 工程陷阱速查</h3>
+  <div class="box warn">
+    <span class="bt">⚠️ 常见坑</span>
+    <ul style="margin:4px 0 0 20px;">
+      <li><strong>GGUF 不兼容</strong>：vLLM 中 target 与 draft 都必须是 HuggingFace/transformers 格式；</li>
+      <li><strong>流水线并行不兼容</strong>：speculative decoding 目前无法与 pipeline parallelism 同用；</li>
+      <li><strong>EAGLE 草稿头的 tensor parallel size 必须为 1</strong>；</li>
+      <li><strong>MTP 只有单层权重</strong>：K ≥ 2 时效果不保证；</li>
+      <li><strong>草稿 KV cache 显存</strong>：并行草稿（双向注意力）的 KV 开销不可忽略，DFlash 用滑动窗口注意力压缩；MLA 系模型（如 Kimi）草稿与目标共享 KV 布局可省管理成本；</li>
+      <li><strong>基准可比性</strong>：报告加速时必须固定温度、batch、max-model-len、硬件，否则数字不可比（Speculators 博客曾因环境配置错误更新过图 1 数据）；</li>
+      <li><strong>盈亏平衡</strong>：接受率低于 ~0.55 时，高并发下投机解码可能净亏损——先测 α 再决定是否上。</li>
+    </ul>
+  </div>
+</section>
+
+<!-- ==================== 第 14 章 ==================== -->
+<section id="s14">
+  <h2 class="sec"><span class="no">14</span> 演进时间线与参考资料</h2>
+  <div class="sec-en">TIMELINE &amp; REFERENCES</div>
+
+  <h3>14.1 三年半的演进</h3>
+  <div class="timeline">
+    <div class="tl-item">
+      <span class="tl-date">2023.01–08</span><br>
+      <span class="tl-title">双模型投机解码诞生</span>：Leviathan 等与 Chen 等独立给出草稿-验证框架与拒绝采样无损证明。
+    </div>
+    <div class="tl-item">
+      <span class="tl-date">2023.11</span><br>
+      <span class="tl-title">Prompt Lookup Decoding</span>：零训练 n-gram 草稿，代码/模板场景的免费加速。
+    </div>
+    <div class="tl-item">
+      <span class="tl-date">2024.01–02</span><br>
+      <span class="tl-title">Medusa 与 EAGLE</span>：草稿"寄生"进目标模型——解码头（Medusa）与特征层外推（EAGLE），接受率跃升至 0.7+。
+    </div>
+    <div class="tl-item">
+      <span class="tl-date">2024.06</span><br>
+      <span class="tl-title">EAGLE-2</span>：置信度驱动的动态草稿树，零额外训练再提速 1.4×。
+    </div>
+    <div class="tl-item">
+      <span class="tl-date">2024.12</span><br>
+      <span class="tl-title">DeepSeek-V3 MTP</span>：多 token 预测训练目标"顺带"成为内置草稿头，开源界标准配置。
+    </div>
+    <div class="tl-item">
+      <span class="tl-date">2025.03</span><br>
+      <span class="tl-title">EAGLE-3</span>：直接 token 预测 + 多层特征融合 + 训练时测试，加速呈现缩放定律，最高 6.5×。
+    </div>
+    <div class="tl-item">
+      <span class="tl-date">2025.04</span><br>
+      <span class="tl-title">PARD</span>：并行草稿方向的早期探索（自适应并行草稿）。</div>
+    <div class="tl-item">
+      <span class="tl-date">2026.02–07</span><br>
+      <span class="tl-title">并行草稿生成开源</span>：P-EAGLE、DFlash（2026.02），DSpark（2026.07）；Speculators 仓库 + vLLM 原生支持 + RedHatAI 预训练权重，草稿延迟与 K 解耦，生产可一键部署。llama.cpp / DeepSeek-V4 等同步跟进。
+    </div>
+  </div>
+
+  <h3>14.2 一句话总结</h3>
+  <div class="box key">
+    <span class="bt">🎯 主线</span>
+    投机解码 = <strong>草稿猜得快 + 验证验得准 + 拒绝采样保证无损</strong>。四年的演进只做了一件事：让草稿越来越"懂"目标模型——从独立小模型（不懂），到共享特征的 EAGLE（懂 80%），再到一次前向出整块的并行草稿（懂 90%+ 且不再有顺序延迟）。上线前记住：先量 α，再定 K，最后看端到端 tok/s。
+  </div>
+
+  <h3>14.3 参考资料</h3>
+  <table>
+    <tr><th style="width:8%">#</th><th style="width:44%">工作 / 文档</th><th>链接</th></tr>
+    <tr><td class="c">1</td><td>Leviathan et al., <em>Fast Inference from Transformers via Speculative Decoding</em> (2023)</td><td><a href="https://arxiv.org/abs/2211.17192">arxiv.org/abs/2211.17192</a></td></tr>
+    <tr><td class="c">2</td><td>Chen et al., <em>Accelerating LLM Inference with Staged Speculative Decoding</em> (2023)</td><td><a href="https://arxiv.org/abs/2308.04623">arxiv.org/abs/2308.04623</a></td></tr>
+    <tr><td class="c">3</td><td>Prompt Lookup Decoding（原仓库）</td><td><a href="https://github.com/apoorvumang/prompt-lookup-decoding">github.com/apoorvumang/prompt-lookup-decoding</a></td></tr>
+    <tr><td class="c">4</td><td>Medusa: Simple LLM Inference Acceleration Framework with Multiple Decoding Heads (ICML 2024)</td><td><a href="https://arxiv.org/abs/2401.10774">arxiv.org/abs/2401.10774</a> · <a href="https://github.com/FasterDecoding/Medusa">代码</a></td></tr>
+    <tr><td class="c">5</td><td>EAGLE: Speculative Sampling with LLM Decoding-Verification Gap (ICML 2024)</td><td><a href="https://arxiv.org/abs/2401.15077">arxiv.org/abs/2401.15077</a></td></tr>
+    <tr><td class="c">6</td><td>EAGLE-2: Faster Inference of Language Models with Dynamic Draft Trees (EMNLP 2024)</td><td><a href="https://arxiv.org/abs/2406.16858">arxiv.org/abs/2406.16858</a></td></tr>
+    <tr><td class="c">7</td><td>EAGLE-3: Scaling up Inference Acceleration via Training-Time Test (NeurIPS 2025)</td><td><a href="https://arxiv.org/abs/2503.01840">arxiv.org/abs/2503.01840</a> · <a href="https://github.com/SafeAILab/EAGLE">代码</a></td></tr>
+    <tr><td class="c">8</td><td>DeepSeek-V3 Technical Report（MTP 章节）</td><td><a href="https://arxiv.org/abs/2404.19737">arxiv.org/abs/2404.19737</a></td></tr>
+    <tr><td class="c">9</td><td>P-EAGLE（并行 EAGLE）</td><td><a href="https://arxiv.org/abs/2602.01469">arxiv.org/abs/2602.01469</a></td></tr>
+    <tr><td class="c">10</td><td>DFlash: Block Diffusion for Flash Speculative Decoding</td><td><a href="https://arxiv.org/abs/2602.06036">arxiv.org/abs/2602.06036</a> · <a href="https://docs.vllm.ai/projects/speculators/en/latest/user_guide/algorithms/dflash/">文档</a></td></tr>
+    <tr><td class="c">11</td><td>DSpark（并行草稿 + Markov / 置信度头）</td><td><a href="https://arxiv.org/abs/2607.05147">arxiv.org/abs/2607.05147</a></td></tr>
+    <tr><td class="c">12</td><td>PARD: Parallel Drafting</td><td><a href="https://arxiv.org/abs/2504.18583">arxiv.org/abs/2504.18583</a></td></tr>
+    <tr><td class="c">13</td><td>Speculators（vLLM 草稿模型训练生态）</td><td><a href="https://github.com/vllm-project/speculators">github.com/vllm-project/speculators</a></td></tr>
+    <tr><td class="c">14</td><td>vLLM Speculative Decoding 官方文档</td><td><a href="https://docs.vllm.ai/en/latest/features/spec_decode/">docs.vllm.ai/features/spec_decode</a></td></tr>
+    <tr><td class="c">15</td><td>Transformers Assisted Decoding 官方文档</td><td><a href="https://huggingface.co/docs/transformers/en/assisted_decoding">huggingface.co/docs/transformers/assisted_decoding</a></td></tr>
+    <tr><td class="c">16</td><td>vLLM 博客：Speculators 并行草稿生成（本文主线来源）</td><td><a href="https://vllm.ai/blog/2026-07-28-speculators-parallel-drafting">vllm.ai/blog/2026-07-28-speculators-parallel-drafting</a></td></tr>
+    <tr><td class="c">17</td><td>RedHatAI Speculators Collection（预训练草稿权重）</td><td><a href="https://huggingface.co/collections/RedHatAI/speculator-models">huggingface.co/collections/RedHatAI</a></td></tr>
+    <tr><td class="c">18</td><td>Sebastian Raschka：MTP 架构图鉴</td><td><a href="https://sebastianraschka.com/llm-architecture-gallery/mtp/">sebastianraschka.com/llm-architecture-gallery/mtp</a></td></tr>
+    <tr><td class="c">19</td><td>TensorRT-LLM：DeepSeek-R1 MTP 实现与优化</td><td><a href="https://nvidia.github.io/TensorRT-LLM/1.3.0rc18/blogs/tech_blog/blog02_DeepSeek_R1_MTP_Implementation_and_Optimization.html">nvidia.github.io/TensorRT-LLM</a></td></tr>
+    <tr><td class="c">20</td><td>Nebius：LK-loss 微调 MTP 模块（接受率感知训练）</td><td><a href="https://huggingface.co/nebius/MTP-DeepSeek-V3-0324">huggingface.co/nebius/MTP-DeepSeek-V3-0324</a></td></tr>
+    <tr><td class="c">21</td><td>AI 大排档：《推测解码的第一性原理：为什么"先猜后验"不会改模型分布？》（中文科普，本文 §2/§3 的配图与链式法则参考）</td><td><a href="https://mp.weixin.qq.com/s/jTKDSWHEsqAtwSEHODyOfw">mp.weixin.qq.com/s/jTKDSWHEsqAtwSEHODyOfw</a></td></tr>
+    <tr><td class="c">22</td><td>糖嘟嘟的AI学习笔记：《投机解码（Speculative Decoding）深度技术解析》（中文系统综述，本文 §2.3 因果掩码、§3 随机数论证、§5.2 选型、§11.3 DSpark 详析的来源）</td><td><a href="https://mp.weixin.qq.com/s/BWfiiHnoy4CBWb9wsVet2A">mp.weixin.qq.com/s/BWfiiHnoy4CBWb9wsVet2A</a></td></tr>
+  </table>
+
+  <h3>14.4 后续可以深挖的方向</h3>
+  <ul>
+    <li>并行草稿与<strong>大 batch / 连续批处理</strong>结合时的真实吞吐曲线；</li>
+    <li><strong>草稿模型蒸馏</strong>：用验证模型直接监督草稿（Nebius LK loss 一脉）；</li>
+    <li><strong>量化 × 投机</strong>：FP8 验证器 + 并行草稿的组合（Speculators 提供 llm-compressor 集成）；</li>
+    <li>投机解码在<strong>多模态 / MoE / MLA</strong> 架构下的适配（DFlash 的 KV 注入思路在 MLA 上尤其自然）；</li>
+    <li>与推理时计算（test-time compute）结合：草稿阶段是否可以"顺便"做一点思考？</li>
+  </ul>
+</section>
+
+<!-- ==================== 附录 ==================== -->
+<section id="appendix">
+  <h2 class="sec"><span class="no">A</span> 附录：外部资源中的投机解码精选</h2>
+  <div class="sec-en">APPENDIX — SPECULATIVE DECODING IN FOUR EXTERNAL RESOURCES</div>
+
+  <p class="lead">本节从四份公开学习资源中提取与投机解码直接相关的内容：<strong>AIInfra</strong>（Infrasys-AI/AIInfra，大模型基础设施课程）包含投机解码的完整代码讲义与实测数据；其余三份资源虽无投机解码专章，但其采样、KV cache、解码策略章节构成投机解码最直接的知识背景，一并收录。</p>
+
+  <h3>A.1　AIInfra《大模型基础设施》：投机解码代码讲义</h3>
+  <p>仓库：<a href="https://github.com/Infrasys-AI/AIInfra">github.com/Infrasys-AI/AIInfra</a> · 章节：<code class="inline">05Infer/05Sampling/Code01Speculative.md</code>（附可运行 notebook <code class="inline">Code01Speculative.ipynb</code>）。</p>
+  <p>课程从自回归解码的<strong>串行瓶颈</strong>切入——Decoding 阶段无法并行化——并用一个通俗类比引入投机采样："写作时先快速列出大纲，再仔细润色"。实现采用<strong>双模型方案</strong>：小草稿模型 Qwen3-0.6B 连续生成候选，大目标模型 Qwen3-4B 一次并行验证。</p>
+
+  <h4>（1）核心代码：草稿 → 并行验证 → 拒绝采样</h4>
+  <pre class="code"><span class="c"># ① 草稿：小模型一次生成多个候选 token</span>
+<span class="k">def</span> <span class="f">generate_draft_tokens</span>(generated_tokens, draft_model, tokenizer, max_candidates=<span class="n">5</span>):
+    <span class="k">with</span> torch.no_grad():
+        generated = draft_model.generate(
+            input_ids=generated_tokens.unsqueeze(<span class="n">0</span>),
+            max_new_tokens=max_candidates,
+            do_sample=True, temperature=<span class="n">0.7</span>,
+            pad_token_id=tokenizer.pad_token_id,
+            eos_token_id=tokenizer.eos_token_id,
+        )
+    <span class="k">return</span> generated[<span class="n">0</span>, generated_tokens.shape[<span class="n">0</span>]:]   <span class="c"># 取新生成的候选部分</span>
+
+<span class="c"># ② 验证：拼接后一次前向，同时取目标/草稿在每个位置的分布</span>
+all_tokens = torch.cat([generated_tokens, candidate_tokens]).to(device)
+target_probs = torch.softmax(target_model(all_tokens.unsqueeze(<span class="n">0</span>)).logits[:, :-<span class="n">1</span>, :], dim=-<span class="n">1</span>)
+draft_probs  = torch.softmax(draft_model(all_tokens.unsqueeze(<span class="n">0</span>)).logits[:, :-<span class="n">1</span>, :], dim=-<span class="n">1</span>)
+
+<span class="c"># ③ 拒绝采样：逐位置检验，接受则继续，首个拒绝即中断</span>
+p = target_probs[<span class="n">0</span>, prob_idx, cand]
+q = draft_probs[<span class="n">0</span>, prob_idx, cand]
+q = torch.max(q, torch.tensor(<span class="n">1e-8</span>, device=device))          <span class="c"># 防除零</span>
+<span class="k">if</span> torch.rand(<span class="n">1</span>, device=device) &lt; torch.min(torch.tensor(<span class="n">1.0</span>, device=device), p / q):
+    accepted_tokens.append(cand)
+<span class="k">else</span>:
+    <span class="k">break</span>                                          <span class="c"># 一旦拒绝，后续候选不再验证</span>
+
+<span class="c"># ④ 补位：被拒位置用目标模型 argmax 修正，保证每轮至少前进一个 token</span>
+<span class="k">if</span> len(accepted_tokens) &lt; len(candidate_tokens):
+    next_logits = target_model(generated_tokens.unsqueeze(<span class="n">0</span>)).logits[:, -<span class="n">1</span>, :]
+    next_token = torch.argmax(next_logits, dim=-<span class="n">1</span>)
+    generated_tokens = torch.cat([generated_tokens, next_token])</pre>
+  <div class="code-cap">清单 13 · AIInfra 课程投机解码核心实现（与本文第 3 章数学、第 6 章伪代码一一对应）</div>
+
+  <h4>（2）实测数据：Qwen3-0.6B 草稿 + Qwen3-4B 目标</h4>
+  <table>
+    <tr><th>解码方式</th><th class="c">吞吐</th><th class="c">相对加速</th><th class="c">接受率</th><th>输出一致性</th></tr>
+    <tr><td>标准自回归解码</td><td class="c">10.10 tok/s</td><td class="c">1.0×</td><td class="c">—</td><td>—</td></tr>
+    <tr><td>投机采样</td><td class="c">27.47 tok/s</td><td class="c"><strong>≈2.7×</strong></td><td class="c">66.67%</td><td>生成文本与目标模型<strong>完全一致</strong>（无损验证）</td></tr>
+  </table>
+
+  <h4>（3）候选数 K 的调参实验（同一组数据）</h4>
+  <table>
+    <tr><th class="c">候选数 K</th><td class="c">1</td><td class="c">2</td><td class="c">3</td><td class="c">4</td><td class="c">5</td><td class="c">6</td><td class="c">7</td><td class="c">8</td></tr>
+    <tr><th>平均接受率</th><td class="c">88.0%</td><td class="c">76.0%</td><td class="c">70.7%</td><td class="c">68.0%</td><td class="c">66.0%</td><td class="c">59.3%</td><td class="c">52.0%</td><td class="c">46.3%</td></tr>
+  </table>
+  <p>接受率随候选数单调下降（位置越靠后的候选越难猜中），课程结论：<strong>K = 5 是速度与接受率的最佳平衡点</strong>——这与本文 §4 的公式 τ = (1−α^(γ+1))/(1−α) 的预测方向完全一致（γ 越长，远端 α 越低）。</p>
+
+  <h4>（4）工程要点（课程踩坑总结）</h4>
+  <ul>
+    <li><strong>必须使用目标模型的 tokenizer</strong>：草稿与目标 token 不匹配会导致验证错位；</li>
+    <li><strong>防除零</strong>：q 极小（如新词表外 token）时 p/q 会爆炸，需钳制 q ≥ 1e-8；</li>
+    <li><strong>不要硬编码概率</strong>：接受概率必须由两个模型的真实分布计算，手工设置阈值会破坏无损性；</li>
+    <li>验证阶段两个模型共享同一输入序列一次前向，草稿模型的 KV cache 随之更新，避免重复计算。</li>
+  </ul>
+
+  <h4>（5）同章姊妹篇：MTP 并行采样（04ParallelSampling.md）</h4>
+  <p>课程把"一次采样多个 token"的另一条路线单独成篇：<strong>MTP（Multi-Token Prediction）</strong>。</p>
+  <ul>
+    <li><strong>训练阶段</strong>：多个独立输出头同时预测未来多个 token（每个头的输入为上一层输出特征、权重独立更新），提升训练效率与长序列预测能力；DeepSeek-V3 将独立头优化为<strong>级联模块</strong>（前一个模块的特征参与下一个模块），保持因果连贯；</li>
+    <li><strong>推理阶段</strong>：受限于 MTP 模块数量少、递归分布偏移（训练与推理分布不一致）等问题，主流框架采用 <strong>EAGLE-style 方案</strong>——用单个 MTP 头作为草稿模型递归生成草稿序列，主模型并行验证并严格接受，保证输出分布与原始自回归一致（即本文 §10 的内容）。</li>
+  </ul>
+
+  <h4>（6）相邻章节：投机解码的依赖基础</h4>
+  <p>AIInfra 的 <code class="inline">05Infer/02InferSpeedUp/</code> 章节系统讲解了投机解码赖以运行的底层机制，建议按序阅读：</p>
+  <ul>
+    <li><code class="inline">01KVCache.md</code>：KV cache 原理与显存分析（投机解码的草稿与验证都依赖 KV 复用）；</li>
+    <li><code class="inline">06PagedAttention.md</code>：vLLM 的 PagedAttention——分页管理 KV cache，支撑多请求并行的投机验证；</li>
+    <li><code class="inline">Code03StreamingLLM.md</code>：StreamingLLM 长上下文推理。</li>
+  </ul>
+
+  <h3>A.2　labml.ai 神经网络注释（中文版）：采样技术基础</h3>
+  <p>站点：<a href="https://nn.labml.ai/zh/">nn.labml.ai/zh</a>。中文站目前<strong>没有投机解码专页</strong>；与投机解码最直接相关的是"语言模型采样技术"四篇——贪婪采样、温度采样、Top-K、核采样。投机解码的最后一步（从分布中取 token）正是这些采样器，且拒绝采样的"修正重采样"就是核采样思想在分布差集上的应用：</p>
+  <ul>
+    <li><strong>温度采样</strong>（<a href="https://nn.labml.ai/zh/sampling/temperature.html">temperature.html</a>）：P(x<sub>t</sub> = v<sub>l</sub> | x<sub>1</sub>, …, x<sub>t−1</sub>) = exp(z<sub>l</sub> / T) / Σ<sub>j</sub> exp(z<sub>j</sub> / T)。T 控制分布锐度：T→0 退化为贪婪，T=1 为普通随机采样，T&gt;1 更平坦。labml 的实现 <code class="inline">TemperatureSampler</code> 将 logits 除以温度后用 Categorical 分布采样——投机解码的草稿与验证阶段都遵循同一套采样器接口；</li>
+    <li><strong>贪婪采样</strong>（<a href="https://nn.labml.ai/zh/sampling/greedy.html">greedy.html</a>）：温度 0 的极限情形，也是本文 §3.7 中"草稿是否等于 argmax"判定规则的依据；</li>
+    <li><strong>Top-K / 核采样</strong>（<a href="https://nn.labml.ai/zh/sampling/top_k.html">top_k.html</a>、<a href="https://nn.labml.ai/zh/sampling/nucleus.html">nucleus.html</a>）：截断采样空间——Medusa 的候选树正是用"每个位置取 top-s"构建的。</li>
+  </ul>
+
+  <h3>A.3　waylandz《LLM Transformer 书》：KV Cache 与解码策略背景</h3>
+  <p>站点：<a href="https://waylandz.com/llm-transformer-book/">waylandz.com/llm-transformer-book</a>。全书 32 章无投机解码专章，但两处内容构成直接背景：</p>
+  <h4>（1）第 22 章 KV Cache 推理加速</h4>
+  <ul>
+    <li><strong>原理</strong>：因果模型中旧位置"看不到未来"，只要参数、前缀、位置不变，历史 token 的 K/V 就不变——因此只需缓存，不必每步重算整个 n×n 注意力矩阵；</li>
+    <li><strong>显存公式</strong>：M_KV = 2·B·S·L·H_KV·d_h·b（2 为 K 与 V，B batch，S 缓存长度，L 层数，H_KV KV 头数，d_h 头维度，b 每元素字节）。手算 Llama2-7B（FP16，batch 1，4096 tokens）：每 token 512 KiB，4K 上下文约 2 GiB；</li>
+    <li><strong>Prefill vs Decode</strong>：Prefill 并行处理整段 prompt（决定 TTFT），Decode 逐 token 串行（决定 TPOT），小 batch 下"带宽/延迟受限"——投机解码正是在 Decode 阶段用一次并行前向替代多次串行前向；</li>
+    <li><strong>近亲优化</strong>：MQA/GQA 减少 KV 头数（第 23 章）、KV 量化、PagedAttention、滑动窗口/驱逐——均与投机解码的显存与带宽预算直接相关。</li>
+  </ul>
+  <h4>（2）附录 B 解码策略详解</h4>
+  <p>系统覆盖贪婪、随机采样、温度、Top-K、Top-P（核采样）、Beam Search 与重复惩罚（repetition / presence / frequency penalty）及其组合经验（如 LLaMA 用 temperature=0.6 + top_p=0.9）——这些策略决定草稿与验证两端的分布形态，是理解接受率随温度变化（本文 §3.7 与 §3.8）的基础。</p>
+
+  <h3>A.4　AISystem《AI 系统》：推理系统工程背景</h3>
+  <p>仓库：<a href="https://github.com/Infrasys-AI/AISystem">github.com/Infrasys-AI/AISystem</a>。课程聚焦 AI 芯片、编译器与推理框架全栈，<strong>未覆盖投机解码</strong>（推理章节成稿早于投机解码主流化）。其 <code class="inline">04Inference/01Inference/</code> 系列讲义（推理系统介绍、性能约束、推理工作流、推理引擎架构）与投机解码的工程上下文互补：动态批处理（投机验证在 batch 下的收益递减）、算子融合与 Kernel 优化（草稿模型轻量化）、异构调度（大小核分工可类比"小草稿 + 大验证"的角色分工）。作为背景阅读链接：<a href="https://github.com/Infrasys-AI/AISystem/tree/main/04Inference">04Inference 目录</a>。</p>
+
+  <div class="box info">
+    <span class="bt">ℹ️ 四份资源与本文的对应关系</span>
+    AIInfra = 本文 §3/§6/§10 的<strong>代码级补充</strong>（含实测 2.7× 与 K 调参表）；labml = §3 采样器背景；waylandz = §1 带宽瓶颈与 KV cache 背景（Prefill/Decode 视角）；AISystem = §13 工程约束背景。按需跳读即可，正文公式与架构图已自成体系。
+  </div>
+</section>
+
+</div><!-- /wrap -->
+
+<footer>
+  <div class="wrap">
+    <div>投机解码完全指南 · Speculative Decoding Complete Guide</div>
+    <div>生成于 2026-08-07 · 2026-08-12 全面整理（融合两篇中文科普文章，统一图表与公式编号）· 示意图为内联 SVG + 微信文章配图</div>
+  </div>
+</footer>
+
+<a href="#toc" class="backtop" title="回到顶部">↑</a>
+
+</body>
+</html>
