@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>UltraEP 深度阅读笔记 —— 论文 × 源码 × 对话对齐</title>
+<title>UltraEP 深度阅读笔记 —— 论文 × 源码精读 × 问题详解</title>
 <!-- 霞鹜文楷：开源可商用的中文楷体风格字体；加载失败时自动回退到微软雅黑 -->
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/lxgw-wenkai-webfont@1.7.0/style.css">
 <style>
@@ -30,6 +30,8 @@ ul, ol { padding-left: 1.8em; }
 .ev-u { background: #ffebe9; color: #82071e; }
 .mermaid { text-align: center; margin: 1.4em 0; }
 .figcaption { margin: .4em 0 1.2em; color: #57606a; font-size: .92em; text-align: center; }
+.qa { border: 1px solid #e5e7eb; border-radius: 10px; padding: 4px 20px 12px; margin: 1.6em 0; background: #fcfdfe; }
+.qa > h3 { border-bottom: 1px dashed #d8dee4; padding-bottom: .3em; margin-top: 1.2em; }
 </style>
 <script>
 window.MathJax = {
@@ -72,157 +74,220 @@ window.MathJax = {
 })();
 </script>
 <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
-<script>mermaid.initialize({ startOnLoad: true, theme: "neutral", fontFamily: '"Microsoft YaHei", "PingFang SC", sans-serif' });</script>
+<script>mermaid.initialize({ startOnLoad: true, theme: "neutral", fontFamily: '"Microsoft YaHei", "PingFang SC", sans-serif', themeVariables: { xyChart: { plotColorPalette: "#2563eb, #d97706, #dc2626" } } });</script>
 </head>
 <body>
 <a href="../../index.html" style="position:fixed;top:12px;right:14px;z-index:99;background:#f6f7f9;border:1px solid #e2e5ea;border-radius:999px;padding:4px 12px;font-size:14px;color:#2c5fa8;text-decoration:none;box-shadow:0 1px 4px rgba(0,0,0,.08)">← 技术地图首页</a>
-<a href="index.html" style="position:fixed;top:48px;right:14px;z-index:99;background:#f6f7f9;border:1px solid #e2e5ea;border-radius:999px;padding:4px 12px;font-size:14px;color:#2c5fa8;text-decoration:none;box-shadow:0 1px 4px rgba(0,0,0,.08)">← MoE EP 索引</a>
 <div id="mathjax-load-fail" style="display:none;position:fixed;top:12px;left:14px;z-index:99;background:#fff4e5;border:1px solid #e8b04b;color:#8a5300;border-radius:8px;padding:8px 12px;font-size:13px">公式渲染组件未能加载，当前显示的是 LaTeX 源码。</div>
 
-<h1>UltraEP 深度阅读笔记 —— 论文 × 源码 × 对话对齐</h1>
+<h1>UltraEP 深度阅读笔记 —— 论文 × 源码精读 × 问题详解</h1>
 
 <blockquote>
-<p>本文围绕 <a href="https://arxiv.org/abs/2606.04101">UltraEP（arXiv:2606.04101，v3，2026-06-18）</a>展开：以一篇 DeepSeek 论文阅读对话为主线，逐点对齐论文原文、<a href="https://github.com/Dots-Infra/UltraEP">官方代码仓</a>（commit <code>94cab099</code>）与<a href="https://dots-infra.github.io/UltraEP/zh/">官方博客 v1.0.0</a>的一手证据，并含一个专题章节回答「token dispatch/combine 如何避免朴素 all-to-allv 的全量元数据交换」，第 10 章增补失衡量化、专家激活覆盖与 prefill/decode × EP 度的定量关系（含图示）。证据标注：<span class="ev ev-v">V</span> 一手核对（论文 / 官方博客 / 本地源码 / arXiv 版本页）<span class="ev ev-r">R</span> 合理推断<span class="ev ev-u">U</span> 待核实。整理日期：2026-09-16。</p>
+<p>对象：<a href="https://arxiv.org/abs/2606.04101">UltraEP（arXiv:2606.04101，v3，2026-06-18）</a>——小红书 × 北大的机柜级专家负载均衡系统。本文分两部分：<b>Part I</b>（§0–§11）按「问题 → 硬件前提 → 系统设计 → 逐模块源码走读 → 实验 → 批判」单线精读，论断尽量落到 <a href="https://github.com/Dots-Infra/UltraEP">官方代码仓</a>（本地快照 commit <code>94cab099</code>）的具体文件与行为；<b>Part II</b> 把阅读过程中（一篇 DeepSeek 论文对话与本笔记讨论中）产生的全部问题集中收尾，逐题详解，公式用到的符号都当场定义。证据标注：<span class="ev ev-v">V</span> 一手核对（论文 / <a href="https://dots-infra.github.io/UltraEP/zh/">官方博客 v1.0.0</a> / 本地源码 / arXiv 版本页 / DeepEP 仓库）<span class="ev ev-r">R</span> 合理推断<span class="ev ev-u">U</span> 待核实。整理：2026-09-16（全文重写版）。</p>
 </blockquote>
 
-<h2>0. 一页结论</h2>
+<h2>0. 阅读指南与符号表</h2>
+
+<h3>0.1 材料与口径</h3>
 <ul>
-<li><b>UltraEP 是"精确负载 + 实时"的专家均衡运行时</b>：门控一结束就拿到本 microbatch 的真实负载，在<b>每层每 microbatch</b> 的关键路径上求解复制方案、把热专家权重复制到各 rank 预留的<b>冗余槽位</b>、并把 token 按配额重路由到副本。<span class="ev ev-v">V</span></li>
-<li><b>它改的不是 token 通信，而是专家状态布局</b>：token 的 dispatch/combine 仍由 DeepEP 等原有路径执行，UltraEP 与之解耦；均衡让各 rank 接收 token 数摊平，间接消除 all-to-all 偏斜与 straggler。<span class="ev ev-v">V</span></li>
-<li><b>两条设计支柱</b>：控制面 quota 驱动规划器（对全局均衡阈值做二分搜索，把「放置」与「重路由」耦合求解，EP64 下 &lt;100 µs）；数据面 NVSHMEM + TMA 持久化 tile 流传输 + 两阶段中继树（关键路径总暴露开销 &lt;300 µs，占步时 1–2%）。<span class="ev ev-v">V</span></li>
-<li><b>硬边界</b>：专家复制被限制在 scale-up（NVLink）域内；NVL 域小于 EP 组时，可达均衡下限略高于 1.0——这是 RSN（机架级节点）成为论文标题的真正原因。<span class="ev ev-v">V</span></li>
-<li><b>数字</b>：训练 + 推理 prefill 平均达 force-balanced 理想吞吐 94.3%（训练 94.6% / prefill 90–97%），相对无均衡基线提升 1.49×；跨 rank 不均衡度（最大:平均）从 1.30–4.01 压到 1.01–1.04；最大 256 GPU、106B–671B 模型；已在 288B 生产预训练中长期部署（≥92% 理想性能）。<span class="ev ev-v">V</span></li>
+<li>论文 v3 摘要与 arXiv 版本页逐句核对（v1/v2 已撤回，见 §11）；博客 v1.0.0（仓库 <code>docs/blog_v1_zh.md</code>）提供工程细节与口径拆分；源码为本地 <code>E:\Desktop\业务\EP\src\UltraEP</code>（与 GitHub commit <code>94cab099</code> 一致），实测约 5.9k 行（kernel .cu 共 3849 行 + Python 包 2006 行，不含头文件与 C++ 绑定）<span class="ev ev-v">V</span>。</li>
+<li>对照系：DeepSeek 的 EPLB / LPLB（直接前驱）、DeepEP（token 通信线，V1 README 与 V2 main 均一手核对）、MoonEP（decode 侧对照，见本目录姊妹篇）。</li>
 </ul>
 
-<h2>1. 问题与动机</h2>
+<h3>0.2 符号表（全文与问答共用；问答中按需重述）</h3>
+<table>
+<tr><th>符号</th><th>含义</th><th>典型取值示例</th></tr>
+<tr><td>$N$</td><td>模型<b>逻辑</b>专家总数（router 可选的 routed experts）</td><td>DeepSeek-V3：256</td></tr>
+<tr><td>$k$</td><td>每个 token 经门控选中的专家数（top-k）</td><td>8</td></tr>
+<tr><td>$G$</td><td>EP 组内 rank 数（EP 并行度）；一个 rank 通常对应一张 GPU</td><td>64</td></tr>
+<tr><td>$T$</td><td>一个 microbatch 进入某层 MoE 的 token 总数（整个 EP 组求和）</td><td>prefill 数千；decode = 批大小</td></tr>
+<tr><td>$m = N/G$</td><td>每个 rank 的<b>固有</b>（master）专家数</td><td>256/64 = 4</td></tr>
+<tr><td>$R$</td><td>每个 rank 预留的<b>冗余</b>（replica）专家槽位数</td><td>每 rank 1–8 个</td></tr>
+<tr><td>$L_{r,e}$</td><td>门控后，源 rank $r$ 的 token 中被路由到逻辑专家 $e$ 的数量</td><td>—</td></tr>
+<tr><td>$L_e$</td><td>专家 $e$ 的全局负载，$L_e = \sum_r L_{r,e}$（$\sum$ 表示对所有 rank 求和）</td><td>—</td></tr>
+<tr><td>$L_r$</td><td>rank $r$ 按当前放置实际要接收的 token 总数</td><td>—</td></tr>
+<tr><td>$\mathcal{H}(e)$</td><td>专家 $e$ 的物理实例所在 rank 集合（1 个 master + 若干 replica）</td><td>—</td></tr>
+<tr><td>$q_{r,e,t}$</td><td><b>配额（quota）</b>：源 rank $r$ 发往「专家 $e$ 在 rank $t$ 上的实例」的 token 数，$\sum_{t\in\mathcal{H}(e)} q_{r,e,t} = L_{r,e}$</td><td>—</td></tr>
+<tr><td>$\tau$</td><td>全局均衡阈值：给每个 rank 设定的负载上界目标，规划器二分搜索的对象</td><td>—</td></tr>
+<tr><td>$\mathcal{I}$</td><td>跨 rank 不均衡度，$\mathcal{I} = \max_r L_r \,/\, \bar{L}$；$\bar{L} = \frac{1}{G}\sum_r L_r$ 为均值，$\max_r$ 取最忙 rank；$\mathcal{I}=1$ 为完美均衡</td><td>1.30–4.01 → 1.01–1.04</td></tr>
+<tr><td>$\lambda = Tk/N$</td><td>平均每个专家分到的 token 数</td><td>T=4096 时 128</td></tr>
+<tr><td>$P_{\text{act}}$</td><td>一个专家被至少一个 token 选中的概率</td><td>见 Q12</td></tr>
+</table>
+
+<h2>1. 问题：大规模 EP 的负载失衡</h2>
 
 <h3>1.1 失衡的因果链</h3>
-<p>大规模 EP 下，设备级专家负载不均衡被放大为三类系统瓶颈<span class="ev ev-v">V</span>（论文摘要 + 博客）：</p>
+<p>专家并行（EP）把 $N$ 个专家分散到 $G$ 个 rank 上，token 经门控后通过 all-to-all 通信发往各专家。路由是动态的，因此每个 rank 实际接收的 token 数 $L_r$ 天然不等。大规模 EP 下，这个不等被放大为三类系统瓶颈<span class="ev ev-v">V</span>（论文摘要 + 博客）：</p>
 <table>
 <tr><th>瓶颈</th><th>机理</th></tr>
-<tr><td>计算滞后（straggler）</td><td>同步集合通信下，每层都要等最慢的 rank；热点 rank 拖慢全局</td></tr>
-<tr><td>token all-to-all 通信瓶颈</td><td>失衡使部分链路 token 交换量激增，偏斜（skew）造成拥塞</td></tr>
+<tr><td>计算滞后（straggler）</td><td>MoE 前向是同步集合通信，每层都要等最慢的 rank；热点 rank 拖慢全局</td></tr>
+<tr><td>token all-to-all 通信瓶颈</td><td>失衡使部分链路 token 交换量激增，偏斜（skew）造成热点拥塞</td></tr>
 <tr><td>激活显存峰值</td><td>热点专家所在 rank 激活堆积，逼近 OOM</td></tr>
 </table>
-<p>不均衡度指标的定义（博客原话为「rank 间负载不均衡（<b>最大值 : 平均值</b>」）<span class="ev ev-v">V</span>：</p>
+<p>失衡的度量（博客原话口径为「rank 间负载不均衡（最大值 : 平均值）」<span class="ev ev-v">V</span>）：</p>
 <div class="formula">
 $$
-\mathcal{I} \;=\; \frac{\max_r L_r}{\frac{1}{G}\sum_{r=1}^{G} L_r}, \qquad \mathcal{I} = 1 \text{ 为完美均衡}
+\mathcal{I} \;=\; \frac{\max_r L_r}{\bar{L}}, \qquad \bar{L} = \frac{1}{G}\sum_{r=1}^{G} L_r
 $$
 </div>
-<p>其中 $L_r$ 是 rank $r$ 门控后接收的 token 总数，$G$ 为 EP 组内的 rank 数。论文实测原始 $\mathcal{I}$ 在 1.30–4.01<span class="ev ev-v">V</span>——即最忙 rank 最高扛着 4 倍于平均的负载。</p>
+<p>由于每层步时 $\propto \max_r L_r$、理想计算量 $\propto \bar{L}$，<b>吞吐损失 $\approx 1 - 1/\mathcal{I}$</b>：$\mathcal{I}=1.3$ 即丢 23%，$\mathcal{I}=4$ 即丢 75%（MoE 段内）。UltraEP 论文与博客报告的实测原始 $\mathcal{I}$ 在 1.30–4.01，理想与现实训推吞吐的端到端偏差最多可达 2 倍<span class="ev ev-v">V</span>。</p>
 
-<h3>1.2 为什么「基于历史负载」的方案失效</h3>
-<p>EPLB（DeepSeek, 2025）按前一时间窗口的路由统计周期性重排专家放置，其隐含假设是<b>历史负载可预测未来负载</b>。博客对细粒度 MoE（数百个小专家）的实测观察是：专家热度在 microbatch / 层 / 数据域间剧烈漂移，预测失准后重排反而可能负优化<span class="ev ev-v">V</span>。后继的 LPLB（DeepSeek, 2025）针对 EPLB 放置与实时负载的偏差，用线性规划在线调整 token 重路由，但效果被「可解性约束 + EPLB 放置偏差」削弱<span class="ev ev-v">V</span>（博客 3.1 节原述）。UltraEP 的回应是把两个阶段<b>耦合</b>进同一次求解（见 §4）。</p>
-<p>值得强调的分工（博客总结）<span class="ev ev-v">V</span>：<b>算法侧均衡</b>（auxiliary loss / routing bias）负责训练稳定性与专家特化，只在统计意义上起作用；<b>系统侧均衡</b>（UltraEP）负责把每个 microbatch 已经发生的负载偏斜重新摊平。二者目标不同、自然叠加。</p>
-
-<h2>2. 硬件前提：RSN、scale-up 域与 NVL 域约束</h2>
-
-<h3>2.1 RSN 与两层网络</h3>
-<p>机架级节点（Rack-Scale Node）把整个机架当作一个计算机：机架内数十个 GPU 通过 scale-up 网络（NVLink/NVSwitch、UALink、灵衢总线等）紧耦合为全对等高速域；机架之间走 scale-out（以太网 / InfiniBand）。对话中核实过的硬件参考值<span class="ev ev-v">V</span>：NVIDIA NVL72 提供 260 TB/s 级 GPU 间带宽、72 GPU 为当前主流机架规模（AMD Helios 同为 72），Dell 高密度配置可达 144；华为 CloudMatrix 384（Atlas 900 A3 SuperPoD）以 16 机柜（12 计算 + 4 总线）、灵衢总线把 scale-up 域扩到 384 NPU（48 TB 统一编址内存、约 300 PFLOPS BF16、功耗约 559 kW vs NVL72 约 120 kW——「用规模换性能」的路线）。</p>
-
-<h3>2.2 关键约束：复制半径 = NVLink 域</h3>
-<p>README 原文<span class="ev ev-v">V</span>：</p>
-<blockquote><p>"<b>Confining expert replication to the scale-up fabric</b>, UltraEP adapts to available NVLink domain size automatically. <b>When the NVLink domain is smaller than the EP group, the achievable imbalance floor sits slightly above the ideal 1.0.</b>"</p></blockquote>
-<p>这条约束在代码里是硬边界：NVSHMEM 工具层对域外 PE 的 <code>nvshmem_ptr()</code> 直接返回 <code>nullptr</code>（<code>csrc/utils/nvshmem.cuh:36</code>），规划与通信 kernel 的维度常量是 <code>MAX_GPUS_PER_NVL</code> / <code>kMaxNvlDomainSize</code><span class="ev ev-v">V</span>。因此：</p>
+<h3>1.2 为什么既有方案失效</h3>
 <ul>
-<li>EP64 在 NVL72 级 RSN 上可以整组进 scale-up 域 → 理想均衡可达；</li>
-<li>EP64 在传统 8 卡服务器（NVL 域 = 8）上，副本只能在本机 8 卡内摆放 → 均衡下限 &gt;1.0。仓库的 8×Hopper demo 是最小化可复现验证，论文的生产叙事依赖 RSN<span class="ev ev-r">R</span>。</li>
+<li><b>EPLB</b>（DeepSeek, 2025）：按前一时间窗口的路由统计<b>周期性</b>重排专家放置，隐含假设「历史负载可预测未来负载」。但细粒度 MoE（数百个小专家）的专家热度在 microbatch / 层 / 数据域间剧烈漂移，预测失准后重排甚至负优化<span class="ev ev-v">V</span>（博客动机节）。</li>
+<li><b>LPLB</b>（DeepSeek, 2025）：在 EPLB 放置之上用线性规划在线调整 token 重路由，但被「可解性约束 + EPLB 放置偏差」削弱<span class="ev ev-v">V</span>（博客 §3.1）。</li>
+<li><b>算法侧均衡</b>（auxiliary loss / routing bias）只保证统计意义上的均衡，管不到单个 microbatch 的偏斜<span class="ev ev-v">V</span>。博客的分工表述：算法侧负责训练稳定性与专家特化，系统侧负责把每个 microbatch 已经发生的偏斜重新摊平，二者自然叠加。</li>
 </ul>
-<p>这也给「CloudMatrix 384 之类的超节点对 UltraEP 意味着什么」一个精确回答：扩大 NVL 域<b>降低的是均衡下限（floor）</b>，机制本身不变<span class="ev ev-r">R</span>。</p>
+<p>UltraEP 的回应：门控一结束就拿到<b>精确负载</b>（exact post-gating load），在每个 microbatch 的每层<b>实时</b>重均衡——复制热专家到冗余槽位、按配额把 token 重路由到副本（§5–§8）。代价是均衡操作暴露在关键路径上、以 microbatch 为最小粒度高频执行，因此必须把决策与通信都压到百微秒级——这是全部设计的出发点。</p>
 
-<h2>3. 系统总览：一次前向 + 反向的完整生命周期</h2>
-<p>先修正一个常见误读（也是所对齐对话中的最大偏差）：UltraEP 做的不是「专家迁移」，而是<b>「热专家复制到预留冗余槽位 + token 重路由到副本 + 反向时恢复与归约」</b>。初始化时每个 EP rank 预留 $R$ 个冗余专家 slot（权重 / 梯度 buffer 跨层复用），每个 layer 把固有专家（master expert）的指针注册给 Manager<span class="ev ev-v">V</span>。</p>
+<h2>2. 硬件前提：RSN 与 NVLink 域</h2>
+<p>机架级节点（Rack-Scale Node, RSN）把整个机架当作一台计算机：机架内数十个 GPU 用 scale-up 网络（NVLink/NVSwitch、UALink、灵衢总线等）紧耦合为全对等高速域；机架之间走 scale-out（以太网 / InfiniBand）。当前参考值：NVIDIA NVL72 提供 260 TB/s 级 GPU 间带宽、72 GPU 为主流机架规模；华为 CloudMatrix 384 把 scale-up 域扩到 384 NPU<span class="ev ev-v">V</span>（详见问答 Q1–Q5）。</p>
+<p>UltraEP 的硬边界（README 原文<span class="ev ev-v">V</span>）：<b>专家复制被限制在 scale-up（NVLink）域内</b>；<b>当 NVL 域小于 EP 组时，可达均衡下限略高于 1.0</b>。代码落点：</p>
+<ul>
+<li><code>csrc/utils/nvshmem.cuh:36</code>：<code>nvshmem_ptr()</code> 对 NVL 域外的 PE 直接返回 <code>nullptr</code>——副本通信半径被通信层硬性截断在域内<span class="ev ev-v">V</span>；</li>
+<li><code>csrc/kernels/config.cuh</code> 与规划 kernel 的维度常量 <code>MAX_GPUS_PER_NVL</code> / <code>kMaxNvlDomainSize</code><span class="ev ev-v">V</span>；</li>
+<li><code>ultra_ep/manager.py:114–122</code>：<b>NVL 域 ≤ 8 时强制 weight_sync 退化为 direct 模式</b>（关闭中继：机内 8 卡直发已无扇出压力）并打印提示<span class="ev ev-v">V</span>。</li>
+</ul>
+<p>推论：EP64 在 NVL72 级 RSN 上可整组进 scale-up 域，理想均衡可达；在传统 8 卡服务器上副本只能在本机摆放，均衡下限被抬高——仓库的 8×Hopper demo（§10）是缩小版验证，论文的生产叙事依赖 RSN<span class="ev ev-r">R</span>。扩大 NVL 域（如 CloudMatrix 384）降低的是均衡下限，机制本身不变<span class="ev ev-r">R</span>。</p>
 
+<h2>3. 系统总览：仓库地图与调用链</h2>
+
+<h3>3.1 仓库地图（本地实测行数）<span class="ev ev-v">V</span></h3>
+<table>
+<tr><th>文件</th><th>行数</th><th>职责</th></tr>
+<tr><td><code>ultra_ep/manager.py</code></td><td>770</td><td>Python 编排：初始化、master 指针池、<code>update_placement / weight_sync / reroute / grad_reduce</code> 四个入口、profiler 挂钩</td></tr>
+<tr><td><code>ultra_ep/config.py</code></td><td>83</td><td>全部环境变量旋钮（§6.3 表）</td></tr>
+<tr><td><code>ultra_ep/reroute.py</code> / <code>event.py</code> / <code>runtime.py</code></td><td>38 / 65 / 60</td><td>reroute 的 autograd 包装 / 事件句柄 / NVSHMEM·IPC 运行时初始化（返回 NVL 域大小）</td></tr>
+<tr><td><code>ultra_ep/profiling.py</code> + <code>load_viewer.py</code></td><td>344 + 459</td><td>负载 profiler（均衡前后逐层采集）与 HTML 可视化</td></tr>
+<tr><td><code>csrc/kernels/load_compute.cu</code></td><td>152</td><td>控制面第 1 步：精确负载采集（§5）</td></tr>
+<tr><td><code>csrc/kernels/placement.cu</code></td><td>1665</td><td>控制面第 2 步：quota 规划器（§6）</td></tr>
+<tr><td><code>csrc/kernels/weight_sync.cu</code></td><td>1037</td><td>数据面前向：master 权重 → 冗余槽位（§7）</td></tr>
+<tr><td><code>csrc/kernels/reroute.cu</code></td><td>579</td><td>逻辑路由 → 物理副本路由展开（§8）</td></tr>
+<tr><td><code>csrc/kernels/grad_reduce.cu</code></td><td>416</td><td>数据面反向：副本梯度 → master 归约（§9）</td></tr>
+<tr><td><code>csrc/utils/</code>（nvshmem.cuh、ipc_manager.cu 等）</td><td>—</td><td>NVSHMEM 对称堆 / IPC / 事件工具</td></tr>
+<tr><td><code>tests/</code></td><td>—</td><td><code>test_solving.py</code>（规划器单测）、<code>test_e2e.py</code>（端到端）</td></tr>
+</table>
+<p>架构定位（README<span class="ev ev-v">V</span>）：独立的 Python/CUDA 运行时，只管「冗余专家状态管理 + 均衡方案求解 + 专家权重/梯度传输」，与 token 通信库（DeepEP 等）和 grouped GEMM 完全解耦，框架集成只需数百行。</p>
+
+<h3>3.2 前向调用链</h3>
 <div class="mermaid">
 sequenceDiagram
-    participant F as 框架 (Megatron/SGLang)
-    participant M as UltraEP Manager
-    participant P as 控制面 placement kernel
-    participant W as 数据面 weight_sync kernel
-    participant D as token 通信 (DeepEP 等)
-    participant E as 专家计算 (grouped GEMM)
+    participant F as 训推框架（Megatron/SGLang）
+    participant M as Manager（manager.py）
+    participant P as 控制面（load_compute + placement）
+    participant W as 数据面（weight_sync kernel）
+    participant D as token 通信（DeepEP/HybridEP）
+    participant E as 专家计算（grouped GEMM）
     F->>F: router 门控 → 逻辑路由 routing_map
+    F->>M: allocate_microbatch_slot(layer) → 虚拟层号 vid
     F->>M: update_placement(vid, routing_map)
-    M->>P: 精确负载 → 二分求均衡方案
-    P-->>M: 放置 + quota（EP64 &lt;100 µs）
-    M->>W: weight_sync(vid, async)：master 权重 → 冗余 slot
-    par reroute 隐藏在传输之下
-        M->>M: reroute：逻辑路由 → 物理副本路由
-    and tile 流传输 + 两阶段中继
-        W->>W: TMA + NVSHMEM put，按 chunk 流式
+    M->>P: ① 本地负载直方图 + 跨 rank 汇聚
+    P->>P: ② quota 二分求解（放置 + 配额，EP64 &lt;100 µs）
+    M->>W: weight_sync(vid, async)：③ master 权重分发到冗余槽
+    par ④ reroute 隐藏在 ③ 传输之下
+        M->>M: reroute(vid)：展开为物理路由
+    and ③ tile 流传输 + 自适应中继
+        W->>W: TMA + NVSHMEM put，chunk 流式
     end
     W-->>M: ready-flag（epoch，按专家粒度放行）
-    M-->>F: 等待 ws_event 完成
-    F->>D: dispatch（token all-to-all，与 UltraEP 解耦）
-    D->>E: 各 rank 对物理副本做 grouped GEMM
-    E->>D: combine 送回原 rank
+    M-->>F: ⑤ 等 ws_event 完成
+    F->>D: ⑥ dispatch（token all-to-all，非 UltraEP 职责）
+    D->>E: ⑦ 各 rank 对物理副本 grouped GEMM
+    E->>D: ⑧ combine 送回原 rank
 </div>
-<p class="figcaption">图 1：前向生命周期（每 microbatch × 每层重复一次）。反向为对偶：Dgrad 前阻塞恢复副本布局（RestoreReplicaWeights），副本 Wgrad 异步归约回 master 梯度并与 router/attention 反向重叠（StartGradReduce → JoinGradReduce）。<span class="ev ev-v">V</span>（README 接口示例）</p>
+<p class="figcaption">图 1：一次前向的完整调用链（每 microbatch × 每层重复）。①–④ 全部设备驻留、无 host 同步，CUDA graph 兼容<span class="ev ev-v">V</span>（README + 源码）。</p>
 
-<p>几个使「每层每 microbatch 一次」变得便宜的工程事实<span class="ev ev-v">V</span>：</p>
-<ul>
-<li><b>显存跨层复用</b>：冗余 slot 的权重/梯度 buffer 全部 layer 共享一套，Qwen3-235B 上单个冗余 slot 的额外显存从 9.9 GB 降到 108 MB；冗余专家不维护优化器状态（梯度实时归约回 master，优化器只更新 master）。运行时零动态显存分配。</li>
-<li><b>确定性梯度归约</b>：副本→master 的 Wgrad 归约用保序累加替代 <code>atomicAdd</code>，保证浮点确定性（生产训练可复现性要求），并尽量压缩确定性实现的性能损失。</li>
-<li><b>通信 SM 可控</b>：驻留 SM 数可用环境变量调节，保证反向的通信被计算完全掩盖且不拖慢计算。</li>
-</ul>
+<h3>3.3 反向调用链</h3>
+<p>反向与前向对偶，由三个仅反向生效的 autograd 钩子编排（README 接口示例<span class="ev ev-v">V</span>）：<b>RestoreReplicaWeights</b>（Dgrad 前阻塞恢复该 microbatch 的副本布局）、<b>StartGradReduce</b>（专家反向后异步启动副本→master 的 Wgrad 归约，与 router/attention 反向重叠）、<b>JoinGradReduce</b>（层尾汇合）。权重重分发与梯度归约都可调驻留 SM 数（§9），确保被计算完全掩盖。</p>
 
-<h2>4. 控制面：quota 驱动的均衡规划器</h2>
+<h2>4. 初始化与状态布局（manager.py）</h2>
 
-<h3>4.1 形式化</h3>
-<p>记专家 $e$ 的物理副本所在 rank 集合为 $\mathcal{H}(e)$（master + 冗余副本），源 rank $r$ 发往「专家 $e$ 在 rank $t$ 上的实例」的 token 数为配额 $q_{r,e,t}$，满足<span class="ev ev-r">R</span>（论文记号，ar5iv 数学片段核对过 $q_{r,e,t}$ 与 $\mathcal{H}(e)$<span class="ev ev-v">V</span>）：</p>
+<h3>4.1 固有专家与冗余槽位</h3>
+<p>每个 EP rank 持有 $m$ 个<b>固有专家</b>（master，参数与优化器状态的属主）+ $R$ 个<b>冗余槽位</b>（replica，只存权重/梯度 buffer）。构造 <code>Manager</code> 时声明两者数目与专家尺寸（<code>expert_fc1_numel = 2·hidden·ffn</code>、<code>expert_fc2_numel = hidden·ffn</code>，支持 FP8 的 scale buffer）<span class="ev ev-v">V</span>。框架随后用 <code>construct_local_master_ptr_pool(layer_id, ...)</code> 把每层固有专家的权重/梯度指针注册进来（manager.py:359）——UltraEP 不搬运优化器状态，冗余专家的梯度在反传中实时归约回 master（§9），优化器只更新 master<span class="ev ev-v">V</span>。</p>
+
+<h3>4.2 虚拟层号：PP/VPP 下的多 microbatch 并存</h3>
+<p>流水线（PP/VPP）会让同一层有多个 microbatch 同时在飞。UltraEP 用虚拟层号隔离它们（manager.py:309–330<span class="ev ev-v">V</span>）：</p>
 <div class="formula">
-$$
-\sum_{t \in \mathcal{H}(e)} q_{r,e,t} = L_{r,e}, \qquad
-L_r = \sum_{e} L_{r,e}, \qquad
-\text{slot 约束：每 rank 冗余实例数} \le R
-$$
+$\text{vid} = \text{real\_layer} \times \text{max\_microbatches} + (\text{counter} \bmod \text{max\_microbatches})$
 </div>
-<p>目标是最小化 $\mathcal{I} = \max_r L^{\text{reroute}}_r / \overline{L^{\text{reroute}}}$，其中 $L^{\text{reroute}}_r$ 是按 $q$ 重路由后各 rank 的实际接收负载。</p>
+<p>放置表、配额表、reroute buffer 都按 vid 索引，slot 用完即循环复用；纯 DDP（<code>max_microbatches=1</code>）时 vid 退化为真实层号。master 指针池按真实层号索引，C++ 侧由 vid 反解<span class="ev ev-v">V</span>。</p>
 
-<h3>4.2 算法：阈值二分 + 耦合的配额求解</h3>
-<p>博客 3.1 的准确定义<span class="ev ev-v">V</span>：<b>quota 是「每个专家实例在重路由后会接收的负载」</b>——不是对话里理解的「给 rank 设处理上限」。直接解 quota 把「放置新副本」与「更新负载分布」耦合进同一探索步骤，避免了 EPLB（先放）/ LPLB（再路由）的两阶段割裂。整体框架是对<b>最优全局均衡阈值 $\tau$</b> 做高效二分搜索。</p>
+<h3>4.3 设备驻留的放置与配额张量</h3>
+<p>规划的全部输入输出都是 CUDA int32 张量（manager.py:162–179<span class="ev ev-v">V</span>）：<code>physical_to_logical_map</code>、<code>logical_to_physical_map [L, N, G]</code>、<code>logical_replica_counts [L, N]</code>、<code>logical_instance_quota [L, N, G]</code>（即 $q_{r,e,t}$ 表）、<code>logical_instance_quota_prefix</code>、<code>rank_quota_prefix</code>（reroute 分流用，§8）。规划结果<b>各 rank 确定性一致，无需广播</b><span class="ev ev-v">V</span>（update_placement 文档串）。</p>
 
+<h3>4.4 显存账：跨层复用</h3>
+<p>冗余槽位的权重/梯度 buffer <b>全部层共享一套</b>（每 rank $R$ 份），运行时零动态分配<span class="ev ev-v">V</span>。博客口径：Qwen3-235B 上单个冗余槽位的额外显存从 9.9 GB（不复用）降到 108 MB<span class="ev ev-v">V</span>。算术复核<span class="ev ev-r">R</span>：Qwen3-235B 隐藏 4096、专家中间维 1536，单专家 $3\times4096\times1536 \approx 18.9\text{M}$ 参数；bf16 权重 37.7 MB + fp32 梯度 75.5 MB ≈ 113 MB/槽；94 层各留一份 ≈ 10.6 GB、复用一份 ≈ 113 MB——与官方数字差 &lt;8%，量级吻合。</p>
+
+<h2>5. 控制面第 1 步：精确负载采集（load_compute.cu）</h2>
+<p>规划器的输入是<b>门控后的精确负载</b> $L_e$。三个 kernel 完成采集（load_compute.cu<span class="ev ev-v">V</span>）：</p>
+<ol>
+<li><b>本地直方图</b>：稠密路径 <code>rmap_local_sum_kernel</code> 把 $[T, N]$ 布尔路由图按列求和（warp 合并读 + 共享内存块内归约 + 全局 atomicAdd）；稀疏路径 <code>sparse_topk_histogram_kernel</code> 直接对 <code>topk_ids [T,k]</code> 做共享内存直方图——框架可走 <code>update_placement_sparse</code> 避免物化稠密路由图。</li>
+<li><b>跨 rank 可见性</b>：每 rank 的直方图写入 <b>NVSHMEM 对称堆</b>（代码注释「alloc by nvshmem」），域内各 rank 直接可读，无需集合通信搬运<span class="ev ev-v">V</span>。</li>
+<li><b>全局归约</b>：<code>reduce_per_rank_loads_kernel</code> 把 $G$ 份每 rank 负载合成全局 $L_e$。随后 profiler 的 <code>stage_pre</code> 钩子把「均衡前」负转载走（manager.py:547）。</li>
+</ol>
+
+<h2>6. 控制面第 2 步：quota 规划器（placement.cu）</h2>
+
+<h3>6.1 问题形式化</h3>
+<p>给定精确负载，求副本放置（每个冗余槽放哪个专家的副本）与配额 $q_{r,e,t}$，使重路由后的 $\mathcal{I}$ 最小。约束：每 rank 冗余实例数 $\le R$、副本与 master 同 NVL 域、master 位置固定（<code>update_placement</code> 文档串描述 legacy 路径：masters 固定、按 NVL 域贪心复制最热专家、LPT 装箱且副本不与 master 同卡；quota 路径把放置与配额耦合求解，语义等价）<span class="ev ev-v">V</span>。</p>
+
+<h3>6.2 算法：阈值二分 + 耦合求解</h3>
+<p>博客 §3.1 的定义<span class="ev ev-v">V</span>：<b>quota 是每个专家实例在重路由后会接收的负载</b>——直接解 quota，使「实例化新副本」与「更新负载分布」发生在同一探索步骤（这正是对 EPLB「先放置」/ LPLB「再路由」两阶段割裂的回应）；整体框架对最优全局均衡阈值 $\tau$ 做<b>二分搜索</b>。</p>
 <div class="mermaid">
 flowchart TD
-    A["门控后精确负载 L(r,e)"] --> B["对全局阈值 τ 二分搜索"]
-    B --> C{"可行性 Φ(τ)：Σ excess ≤ Σ slack ？"}
-    C -- 可行 --> D["向下探更小的 τ"]
-    C -- 不可行 --> E["向上抬 τ"]
-    D --> F["收敛到 τ*"]
-    E --> F
-    F --> G["导出计划：超载 rank 按专家负载降序导出<br/>slack rank 吸收，slot 占用记账 ≤ R"]
-    G --> H["quota oracle：top-k 整数可行配额"]
-    H --> I["输出：副本放置 + q(r,e,t) + 按比例切分 prefix"]
+    a["精确负载 L(e)（§5 输出）"] --> b["对全局阈值 τ 二分搜索"]
+    b --> c{"可行性 Φ(τ)：<br/>Σ excess ≤ Σ slack ？"}
+    c -- 可行 --> d["向下探更小的 τ"]
+    c -- 不可行 --> e["向上抬 τ"]
+    d --> f["收敛到 τ*"]
+    e --> f
+    f --> g["导出计划：超载 rank 按专家负载降序导出<br/>slack rank 吸收；slot 占用记账 ≤ R"]
+    g --> h["quota oracle：top-k 整数可行配额"]
+    h --> i["输出：放置 + q(r,e,t) + rank_quota_prefix"]
 </div>
-<p class="figcaption">图 2：quota 驱动规划器的求解流程（论文 §算法 + <code>placement.cu</code> 代码结构对照）。</p>
-
-<p>代码级证据（<code>csrc/kernels/placement.cu</code>，共 1665 行）<span class="ev ev-v">V</span>：</p>
+<p class="figcaption">图 2：quota 规划器求解流程（博客 §3.1 + placement.cu 结构对照）。</p>
+<p>代码级证据（placement.cu<span class="ev ev-v">V</span>）：</p>
 <ul>
-<li><b>可行性谓词</b> <code>warp_capacity_feasible()</code>（placement.cu:76）：给定阈值 <code>threshold</code>，每个 rank 计算 $\text{excess}_r = (L_r - \tau)^+$、$\text{slack}_r = (\tau - L_r)^+$，warp 归约后判定 $\sum \text{excess} \le \sum \text{slack}$ 且逐源可安置——这是标准的「水量可平」条件，对 $\tau$ 单调，故二分成立。</li>
-<li><b>导出循环</b>（placement.cu:340–478）：超载 rank 遍历 <code>sorted_experts</code>（本 rank 专家按负载降序），把过剩负载逐专家导出到有 slack 的 rank，同时用共享内存数组 <code>smem_warp_slots_used[QUOTA_SOLVER_WARPS][MAX_GPUS_PER_NVL]</code> 记账目标 rank 的 slot 占用——<b>放置与配额在同一个循环里同时确定</b>，这就是「耦合」的落地。</li>
-<li><b>quota oracle</b>：<code>QUOTA_ORACLE_MAX_BATCH_K</code> 与 <code>sel_quota[]</code>（placement.cu:250–332）处理 top-k 路由下的整数量化——配额必须能被真实 token 路由凑出来，不是任意实数<span class="ev ev-r">R</span>（标识符与逻辑推断）。</li>
-<li><b>比例切分</b>：<code>build_rank_quota_prefix()</code>（placement.cu:669）按各副本 quota 占比对源 rank 的 token 做带余数处理的成比例分配，生成 reroute 用的前缀索引。</li>
-<li><b>寄存器化</b>：<code>use_register_state = (G &lt;= 64)</code>——EP64 以内每个 lane 用 2 个寄存器跟踪 2 个 rank 的 slack/slot 状态，配合 warp shuffle 归约，求解在 EP64 时仍 &lt;100 µs<span class="ev ev-v">V</span>（&lt;100 µs 数字来自博客；寄存器化来自代码）。</li>
+<li><b>可行性谓词</b> <code>warp_capacity_feasible()</code>（placement.cu:76）：给定 $\tau$，每 rank 算 $\text{excess}_r = (L_r - \tau)^+$（超载量）、$\text{slack}_r = (\tau - L_r)^+$（可吸收量），warp 归约判定 $\sum_r \text{excess}_r \le \sum_r \text{slack}_r$ 且逐源可安置。该谓词对 $\tau$ 单调，二分成立<span class="ev ev-r">R</span>。</li>
+<li><b>导出循环</b>（placement.cu:340–478）：超载 rank 遍历本 rank 专家（按负载降序的 <code>sorted_experts</code>），把过剩负载逐专家导出到有 slack 的 rank；共享内存数组 <code>smem_warp_slots_used[QUOTA_SOLVER_WARPS][MAX_GPUS_PER_NVL]</code> 实时记账目标 rank 的槽位占用——<b>放置与配额在同一个循环里同时确定</b>。</li>
+<li><b>quota oracle</b>：<code>QUOTA_ORACLE_MAX_BATCH_K</code> 与 <code>sel_quota[]</code>（placement.cu:250–332）处理 top-k 整数量化——配额必须能被真实 token 路由凑出来，不是任意实数<span class="ev ev-r">R</span>；精度由 <code>ULTRA_EP_QUOTA_ORACLE_EPS</code>（默认 0.01）控制<span class="ev ev-v">V</span>。</li>
+<li><b>寄存器化</b>：<code>use_register_state = (G ≤ 64)</code>——EP64 以内每个 lane 用 2 个寄存器跟踪 2 个 rank 的状态，配 warp shuffle 归约；规划在 EP64 下 &lt;100 µs<span class="ev ev-v">V</span>（&lt;100 µs 来自博客，寄存器化来自代码）。</li>
 </ul>
 
-<h2>5. 数据面：persistent tile streaming 与两阶段中继</h2>
+<h3>6.3 配置旋钮（config.py，默认值）<span class="ev ev-v">V</span></h3>
+<table>
+<tr><th>环境变量</th><th>默认</th><th>含义</th></tr>
+<tr><td><code>ULTRA_EP_BALANCE_THRESHOLD</code></td><td>1.0</td><td>均衡目标（$\tau$ 的搜索目标倍率）</td></tr>
+<tr><td><code>ULTRA_EP_QUOTA_LOCALITY_AWARE</code></td><td>true</td><td>复制优先本 NVL 域</td></tr>
+<tr><td><code>ULTRA_EP_QUOTA_MIN_TOKENS_PER_REPLICA</code></td><td>1024</td><td>开一个副本至少要吸收的 token 数（防碎片副本）</td></tr>
+<tr><td><code>ULTRA_EP_QUOTA_ALLOW_ZERO_MASTER_QUOTA</code></td><td>false</td><td>是否允许 master 实例配额为 0（对应 placement.cu 的 <code>keep_on_master</code> 分支）</td></tr>
+<tr><td><code>ULTRA_EP_QUOTA_ORACLE_EPS</code></td><td>0.01</td><td>oracle 求解精度</td></tr>
+<tr><td><code>ULTRA_EP_QUOTA_KERNEL_STAGE</code></td><td>1</td><td>规划 kernel 阶段选择（0/1）</td></tr>
+<tr><td><code>ULTRA_EP_QUOTA_REROUTE_INTERLEAVE</code></td><td>true</td><td>规划与重路由交错执行</td></tr>
+<tr><td><code>ULTRA_EP_WEIGHT_SYNC_PLAN_MODE</code></td><td>adaptive</td><td>权重分发计划：direct / adaptive / force_relay（§7.2）</td></tr>
+<tr><td><code>ULTRA_EP_WEIGHT_SYNC_RELAY_MIN_REPLICAS</code></td><td>4</td><td>副本数低于此值不开中继</td></tr>
+<tr><td><code>ULTRA_EP_WEIGHT_SYNC_RELAY_MAX_RELAYS</code></td><td>8</td><td>中继数上限</td></tr>
+<tr><td><code>ULTRA_EP_WEIGHT_SYNC_RELAY_MIN_FANOUT_GAIN</code></td><td>2</td><td>扇出收益门槛</td></tr>
+<tr><td><code>ULTRA_EP_GRAD_REDUCE_NUM_SMS</code></td><td>42（偶数）</td><td>梯度归约驻留 SM 数</td></tr>
+<tr><td><code>ULTRA_EP_GRAD_REDUCE_DETERMINISTIC</code></td><td>true</td><td>确定性归约<b>默认开启</b>（§9）</td></tr>
+</table>
 
-<h3>5.1 任务模型与 tile 流水线</h3>
-<p><code>weight_sync.cu</code>（1037 行）的设计注释<span class="ev ev-v">V</span>：一个 task = <b>单源多目的</b>的一份权重分片（某专家 fc1/fc2）传输；源可以是本地 master（stage 1 直发）或本地中继缓冲（stage 2 转发）。每个 tile 的执行节拍：</p>
+<h2>7. 数据面前向：weight_sync（weight_sync.cu）</h2>
+
+<h3>7.1 任务模型与 tile 流水线</h3>
+<p>规划输出转化为「单源多目的」的传输任务：一个 task = 把某专家的一份权重分片（fc1 或 fc2）从 master rank 发到它的若干副本 rank。设计注释（weight_sync.cu:577–598<span class="ev ev-v">V</span>）：</p>
 <div class="formula">
-<b>TMA Load tile → SMEM（仅一次）→ 向 N 个副本地址发 N 路 TMA Store</b>；双缓冲使 Load[i+1] 与 Store[i] 重叠。
+<b>每 tile：TMA Load tile → SMEM（仅一次）→ 向 N 个副本地址发 N 路 TMA Store</b>；双缓冲使 Load[i+1] 与 Store[i] 重叠。
 </div>
-<p>持久化 kernel + 原子计数：CTA 通过 <code>stage1/2_global_tile_counter</code> 抢 tile，多个 CTA 并行处理同一 task 的不同 tile，over-launch 由持久化 kernel 自行消化<span class="ev ev-v">V</span>。通信建立在 NVSHMEM 对称堆上（内存语义 put；<code>nvshmem_ptr</code> 域外返回 nullptr，跨域另有 RDMA team<span class="ev ev-v">V</span>）。</p>
+<p>持久化 kernel：CTA 通过 <code>stage1/2_global_tile_counter</code> 原子抢 tile，多 CTA 并行处理同一 task 的不同 tile，over-launch 由持久 kernel 自消化。通信走 NVSHMEM 对称堆（内存语义 put），权重或梯度切 tile、共享内存 double-buffering、TMA 异步搬运<span class="ev ev-v">V</span>（博客 §3.2）。</p>
 
-<h3>5.2 两阶段中继树：精确的启发式</h3>
-<p>少数热专家可能有众多副本，master rank 的出口多播流量会成为新瓶颈（负载极不均衡时甚至抵消均衡收益）<span class="ev ev-v">V</span>（博客 3.2）。代码里的具体决策规则（weight_sync.cu:129–190）<span class="ev ev-v">V</span>：</p>
+<h3>7.2 三档分发计划与中继决策</h3>
+<p>weight_sync 有三档计划（manager.py:506<span class="ev ev-v">V</span>）：<code>direct</code>（源直发所有副本）、<code>adaptive</code>（默认，按扇出收益自动选择中继）、<code>force_relay</code>（强制中继）；NVL 域 ≤ 8 强制 direct（§2）。中继决策的精确启发式（weight_sync.cu:129–190<span class="ev ev-v">V</span>）：</p>
 <ul>
-<li>中继数 <code>relay_count = ⌊√num_replicas⌋</code>，受 <code>weight_sync_relay_max_relays</code> 封顶，且 <code>relay_count ≤ num_replicas − 1</code>；</li>
-<li>启用条件是<b>扇出收益判定</b>：<code>num_replicas − max(直发扇出, 子节点扇出) ≥ min_fanout_gain</code>，其中子节点扇出 = <code>⌈(num_replicas − relay_count) / relay_count⌉</code>；副本数低于 <code>min_replicas</code> 不值得开中继；</li>
+<li>中继数 <code>relay_count = ⌊√num_replicas⌋</code>，受 <code>MAX_RELAYS=8</code> 封顶，且 ≤ 副本数 − 1；</li>
+<li>启用条件（扇出收益判定）：副本数 − max(直发扇出, 子节点扇出) ≥ 2，其中子节点扇出 = ⌈(副本数 − 中继数) / 中继数⌉；副本数 &lt; 4 不开中继；</li>
 <li>中继树<b>每次 weight_sync 按当前流量重建</b>，由低流量 rank（恰好是没被选作副本的）分摊中转<span class="ev ev-v">V</span>（博客）。</li>
 </ul>
-
 <div class="mermaid">
 flowchart LR
     subgraph S1["Stage 1：master → 中继（chunk 流式）"]
@@ -242,49 +307,169 @@ flowchart LR
     end
     S1 -.-> S2
 </div>
-<p class="figcaption">图 3：博客配图的中继示例（1 个源、9 个副本、3 个中继，⌊√9⌋=3）：中继收到一个 chunk（若干连续 tile）即开始向下转发，不等整个专家传完——避免全局 barrier 与通信 bubble。<span class="ev ev-v">V</span></p>
+<p class="figcaption">图 3：博客配图示例（1 源、9 副本、3 中继，⌊√9⌋=3）。中继收到一个 chunk（若干连续 tile）即向下转发，不等整个专家传完——避免全局 barrier 与通信 bubble<span class="ev ev-v">V</span>。</p>
 
-<h3>5.3 就绪通知：epoch ready-flag</h3>
-<p>task 完成时向各目标 rank 的 ready-flag（带 epoch 计数）发信号（<code>finalize_completed_weight_sync_task</code>，weight_sync.cu:644 起）<span class="ev ev-v">V</span>，接收端<b>按专家粒度</b>放行后续 token dispatch，不必等全部权重到位——没有全局 barrier。这与 §6 讨论的「元数据随数据内联」是同一设计哲学。</p>
+<h3>7.3 就绪通知</h3>
+<p>task 完成时向各目标 rank 的 ready-flag（带 epoch 计数）发信号（<code>finalize_completed_weight_sync_task</code>，weight_sync.cu:644 起），接收端<b>按专家粒度</b>放行后续 token dispatch，不必等全部权重到位——全程无全局 barrier、无 host 同步<span class="ev ev-v">V</span>。端到端开销：EP64 实测关键路径暴露 &lt;300 µs，占步时 1–2%<span class="ev ev-v">V</span>（README + 博客 nsys 切片）。</p>
 
-<h2>6. 专题：dispatch/combine 如何避免「全量元数据 allgather」</h2>
-<p>这是所对齐对话末尾的问题：token 的 dispatch/combine 具体怎么做，才能避免朴素 all-to-allv 路径里「提前 allgather 全量元数据」的开销？分四层回答。先说清楚：UltraEP 本身不实现 token 通信（与 DeepEP 解耦），本节以 DeepEP 为代表讲 token 线，UltraEP 的权重线用的是同族技术。</p>
-
-<h3>6.1 先厘清：all-to-allv 到底需要什么元数据</h3>
-<p>逻辑上，变长 all-to-all 只需要<b>每对 (src, dst) 的计数矩阵</b>（$G \times G$ 个整数）——接收端据此算各源段偏移。它<b>不需要</b>「全量元数据」（每 token 的路由表，$O(T \cdot k)$）。「提前 allgather 全量信息」是朴素实现把这件事做坏了的两种形态<span class="ev ev-r">R</span>：</p>
-<ol>
-<li><b>全量复制型</b>：早期框架的 allgather dispatcher 把 token 或路由表广播给所有 rank（$T \cdot k$ 规模），带宽和显存都被放大 $G$ 倍；</li>
-<li><b>host 往返型</b>：用 <code>allgather</code>/小 all-to-all 把计数搬到 CPU → host 上算偏移并分配接收张量 → 再调 <code>all_to_all_single</code> / MPI_Alltoallv。代价：D2H/H2D 往返 + 流同步；接收形状动态 → CUDA graph 无法捕获；通用集合通信库不感知 NVLink/RDMA 非对称域拓扑；失衡偏斜下热点链路拥塞（生产中 all-to-all 可占步时 20–60%<span class="ev ev-r">R</span>，对话引昇腾社区文章的口径）。</li>
-</ol>
-
-<h3>6.2 DeepEP normal 模式（训练 / prefill）：计数设备驻留 + 域间转发</h3>
-<p>DeepEP 把「布局」与「数据」分成两个阶段，并把两者的元数据都留在设备上<span class="ev ev-v">V</span>（V1 README API）：</p>
+<h2>8. reroute：逻辑路由 → 物理路由（reroute.cu）</h2>
+<p>规划改变了「哪个专家在哪些 rank 有实例」，token 的路由表必须相应展开。reroute 有两套输入形态<span class="ev ev-v">V</span>：</p>
 <ul>
-<li><b>布局阶段</b>：<code>get_dispatch_layout(topk_idx, num_experts)</code> 在设备上产出 <code>num_tokens_per_rank</code>、<code>num_tokens_per_rdma_rank</code>、<code>num_tokens_per_expert</code>、<code>is_token_in_rank</code>——交换的是<b>计数向量（充分统计量）</b>而非路由表<span class="ev ev-r">R</span>（API 形态一手核对；「计数经 NVLink/RDMA buffer 设备侧交换」为对实现结构的推断）。</li>
-<li><b>数据阶段</b>：<code>dispatch()</code> 按「NVLink 域内 put + RDMA 域间转发」执行非对称域带宽转发（README: "forwarding data from NVLink domain to RDMA domain"），buffer channel 队列 + 锁做流控，SM 数量可配（<code>set_num_sms</code>）<span class="ev ev-v">V</span>。</li>
-<li><b>combine 零元数据</b>：直接复用 dispatch 返回的 <code>handle</code>，反向搬运即可<span class="ev ev-v">V</span>。</li>
+<li><b>稠密</b>（<code>reroute(vid, probs, routing_map)</code>）：两遍 kernel——先 <code>reroute_forward_count_kernel</code> 按 (expert, tile) 用 <code>__ballot_sync + __popc</code> 数活跃 token，再 <code>dense_{rr,quota}_reroute_scatter_kernel</code> 做 tile 计数前缀和 + 散射，输出物理版的 probs 与 routing_map；反向由 <code>reroute_backward_gather_kernel</code> 按展开表把梯度聚合回逻辑空间。</li>
+<li><b>稀疏</b>（<code>reroute_sparse(vid, topk_ids)</code>，就地改写）：每个 topk 条目经每专家原子计数器拿到<b>本 rank 内序号</b> <code>local_ordinal</code>，然后选副本——
+  <ul>
+  <li>round-robin 模式：副本序号 = ordinal mod C（C 为该专家副本数）；</li>
+  <li><b>quota 模式</b>（默认）：<code>sparse_quota_replica_index</code>（reroute.cu:441）用 <code>rank_quota_prefix</code> 前缀数组线性扫描——序号落在第 $j$ 个前缀区间就发第 $j$ 个副本。这逐 token 实现了规划器的配额切分：前 $q_{r,e,t_1}$ 个 token 发副本 1，其后 $q_{r,e,t_2}-q_{r,e,t_1}$ 个发副本 2……<span class="ev ev-v">V</span></li>
+  </ul></li>
 </ul>
-<p><b>诚实的代价</b>：normal 模式仍有一次 host 同步——README 原文注释「<i>the CPU will wait for GPU's signal to arrive, so this is not compatible with CUDA graph. Unless you specify <code>num_worst_tokens</code>, but this flag is for intranode only</i>」<span class="ev ev-v">V</span>。原因：接收张量按<b>实际</b>计数动态分配，必须在 host 上拿到尺寸。训练/prefill 本来不用 CUDA graph，这个取舍成立；而 <code>num_worst_tokens</code>（最坏尺寸分配）就是消灭这次同步的开关。官方在 issue #39 还自评：队列式 buffer 省显存但复杂且可能死锁，固定最大容量 buffer 更简单更快<span class="ev ev-v">V</span>。</p>
+<p>时序上 reroute 与 weight_sync 并发（<code>QUOTA_REROUTE_INTERLEAVE=true</code>），基本被权重传输掩盖<span class="ev ev-v">V</span>。profiler 的 <code>record_post</code> 钩子随后用 Triton kernel 从配额表重建「均衡后」物理负载，供前后对比（manager.py:332–357）。</p>
 
-<h3>6.3 DeepEP low-latency 模式（decode）：元数据彻底并入数据面</h3>
-<p>解码模式把「同步」从协议里整体拿掉<span class="ev ev-v">V</span>（V1 README）：</p>
+<h2>9. 反向与确定性梯度归约（grad_reduce.cu）</h2>
+<p>副本的 Wgrad 必须归约回 master 的 fp32 梯度 buffer（<code>grad_dtype</code> 仅支持 fp32，manager.py:66<span class="ev ev-v">V</span>）。两条路径（grad_reduce.cu<span class="ev ev-v">V</span>）：</p>
 <ul>
-<li><b>固定容量</b>：<code>low_latency_dispatch(hidden, topk_idx, num_max_dispatch_tokens_per_rank, ...)</code> 的接收 buffer 按<b>最坏 token 数</b>预分配，形状恒定；返回的 <code>recv_expert_count</code> 是<b>设备张量</b>（供 grouped GEMM 在设备上消费）——注释明言「compatible with CUDA graph (but you may restore some buffer status once you replay)」。</li>
-<li><b>纯 RDMA + 每专家 QP</b>：<code>num_qps_per_rank = num_experts // group.size()</code>，数据经预注册 buffer 直写对端。</li>
-<li><b>零 SM 重叠</b>：<code>return_recv_hook=True</code> 时，数据接收由 RDMA 引擎在后台推进，调用 <code>hook()</code> 才真正可见——用于双批重叠（TBO）而<b>不占用任何 SM</b>。</li>
-<li>没有独立的元数据阶段：发送端把 token 连同必要头部直接写入对端固定槽位，接收端扫描/计数即得布局——「元数据随数据内联（in-band）」。</li>
+<li><b>快速路径</b>：<code>grad_reduce_kernel</code> 直接对 master 梯度做 <code>atomicAdd</code>——无序浮点累加，快但每次运行的求和顺序不同、结果可能有浮点差异；</li>
+<li><b>确定性路径</b>（<b>默认开启</b>，<code>ULTRA_EP_GRAD_REDUCE_DETERMINISTIC=1</code>）：<code>grad_reduce_deterministic_kernel</code> 把 tile 再切半为 subtile，在共享内存中<b>按固定顺序累加</b>后写回，保证浮点确定性——生产训练可复现性的硬要求；代价由精细的 SM 占用与共享内存 footprint 控制（必须偶数个驻留 SM，默认 42）<span class="ev ev-v">V</span>。</li>
 </ul>
-<p>顺带一提 V2（当前 main）：decode 路径提供 <code>cached_handle</code> 模式，路由不变时复用布局、「avoiding redundant CPU synchronization」<span class="ev ev-v">V</span>——把「何时需要元数据」进一步压缩到「布局真变了才算数」。</p>
+<p>归约与 router/attention 反向重叠（§3.3）；注意开源 Megatron patch 中，控制权重分发与 Wgrad 计算重叠需要侵入 grouped GEMM 引入同步，因此被放在 Wgrad 之前满 SM 执行（博客脚注 1<span class="ev ev-v">V</span>）。</p>
 
-<h3>6.4 一般化：三条设计原则</h3>
+<h2>10. 集成、实验与数字核对</h2>
+
+<h3>10.1 集成形态</h3>
+<ul>
+<li>参考集成：<a href="https://github.com/Dots-Infra/Megatron-LM-UltraEP">Megatron-LM-UltraEP</a>；token 通信用 <b>HybridEP</b>（DeepEP-V1 的优化分支，commit <code>e0a5b1d9</code>；DeepEP-V2 支持测试中）<span class="ev ev-v">V</span>（examples/README.md）——再次印证 UltraEP 与 token 线解耦。</li>
+<li><b>8×Hopper demo</b>：32 个 Qwen3-235B 尺寸专家、top-k=4、20 层的演示 MoE，配 RedPajama 1B token 真实预处理数据；README 明言 demo 仅为缩小演示，完整收益要靠大 EP（每 rank 专家少、失衡更难自然摊平）<span class="ev ev-v">V</span>。环境：NGC PyTorch 25.10 + NVSHMEM 3.4.5。</li>
+<li>SGLang 推理集成 experimental<span class="ev ev-v">V</span>。</li>
+</ul>
+
+<h3>10.2 数字核对表</h3>
 <table>
-<tr><th>原则</th><th>朴素 alltoallv 路径</th><th>现代 dispatch/combine</th></tr>
-<tr><td>① 只交换充分统计量</td><td>allgather 路由表 / token 副本，$O(T{\cdot}k)$</td><td>只交换每对计数，$O(G)$；combine 连计数都不换（复用 handle）</td></tr>
-<tr><td>② 元数据设备驻留 / 随数据内联</td><td>计数往返 CPU，host 分配 + 流同步</td><td>设备侧交换计数（normal）或头部随数据写入固定槽位（low-latency），零 host 参与</td></tr>
-<tr><td>③ 最坏尺寸 + 固定地址</td><td>按实际计数动态分配 → 不可捕获 CUDA graph</td><td>固定容量 buffer + 设备张量计数 → graph 兼容；代价是预留显存（issue #39 讨论的取舍）</td></tr>
+<tr><th>指标</th><th>数值</th><th>口径 / 出处</th><th>证据</th></tr>
+<tr><td>force-balanced 理想吞吐（平均）</td><td><b>94.3%</b></td><td>训练 + prefill 总平均（论文摘要）</td><td><span class="ev ev-v">V</span></td></tr>
+<tr><td>训练理想吞吐</td><td>94.6%，较 Megatron-LM <b>+42%</b></td><td>EP64，外层 DP/PP（博客）</td><td><span class="ev ev-v">V</span></td></tr>
+<tr><td>prefill 理想吞吐</td><td>90–97%，较 SGLang <b>1.56×</b></td><td>EP40/EP64；LongBench / Codeforces / DAPO-Math-17K（博客）</td><td><span class="ev ev-v">V</span></td></tr>
+<tr><td>相对无均衡基线提升</td><td><b>1.49×</b></td><td>论文摘要「over no-balancing」；≈ 训练 1.42× 与 prefill 1.56× 的均值<span class="ev ev-r">R</span></td><td><span class="ev ev-v">V</span></td></tr>
+<tr><td>跨 rank 不均衡度</td><td>1.30–4.01 → <b>1.01–1.04</b></td><td>最大:平均（论文 + 博客）</td><td><span class="ev ev-v">V</span></td></tr>
+<tr><td>关键路径暴露开销</td><td>&lt;<b>300 µs</b>（1–2% 步时）；规划 &lt;100 µs @EP64</td><td>README + 博客 nsys</td><td><span class="ev ev-v">V</span></td></tr>
+<tr><td>冗余槽显存（Qwen3-235B）</td><td>9.9 GB → <b>108 MB</b></td><td>跨层复用前后（博客）；算术复核 ≈10.6 GB / 113 MB<span class="ev ev-r">R</span></td><td><span class="ev ev-v">V</span></td></tr>
+<tr><td>生产部署</td><td>288B MoE 完整预训练 ≥92% 理想性能</td><td>v1.0.0（2026-07-15）已上生产（README + 博客）</td><td><span class="ev ev-v">V</span></td></tr>
+<tr><td>评测规模</td><td>最多 <b>256 GPU</b>；<b>106B–671B</b></td><td>GLM4.5-106B / Qwen3-235B / DeepSeek-V3；先完整预训练再取中后期 checkpoint 续训对比（博客）</td><td><span class="ev ev-v">V</span></td></tr>
+<tr><td>基线</td><td>Megatron-LM / SGLang + EPLB / LPLB</td><td>两者因历史负载滞后、复制预算受限始终落后（博客）</td><td><span class="ev ev-v">V</span></td></tr>
+<tr><td>与理想差距的来源</td><td>非残余失衡</td><td>实际路由下通信/计算对各专家负载的非一致性 + 冗余控制开销（博客）——rank 级摊平 ≠ 专家级均衡</td><td><span class="ev ev-v">V</span></td></tr>
 </table>
-<p>UltraEP 在<b>权重线</b>上是同族实现：NVSHMEM 单侧 put + epoch ready-flag（§5.3），无全局 barrier、无 host 同步、CUDA graph 兼容。并且两条线互相成就：UltraEP 把负载摊平后，「DeepEP token 接收 buffer 的 worst-case 分配」也随之下调<span class="ev ev-v">V</span>（博客设计原则一节）——均衡得越好，最坏尺寸浪费的显存越少。</p>
 
+<h2>11. 版本史与批判性讨论</h2>
+<ul>
+<li><b>版本史</b><span class="ev ev-v">V</span>（arXiv 版本页）：v1（2026-06-02）与 v2（2026-06-05）均 Withdrawn，v3（2026-06-18）为当前版；开源 v1.0.0 发布于 2026-07-15。署名 13 人（一作 Xinming Wei，北大，于小红书实习期间完成），单位含北大、小红书、上海 AI Lab、独立研究者。</li>
+<li><b>TEMPO 的批评</b>（arXiv:2608.13057）：将 UltraEP 与 LLEP、TAOT 归为 training-side balancers，认为其难以在 serving 栈上端到端复现（原文片段截断，语义待核<span class="ev ev-u">U</span>）；旁证：SGLang 集成 experimental<span class="ev ev-v">V</span>。</li>
+<li><b>为什么只覆盖 prefill 不覆盖 decode</b>：论文与博客均未明说。合理解释<span class="ev ev-r">R</span>：decode 每步 token 极少（百级），每层复制 + 重路由的相对开销会远超 300 µs 量级收益；且逐层动态规划与 decode 必开的 CUDA graph 静态控制流冲突；decode 的失衡另有静态方案兜底（EPLB / MoonEP，见 Q13–Q14）。</li>
+<li><b>带宽账（为什么必须限定 scale-up 域）</b><span class="ev ev-r">R</span>：以 Qwen3-235B 单专家 ≈ 37.7 MB（bf16）计，EP64 每层物化 R 个副本的跨 rank 传输在 GB/s × 百微秒 ≈ 数十 MB 量级，只有 NVLink 域（≥100 GB/s/rank）装得进 300 µs 预算；RDMA 域单卡 ~50 GB/s 且多 rank 共享，必然爆预算——与 §2 的硬约束互为因果。</li>
+<li><b>生态位</b>：博客结尾把后训练（RL rollout 的强动态负载，引 ReLibra, arXiv:2605.08639）列为下一战场，主张做 MoE RL 的统一负载调节层<span class="ev ev-v">V</span>——与 MoonEP 的 decode/推理叙事正面相遇（见姊妹篇对比矩阵）。</li>
+</ul>
+
+<hr>
+
+<h1 style="font-size:1.6em">Part II 问题详解</h1>
+<blockquote>
+<p>以下问题按阅读时序分三组：概念组（Q1–Q7，来自一篇 DeepSeek 论文对话）、通信组（Q8–Q10）、均衡与部署组（Q11–Q16，来自本笔记的讨论）。每个回答自含；公式中的符号在公式下方当场定义，或引用 §0.2 符号表。</p>
+</blockquote>
+
+<h2>概念组：RSN 与超节点</h2>
+
+<div class="qa">
+<h3>Q1 机架级节点（rack-scale nodes）是什么？</h3>
+<p>一种架构理念：<b>把整个机架当作一台计算机，而不是一群独立服务器的集合</b>。传统数据中心以单台服务器（如 8 卡 GPU 机）为扩容单元，RSN 以整个机架为单元。关键在机架内部的 <b>scale-up 互联</b>：数十个 GPU 通过 NVLink/NVSwitch（NVIDIA）、UALink（AMD）、灵衢总线（华为）等技术组成全对等的高速域，带宽比机架间的 scale-out 网络（以太网/InfiniBand）高 1–2 个数量级——例如 NVL72 机架提供 260 TB/s 级 GPU 间带宽，而跨机链路通常为数百 GB/s 级<span class="ev ev-v">V</span>。对 MoE 的意义：专家并行的 token all-to-all 与 UltraEP 的专家复制通信都发生在机架内部的高速域里，通信瓶颈大幅降低。</p>
+</div>
+
+<div class="qa">
+<h3>Q2 一个机架有多少 GPU？</h3>
+<p>没有固定值，取决于厂商与产品代际<span class="ev ev-v">V</span>：</p>
+<table>
+<tr><th>方案</th><th>GPU 数</th><th>备注</th></tr>
+<tr><td>NVIDIA GB200 / Vera Rubin NVL72</td><td><b>72</b></td><td>当前主流；配 36 颗 Grace/Vera CPU</td></tr>
+<tr><td>AMD Helios</td><td><b>72</b></td><td>Instinct MI455X，对标 NVL72</td></tr>
+<tr><td>Dell PowerEdge XE8812 / XE8712</td><td>最高 <b>144</b></td><td>特定 ORv3 / IR7000 机架配置</td></tr>
+<tr><td>其他</td><td>64 / 128</td><td>GIGAPOD 64× MI355X；128× MI350X 展示</td></tr>
+</table>
+<p>72 成为主流是工程折中：它是 8 的倍数便于模块化（NVL72 = 18 个计算托盘 × 4 GPU），且在机架功耗（120–140 kW）与散热约束下最大化紧耦合规模。</p>
+</div>
+
+<div class="qa">
+<h3>Q3 华为的 384 节点是啥？</h3>
+<p>指 <b>CloudMatrix 384 超节点</b>（硬件产品名 Atlas 900 A3 SuperPoD）<span class="ev ev-v">V</span>：由 <b>12 个计算柜 + 4 个总线设备柜</b>共 16 个机柜组成，用自研<b>灵衢（UnifiedBus）总线</b>把 <b>384 颗昇腾 NPU</b>（配 192 颗鲲鹏 920 CPU）连成全对等域——统一编址内存 48 TB、BF16 算力约 300 PFLOPS、NPU 间 D2D 带宽双向 784 GB/s、总线单跳时延约 200 ns。对标 NVL72：算力约为其 1.7 倍，功耗约 559 kW（NVL72 约 120 kW 的 4 倍多）——「用规模换性能」路线。</p>
+</div>
+
+<div class="qa">
+<h3>Q4 384 不是 scale-up + scale-out 吗？</h3>
+<p>CloudMatrix 384 本身是<b>两层架构系统</b>，但两层分界不在「384 内部」<span class="ev ev-v">V</span>：</p>
+<ul>
+<li><b>超节点内（384 卡）= scale-up</b>：灵衢/UB 总线、全对等、统一编址、内存语义，带宽比传统以太网高 15 倍、时延低 10 倍；</li>
+<li><b>超节点之间 = scale-out</b>：参数面 RDMA 交换机互联，最大可扩展到 16 万卡集群。</li>
+</ul>
+<p>设计逻辑：scale-up 域扛「快」（通信密集、延迟敏感的 MoE EP、token all-to-all），scale-out 域管「大」（数据并行、流水线并行等）。</p>
+</div>
+
+<div class="qa">
+<h3>Q5 超节点内相当于 scale-up 吗？</h3>
+<p><b>相当于，但更准确的说法是「scale-up 域的跨机柜扩展」</b>。超节点内互联具备 scale-up 的全部特征：极高带宽、微秒级以下时延、全对等拓扑、统一编址/内存直接访问、逻辑上像一台计算机、不经传统网络<span class="ev ev-v">V</span>。区别仅在物理形态：传统 scale-up 指单机箱内（8 卡服务器 NVLink）或单机架内（NVL72 NVSwitch 域），华为把它推到了跨 12+4 机柜。对 UltraEP 的意义：更大的 NVL 域 = 更低的均衡下限（见 Q15 的第三环）。</p>
+</div>
+
+<h2>论文语句组</h2>
+
+<div class="qa">
+<h3>Q6 「UltraEP 通过高效的配额驱动规划器主动响应门控后的负载，并利用 RSN 原生的持久化 Tile 流传输和基于中继的扇出缓解技术，来执行由此产生的不规则专家状态迁移」——这句话怎么理解？</h3>
+<p>逐词拆解（机制详见正文 §5–§7）：</p>
+<ul>
+<li><b>主动响应门控后的负载</b>：门控（gating/router）完成后，每个 token 选了哪些专家已确定，系统立刻统计出精确负载 $L_e$（$e$ 遍历所有专家）——不等历史统计、不靠预测。「主动（eagerly）」强调这在关键路径上即时发生。</li>
+<li><b>配额驱动规划器（quota-driven planner）</b>：直接求解「每个专家实例将接收多少 token」（配额 $q_{r,e,t}$），把「在哪放副本」与「token 怎么分流」耦合进同一次阈值二分求解（§6）。注意两个常见误读：quota <b>不是</b>「给 rank 设处理上限」，而是实例级的接收量；规划输出的是复制方案而非迁移方案。</li>
+<li><b>不规则专家状态迁移</b>：「不规则」指传输模式每层每 microbatch 都变（哪些专家要复制、复制几份、发往哪些 rank 都不同），无法用规则的集合通信表达。「迁移」实为<b>复制物化</b>——把 master 权重分发到各 rank 预留的冗余槽位（跨层复用的 buffer），反向再恢复与归约（§4、§9）。</li>
+<li><b>RSN 原生持久化 Tile 流传输</b>：把权重切成 tile，用持久化 kernel + TMA + 共享内存双缓冲 + NVSHMEM 内存语义流式搬运，吃满 scale-up 域带宽（§7.1）。</li>
+<li><b>基于中继的扇出缓解</b>：热专家副本很多时，源 rank 直发会成为出口瓶颈；用按流量实时构建的两阶段中继树分摊（§7.2）。</li>
+</ul>
+</div>
+
+<div class="qa">
+<h3>Q7 「跨秩（inter-rank）不均衡度」是什么意思？</h3>
+<p><b>「秩」即 rank</b>——分布式框架里每个参与计算进程的编号（0, 1, 2, …，通常一卡一进程），与数学里的矩阵秩无关。跨秩不均衡度衡量不同 rank 之间负载差异：</p>
+<div class="formula">
+$$
+\mathcal{I} = \frac{\max_r L_r}{\bar{L}}, \qquad
+\bar{L} = \frac{1}{G}\sum_r L_r
+$$
+</div>
+<p>其中 $r$ 遍历 EP 组内所有 rank，$L_r$ 是 rank $r$ 实际接收的 token 数，$G$ 是 rank 总数，$\bar{L}$ 是均值。$\mathcal{I}=1$ 为完美均衡，越大越失衡。UltraEP 把它从 1.30–4.01（最忙 rank 最多扛 4 倍于平均的负载）压到 1.01–1.04（只多 1–4%）。它重要是因为同步语义：每层要等所有 rank 算完，$\mathcal{I}$ 直接决定吞吐损失 $\approx 1 - 1/\mathcal{I}$（Q11 详解）。</p>
+</div>
+
+<h2>通信组：all-to-all、dispatch/combine 与元数据</h2>
+
+<div class="qa">
+<h3>Q8 论文里的 all-to-all 实际上是不是 dispatch + combine？</h3>
+<p><b>是（在 MoE EP 语境下）</b>。Token all-to-all 由一对方向相反的通信组成：</p>
+<ul>
+<li><b>Dispatch</b>：门控后，每个 rank 把 token 按 routing map 发往目标专家所在的 rank——每个 rank 都可能向任意其他 rank 发送，构成 all-to-all；</li>
+<li><b>Combine</b>：专家算完后，把输出送回 token 原始所在的 rank——同样构成 all-to-all。</li>
+</ul>
+<p>两点补充：① 失衡会让 dispatch 的「接收热点」和 combine 的「发送热点」落在同一批 rank 上，这就是均衡与通信瓶颈的耦合（§1.1）；② <b>UltraEP 不实现这对通信</b>——它与 token 通信库解耦，集成中用 DeepEP/HybridEP（§10.1），均衡的作用是间接的：token 分布摊平后 all-to-all 的偏斜自然下降。</p>
+</div>
+
+<div class="qa">
+<h3>Q9 dispatch/combine 是同步通信吗？直接用 alltoallv 不行吗？</h3>
+<p><b>是同步集合通信</b>：每个 rank 必须等所有 rank 的收发都完成才能进入专家计算（dispatch 后）或下一层（combine 后）——正因为如此，任何一个慢 rank 都会让全体空等，这是 straggler 问题的通信侧根源。</p>
+<p><b>alltoallv 理论上可行，朴素用法不行</b>，病灶有四<span class="ev ev-r">R</span>（口径综合自 DeepEP 仓库与昇腾社区文章）：</p>
+<ol>
+<li><b>元数据 host 往返</b>：alltoallv 需要先知道每对 (源, 目标) 的收发量；朴素实现把计数搬到 CPU（allgather → host 算偏移 → 分配接收缓冲），引入设备↔主机内存往返与流同步；</li>
+<li><b>动态形状破坏 CUDA graph</b>：接收张量按实际计数分配，形状每步都变，无法捕获；</li>
+<li><b>不感知非对称域</b>：通用集合通信库不理解「NVLink 域内 + RDMA 域间」的带宽差异，不能做域间转发；</li>
+<li><b>偏斜拥塞</b>：失衡流量让热点链路饱和，其他链路空闲（生产中 all-to-all 可占步时 20–60%<span class="ev ev-r">R</span>）。</li>
+</ol>
+<p>注意分工：这些是 <b>token 线</b>的问题，由 DeepEP 一类通信库解决；UltraEP 的数据面在<b>权重/梯度线</b>（§7、§9），但用了同族技术（设备驻留、单侧通信、无 host 同步）。</p>
+</div>
+
+<div class="qa">
+<h3>Q10 dispatch/combine 具体怎么做，才能避免 alltoallv 那样提前 allgather 全量的元数据？</h3>
+<p>先厘清一个前提：变长 all-to-all 逻辑上<b>只需要每对 (源, 目标) 的计数</b>（$G\times G$ 个整数，$G$ 为 rank 数），不需要全量路由表（规模正比于 token 数 × top-k）。「allgather 全量元数据」是朴素实现把充分统计量做坏了。现代 dispatch/combine 靠三条原则规避（证据：DeepEP V1 README，commit <code>0a08009e</code><span class="ev ev-v">V</span>）：</p>
+<p><b>原则一：只交换充分统计量（计数），且设备驻留。</b>DeepEP normal 模式分两步：<code>get_dispatch_layout(topk_idx)</code> 在设备上算出 <code>num_tokens_per_rank / per_rdma_rank / per_expert / is_token_in_rank</code>——交换的只是计数向量，计数经 NVLink/RDMA buffer 在设备间交换、CPU 不参与<span class="ev ev-r">R</span>（API 形态一手核对）。combine 更彻底：直接复用 dispatch 返回的 handle，一个计数都不再交换<span class="ev ev-v">V</span>。</p>
+<p><b>原则二：元数据随数据内联（in-band）。</b>low-latency（decode）模式连计数交换都省了：接收 buffer 按最坏 token 数预分配（<code>num_max_dispatch_tokens_per_rank</code>）、每专家一对 QP（<code>num_qps_per_rank = num_experts // group.size()</code>），发送端把 token 连同必要信息直接写进对端预注册的固定槽位，返回的 <code>recv_expert_count</code> 是<b>设备张量</b>供 grouped GEMM 在 GPU 上消费——无独立元数据阶段、无同步点<span class="ev ev-v">V</span>。</p>
+<p><b>原则三：最坏尺寸换零同步，且承认代价。</b>normal 模式其实保留了一次 host 同步——README 注释原话「the CPU will wait for GPU's signal to arrive, so this is not compatible with CUDA graph. Unless you specify <code>num_worst_tokens</code>」：训练/prefill 按<b>实际</b>计数动态分配接收张量（省显存，反正训练不用 graph）；<code>num_worst_tokens</code> 是切换到最坏尺寸消灭这次同步的开关。官方 issue #39 还自评：队列式 buffer 省显存但复杂易死锁，固定满容量 buffer 更简单更快——「预留显存换零同步」是明码标价的取舍<span class="ev ev-v">V</span>。</p>
 <div class="mermaid">
 flowchart TB
     subgraph N["朴素路径（host 往返型）"]
@@ -295,114 +480,69 @@ flowchart TB
         n4 --> n5["all_to_allv（通用库，不感知拓扑）"]
         n5 --> n6["痛点：流同步 · 动态形状破坏 CUDA graph · 偏斜拥塞"]
     end
-    subgraph D["DeepEP 路径"]
+    subgraph Dp["DeepEP 路径"]
         direction TB
         d1["门控（GPU）"] --> d2["get_dispatch_layout：设备侧计数交换（仅计数向量）"]
         d2 --> d3["dispatch：NVLink 域内 put + RDMA 域间转发<br/>（low-latency：固定槽位 + 计数随数据内联）"]
         d3 --> d4["recv 计数为设备张量，grouped GEMM 设备端消费<br/>（normal 一次 host 同步分配；LL 模式最坏尺寸零同步）"]
     end
-    N -.->|"三条原则：计数充分量 · 设备驻留/内联 · 最坏尺寸"| D
+    N -.->|"三条原则：计数充分量 · 设备驻留/内联 · 最坏尺寸"| Dp
 </div>
-<p class="figcaption">图 4：朴素 all-to-allv 元数据路径与 DeepEP dispatch 的对照。<span class="ev ev-v">V</span>（API 一手核对）+ <span class="ev ev-r">R</span>（实现细节推断）</p>
+<p class="figcaption">图 4：朴素 all-to-allv 元数据路径与 DeepEP dispatch 的对照。</p>
+<p><b>UltraEP 的同族呼应</b>：权重线的 weight_sync 用 NVSHMEM 单侧 put + epoch ready-flag（§7.3），无全局 barrier、无 host 同步、graph 兼容；并且均衡对 token 线有反哺——负载摊平后 DeepEP 接收 buffer 的 worst-case 分配也随之下调<span class="ev ev-v">V</span>（博客设计原则节）。</p>
+</div>
 
-<h2>7. 实验数字核对表</h2>
-<table>
-<tr><th>指标</th><th>数值</th><th>口径 / 出处</th><th>证据</th></tr>
-<tr><td>force-balanced 理想吞吐（平均）</td><td><b>94.3%</b></td><td>训练 + 推理 prefill 总平均（论文摘要）</td><td><span class="ev ev-v">V</span></td></tr>
-<tr><td>训练理想吞吐</td><td>94.6%，较 Megatron-LM <b>+42%</b></td><td>EP64，外层 DP/PP 扩展（博客）</td><td><span class="ev ev-v">V</span></td></tr>
-<tr><td>prefill 理想吞吐</td><td>90–97%，较 SGLang <b>1.56×</b></td><td>EP40/EP64，LongBench / Codeforces / DAPO-Math-17K 请求（博客）</td><td><span class="ev ev-v">V</span></td></tr>
-<tr><td>相对无均衡基线提升</td><td><b>1.49×</b></td><td>论文摘要「over no-balancing」；≈ 训练 1.42× 与 prefill 1.56× 的均值<span class="ev ev-r">R</span></td><td><span class="ev ev-v">V</span></td></tr>
-<tr><td>跨 rank 不均衡度</td><td>1.30–4.01 → <b>1.01–1.04</b></td><td>最大:平均；训练 + prefill（论文 + 博客）</td><td><span class="ev ev-v">V</span></td></tr>
-<tr><td>关键路径暴露开销</td><td>&lt;<b>300 µs</b>，占步时 1–2%</td><td>EP64 实测；其中规划求解 &lt;100 µs（README + 博客 nsys 切片）</td><td><span class="ev ev-v">V</span></td></tr>
-<tr><td>冗余 slot 显存（Qwen3-235B）</td><td>9.9 GB → <b>108 MB</b></td><td>跨层复用前后（博客）；按 94 层 × 单专家 fc1+fc2（bf16 权重 + fp32 梯度 ≈ 113 MB/层）复核为 ≈10.6 GB / 113 MB，偏差 &lt;8%<span class="ev ev-r">R</span></td><td><span class="ev ev-v">V</span></td></tr>
-<tr><td>生产部署</td><td>288B MoE 完整预训练，≥92% 理想性能</td><td>2026-07-15 发布 v1.0.0，「已部署于生产 MoE 训练」（README + 博客）</td><td><span class="ev ev-v">V</span></td></tr>
-<tr><td>评测规模</td><td>最多 <b>256 GPU</b>；<b>106B–671B</b></td><td>GLM4.5-106B / Qwen3-235B / DeepSeek-V3（先完整预训练，再取中后期 checkpoint 续训对比策略）</td><td><span class="ev ev-v">V</span></td></tr>
-<tr><td>基线</td><td>Megatron-LM / SGLang + EPLB / LPLB</td><td>EPLB、LPLB 因历史负载滞后、复制预算受限始终落后（博客）</td><td><span class="ev ev-v">V</span></td></tr>
-<tr><td>与理想差距的来源</td><td>非残余失衡</td><td>博客：差距来自实际路由下 MoE 通信与计算对各专家负载的非一致性 + 冗余控制开销</td><td><span class="ev ev-v">V</span></td></tr>
-</table>
+<h2>均衡与部署组：量化、激活与 EP 度</h2>
 
-<h2>8. 版本史、批判与开放问题</h2>
-
-<h3>8.1 版本史</h3>
-<p>arXiv 版本页<span class="ev ev-v">V</span>：v1（2026-06-02，2141 KB）<b>Withdrawn</b>；v2（2026-06-05，1 KB）<b>Withdrawn</b>；v3（2026-06-18，2131 KB）当前版本。开源 v1.0.0 于 2026-07-15 发布。署名 13 人：Xinming Wei（一作，北大，于小红书实习期间完成）、Chao Jin 等；单位含北京大学、小红书、上海 AI Lab、独立研究者<span class="ev ev-v">V</span>（博客署名）。</p>
-
-<h3>8.2 批判性视角</h3>
-<ul>
-<li><b>TEMPO 的批评</b>（arXiv:2608.13057）：把 UltraEP 与 LLEP、TAOT 归类为「training-side balancers」，认为其<b>无法在 serving 栈上端到端复现</b>——它们利用了训练特有的条件（如权重在推理侧不可即时复制的约束被绕开）<span class="ev ev-r">R</span>（片段截断，语义待核）。旁证：UltraEP 的 SGLang 集成目前标注 experimental<span class="ev ev-v">V</span>（README）。</li>
-<li><b>为什么只覆盖 prefill 不覆盖 decode</b>：论文与博客均未明说。合理解释<span class="ev ev-r">R</span>：解码每步 token 极少（百级），每层复制专家 + 重路由的相对开销会远超 300 µs 量级收益；且 DeepEP low-latency 模式本身用固定 slot + 最坏尺寸已部分消化失衡。留作待验证。</li>
-<li><b>rank 级 vs 专家级均衡的边界</b>：UltraEP 只把「各 rank 总负载」摊平，不解「各专家间」不均衡；与 force-balanced 上限的差距正来自通信/计算对负载的非一致性（§7 表末行）。把它误当专家级均衡会高期待。</li>
-<li><b>带宽账（为什么必须限定 scale-up 域）</b><span class="ev ev-r">R</span>：以 Qwen3-235B 单专家 ≈ 37.7 MB（bf16）计，EP64 下每层物化 R 个副本跨 rank 传输约在 GB/s×百微秒 = 数十 MB 量级，只有 NVLink 域（≥100 GB/s/rank）能装进 300 µs 预算；RDMA 域单卡 ~50 GB/s 且多 rank 共享，必然爆预算。这与「复制半径 = NVL 域」的硬约束互为因果。</li>
-<li><b>与 MoonEP 的叙事竞争</b>：UltraEP 结尾把后训练（RL rollout 的强动态负载，引 ReLibra）列为下一个战场，主张做「MoE RL 基础设施的统一负载调节层」<span class="ev ev-v">V</span>（博客）；与 MoonEP 的 decode/推理叙事正面相遇，可回看本目录另两篇笔记的对比矩阵。</li>
-</ul>
-
-<h3>8.3 遗留待核实（U）</h3>
-<ul>
-<li>force-balanced ceiling 的精确定义（模拟完美均衡 + 零开销的上界？论文正文待逐节核对）；</li>
-<li>quota oracle 对 top-k 整数可行性的完整算法描述（论文 §算法 vs 代码逐行对齐）；</li>
-<li>确定性归约（保序累加）相对 atomicAdd 的实测开销；</li>
-<li>TEMPO 批评的完整原文语义。</li>
-</ul>
-
-<h2>9. 附录：所对齐对话的逐点核实表</h2>
-<p>对齐对象为一篇 DeepSeek 分享对话（论文摘要解读 → RSN 概念 → 机架规模 → CloudMatrix 384 → 两层网络 → 机制拆解 → 跨秩指标 → dispatch/combine 与 alltoallv 之辨）。核实结论：主线正确，4 处需修正。</p>
-<table>
-<tr><th>对话说法</th><th>结论</th><th>说明</th></tr>
-<tr><td>失衡三类瓶颈；每 microbatch/每层实时重均衡</td><td>✅</td><td>与论文/README 一致</td></tr>
-<tr><td>「专家状态迁移到哪些 rank」</td><td>⚠️ 修正</td><td>实为复制到各 rank <b>预留冗余槽位</b>（跨层复用 buffer），反向恢复 + 归约；见 §3</td></tr>
-<tr><td>quota =「给每 rank 设处理配额」</td><td>⚠️ 深化</td><td>quota 是<b>每个专家实例重路由后接收的负载</b>，耦合放置与路由联合求解；见 §4</td></tr>
-<tr><td>不均衡度 = 最忙/平均（或最忙/最闲）</td><td>⚠️ 确认</td><td>官方口径为<b>最大:平均</b>（博客原话）</td></tr>
-<tr><td>relay = 源→中继→目标分散扇出</td><td>✅+深化</td><td>两阶段中继树、⌊√副本数⌋、扇出收益判定、chunk 流式；见 §5.2</td></tr>
-<tr><td>all-to-all 即 dispatch + combine（MoE EP 语境）</td><td>✅</td><td>但需补：UltraEP 不改 token 线，与 DeepEP 解耦</td></tr>
-<tr><td>「直接用 alltoallv 不行」的三条批判（元数据/低效/无法重叠）</td><td>⚠️ 张冠李戴</td><td>那主要是朴素 host 路径的病灶，DeepEP 已解决；UltraEP 的数据面在<b>权重线</b>；见 §6</td></tr>
-<tr><td>v1/v2 撤回、v3 于 2026-06-18 修订；一作 Xinming Wei 等 13 人</td><td>✅</td><td>arXiv 版本页 + 博客署名核对</td></tr>
-<tr><td>94.3% / 1.49× / 1.30–4.01→1.01–1.04 / 256 GPU / 106B–671B</td><td>✅</td><td>摘要原文；拆解口径见 §7</td></tr>
-<tr><td>NVL72 260 TB/s、机架 72/144 GPU、CloudMatrix 384 规格</td><td>✅</td><td>与公开资料一致；对 UltraEP 的意义是降低均衡 floor（§2.2）</td></tr>
-<tr><td>「300 µs」未在对话中出现/未解释</td><td>➕ 补充</td><td>= 关键路径暴露开销上限（1–2% 步时），规划器占其 &lt;100 µs</td></tr>
-</table>
-
-<h2>10. 增补讨论：失衡量化、专家激活覆盖与 prefill/decode × EP 度的定量关系</h2>
-<p>本章由四问引出：失衡怎么评估；prefill 序列长、token 多时是否全专家被激活；prefill 与 decode 的大 EP 部署差异；EP 度越大为何实际差距被拉大。统一用 $N$（专家总数）、$k$（top-k）、$T$（每步 token 总数）、$G$（EP rank 数）、$m = N/G$（每 rank 专家数）、$\lambda = Tk/N$（每专家平均 token 数）。</p>
-
-<h3>10.1 失衡的评估：为什么是 max : mean</h3>
-<p>UltraEP 的指标在<b>每层、每 microbatch</b> 粒度上、用门控后的<b>精确 token 数</b>统计，且均衡前（post-gating）与均衡后（post-reroute）各测一次，故能同时报告 1.30–4.01 → 1.01–1.04<span class="ev ev-v">V</span>：</p>
+<div class="qa">
+<h3>Q11 负载均衡程度如何评估？</h3>
+<p>分两级（正文 §1.1、§10）：</p>
+<p><b>① 指标级</b>——跨 rank 不均衡度：</p>
 <div class="formula">
 $$
-\mathcal{I} = \frac{\max_r L_r}{\frac{1}{G}\sum_r L_r}, \qquad L_r = \text{rank } r \text{ 接收的 token 数}
+\mathcal{I} = \frac{\max_r L_r}{\bar{L}}, \qquad \bar{L} = \frac{1}{G}\sum_{r=1}^{G} L_r
 $$
 </div>
-<p>选 max : mean 而非 max : min 的理由：MoE 前向每层做同步集合通信，<b>步时 ∝ 最慢 rank（max）</b>，理想计算量 ∝ 均值（mean），因此</p>
-<div class="formula">
-$$
-\text{有效利用率} \approx \frac{1}{\mathcal{I}}, \qquad \text{吞吐损失} \approx 1 - \frac{1}{\mathcal{I}}
-$$
-$$
-\mathcal{I} = 1.3 \Rightarrow 23\% \text{ 损失}; \quad \mathcal{I} = 4.0 \Rightarrow 75\% \text{ 损失（MoE 段内）}
-$$
+<p>$r$ 遍历 EP 组内 rank；$L_r$ 是 rank $r$ 按当前放置实际接收的 token 数；$G$ 是 rank 数；$\bar{L}$ 是平均负载；$\max_r$ 取最忙者。UltraEP 在<b>每层每 microbatch</b> 粒度、用门控后的精确 token 数统计，均衡前（post-gating）与均衡后（post-reroute）各测一次，内置 profiler 采集并可视化。选 max:mean 而非 max:min 的原因：同步语义下步时由 $\max_r L_r$ 决定、理想计算量是 $\bar{L}$，因此<b>有效利用率 ≈ 1/𝓘，吞吐损失 ≈ 1 − 1/𝓘</b>（𝓘=1.3 丢 23%；𝓘=4 丢 75%），指标可直接换算成吞吐。</p>
+<p><b>② 端到端级</b>——吞吐对 force-balanced 理想上界归一化（94.3% 类数字）。<b>指标边界</b>：𝓘 是 rank 级均衡；rank 摊平后与理想上界的残差来自专家级非一致性（§10.2 末行），不能混为一谈。</p>
 </div>
-<p>评估分两级<span class="ev ev-v">V</span>：① 指标级——UltraEP 内置运行时 profiler（融合 metadata 算子 + 异步 D2H，开销近零），采集每层每 microbatch 重路由前后的全部专家负载，配 HTML 层次化可视化；② 端到端级——吞吐对 force-balanced 理想上界归一化（94.3% 类数字）。<b>指标边界</b>：$\mathcal{I}$ 是 rank 级均衡而非专家级；与理想上界的剩余差距来自实际路由下通信/计算对各专家负载的非一致性<span class="ev ev-v">V</span>（博客）。</p>
 
-<h3>10.2 「大部分专家被激活」的定量：覆盖率公式</h3>
-<p>均匀路由假设下，单个专家被至少一个 token 选中的概率与每专家平均负载<span class="ev ev-r">R</span>（解析推导；真实路由非均匀，见下）：</p>
+<div class="qa">
+<h3>Q12 prefill 阶段序列越长、token 很多，大部分专家是不是都会被激活？</h3>
+<p><b>是，且可以定量</b>。设 $N$ 为专家总数、$k$ 为 top-k、$T$ 为每步 token 总数（整个 EP 组）。均匀路由假设下，一个专家被至少一个 token 选中的概率与每专家平均 token 数为：</p>
 <div class="formula">
 $$
 P_{\text{act}} = 1-\Big(1-\frac{k}{N}\Big)^{T}, \qquad \lambda = \frac{T\,k}{N}
 $$
 </div>
+<p>以 DeepSeek-V3 参数（$N$=256、$k$=8）计算：</p>
 <table>
-<tr><th>每步 token 数 $T$</th><th>$\lambda$（N=256, k=8）</th><th>覆盖率 $P_{\text{act}}$</th><th>典型场景</th></tr>
+<tr><th>$T$</th><th>$\lambda$（token/专家）</th><th>$P_{\text{act}}$</th><th>场景</th></tr>
 <tr><td>8</td><td>0.25</td><td>22.5%</td><td>极小批 decode</td></tr>
 <tr><td>32</td><td>1</td><td>63.8%</td><td>小批 decode</td></tr>
 <tr><td>128</td><td>4</td><td><b>98.3%</b></td><td>DeepEP 低延迟基准批规模<span class="ev ev-v">V</span></td></tr>
 <tr><td>512</td><td>16</td><td>≈100%</td><td>chunked prefill 小块</td></tr>
-<tr><td>4096</td><td>128</td><td>≈100%</td><td>典型 prefill microbatch（DeepSeek-V3 预训练口径<span class="ev ev-v">V</span>）</td></tr>
+<tr><td>4096</td><td>128</td><td>≈100%</td><td>典型 prefill microbatch<span class="ev ev-v">V</span></td></tr>
 </table>
-<p>两个推论：</p>
-<ul>
-<li><b>激活全覆盖 ≠ 均衡</b>。随机涨落随 $T$ 增大被摊薄（$\propto 1/\sqrt{T}$），但<b>专家热度的系统性偏斜不随 $T$ 消失</b>，且同一序列内路由同域相关（同话题 → 同批专家热）<span class="ev ev-r">R</span>。G=64、T=4096 时纯涨落只能解释 $\mathcal{I}\approx 1.13$，实测原始 1.30–4.01 说明系统偏斜是大头——这正是「精确负载」路线的立论点。</li>
-<li><b>decode 也几乎全点亮，但负载极稀</b>（$\lambda \approx 1\!\sim\!8$）：GEMM 被<b>权重读取</b>主导，单步耗时 ≈ 本 rank 被<b>点亮的专家数 × 权重读时间</b>。decode 的均衡对象从「token 数」漂移为「激活专家数 / 权重读次数」<span class="ev ev-r">R</span>——MoonEP「每 rank 恒载 S×K」的构造性保证正是针对这一层（见<a href="moe-ep-code-analysis.html">源码级对比分析</a>）。</li>
-</ul>
+<p>但<b>激活全覆盖 ≠ 均衡</b>：随机涨落随 $T$ 增大被摊薄（相对幅度 $\propto 1/\sqrt{T}$，即与 $\sqrt{T}$ 成反比），而<b>专家热度的系统性偏斜不随 $T$ 消失</b>，且同一序列内路由同域相关（同话题 → 同批专家热）<span class="ev ev-r">R</span>。证据：$G$=64、$T$=4096 时纯涨落只能解释 𝓘≈1.13（Q15 公式），实测原始 1.30–4.01——大头是系统偏斜，这正是「精确负载」路线的立论点。</p>
+</div>
 
-<h3>10.3 prefill 与 decode 的大 EP 部署差异</h3>
+<div class="qa">
+<h3>Q13 decode 阶段是不是也存在「专家都被激活」？</h3>
+<p><b>大批量 decode 会，但「激活」的含金量完全不同。</b>decode 每步的 token 数等于批大小 $B$（每序列产 1 个 token）。代入 Q12 公式：$B$=128、$N$=256、$k$=8 时 $P_{\text{act}}$=98.3%——专家大多被点亮；但每专家平均只有 $\lambda = Bk/N = 4$ 个 token。此时 grouped GEMM 完全被<b>权重读取</b>主导（读一遍专家权重的时间与只有 1 个 token 时几乎相同），单步耗时 ≈ 本 rank 被<b>点亮的专家数 × 权重读时间</b>。所以 decode 的失衡本质变了：<b>均衡对象从「token 数」漂移为「每 rank 激活专家数 / 权重读次数」</b><span class="ev ev-r">R</span>。MoonEP「每 rank 恒载 S×K」的构造性保证正是针对这一层（见本目录源码级对比分析）。</p>
+</div>
+
+<div class="qa">
+<h3>Q14 prefill 阶段的大 EP 部署和 decode 阶段的大 EP 部署有啥区别？</h3>
+<table>
+<tr><th>维度</th><th>Prefill 大 EP</th><th>Decode 大 EP</th></tr>
+<tr><td>每步 token 供给 $T$</td><td>数千（chunked prefill 控制块大小）</td><td>= 批大小 $B$（几十~几百）</td></tr>
+<tr><td>每专家负载 $\lambda$</td><td>16–128，GEMM 偏计算密集</td><td>1–8，权重读主导（memory-bound）</td></tr>
+<tr><td>all-to-all 特征</td><td>MB 级大消息、带宽型</td><td>KB 级小消息、延迟型</td></tr>
+<tr><td>通信库形态</td><td>DeepEP normal：NVLink+RDMA 转发、SM 数可控、无需 CUDA graph</td><td>DeepEP low-latency：纯 RDMA 固定槽位、零同步、CUDA graph 必开</td></tr>
+<tr><td>均衡杠杆</td><td>逐层精确复制 + 重路由（UltraEP：规划 &lt;100 µs、全程 &lt;300 µs）</td><td>周期性重放置 / 冗余专家 / 权重缓存（EPLB、MoonEP 等）</td></tr>
+<tr><td>失衡的代价形态</td><td>straggler 拉长同步步（吞吐）</td><td>单步时延抖动、TPOT 尾部（p99）</td></tr>
+</table>
 <div class="mermaid">
 flowchart TB
     subgraph PF["Prefill（计算密集 · 大批量 · 吞吐导向）"]
@@ -420,10 +560,13 @@ flowchart TB
         dc4 --> dc5["均衡杠杆：周期性重放置 / 冗余专家 / 权重缓存<br/>（EPLB、MoonEP；逐层动态规划与 graph 冲突）"]
     end
 </div>
-<p class="figcaption">图 5：prefill 与 decode 大 EP 部署的对照。同一模型、同一 EP 度，两个阶段几乎在每个系统维度上都不同象限。<span class="ev ev-v">V</span>（DeepEP 双模式口径）+ <span class="ev ev-r">R</span>（decode 均衡对象推断）</p>
-<p>decode 不能照搬 UltraEP 逐层方案的两条硬理由<span class="ev ev-r">R</span>：① 每层动态求解与动态放置和 <b>CUDA graph 捕获要求的静态控制流</b>冲突；② 每步预算百微秒级，而收益被 memory-bound 稀释——decode 的失衡更多交给部署期的静态均衡（放置、冗余、缓存）兜底。</p>
+<p class="figcaption">图 5：prefill 与 decode 大 EP 部署的对照——同一模型、同一 EP 度，两个阶段几乎在每个系统维度上都处于不同象限。</p>
+<p>decode 不能照搬 UltraEP 逐层方案的两条硬理由<span class="ev ev-r">R</span>：① 每层动态求解与动态放置和 CUDA graph 捕获要求的静态控制流冲突；② 每步预算百微秒级，收益又被 memory-bound 稀释。</p>
+</div>
 
-<h3>10.4 EP 度放大差距的逻辑链与定量下限</h3>
+<div class="qa">
+<h3>Q15 EP 并行度越大，拉大实际性能差距，是什么逻辑？</h3>
+<p>五环相扣（论文/博客的定性表述 + 统计模型的定量刻画）：</p>
 <div class="mermaid">
 flowchart LR
     a["EP 度 G ↑"] --> b["每 rank 专家数 m = N/G ↓"]
@@ -438,23 +581,20 @@ flowchart LR
     g1 --> i2["吞吐损失 ≈ 1 − 1/I<br/>且随层数复合"]
     h --> i2
 </div>
-<p class="figcaption">图 6：EP 度放大实际性能差距的五环逻辑链（论文/博客的定性表述 + 统计模型的定量刻画）。</p>
-<p>①②合并可得<b>均匀路由噪声下的失衡下限</b><span class="ev ev-r">R</span>（多项式随机涨落 + 高斯极值近似，未含系统偏斜）：</p>
+<p class="figcaption">图 6：EP 度放大实际性能差距的逻辑链。</p>
+<p><b>①自平均</b>：rank 负载是它 $m = N/G$ 个专家负载之和，$m$ 越小，和的相对波动越大；<b>②极值统计</b>：步时取 $G$ 个 rank 的最大值，rank 越多最慢者越极端；<b>③粒度下限</b>：均衡的最小动作是搬一个专家或改一路 token，占该 rank 负载的 $1/m$，$m$ 小则任何动作都是大跳变（NVL 域 &lt; EP 组时下限进一步抬高，§2）；<b>④⑤</b>失衡在同步与通信上双重放大并随层数复合。</p>
+<p>①②可以合成<b>解析下限</b>（均匀路由、纯随机涨落近似<span class="ev ev-r">R</span>）：</p>
 <div class="formula">
 $$
-\mathcal{I}_{\text{noise}} \;\approx\; 1 + \sqrt{2\ln G}\cdot\sqrt{\frac{G}{T\cdot k}}
+\mathcal{I}_{\text{noise}} \approx 1 + \sqrt{2\ln G}\cdot\sqrt{\frac{G}{T\cdot k}}
 $$
 </div>
-<table>
-<tr><th>$T$ \ $G$</th><th>EP8</th><th>EP64</th><th>EP256</th></tr>
-<tr><td>64</td><td>1.25（20%）</td><td>2.02（50%）</td><td>3.36（70%）</td></tr>
-<tr><td>128</td><td>1.18（15%）</td><td><b>1.72（42%）</b></td><td>2.66（62%）</td></tr>
-<tr><td>256</td><td>1.13（12%）</td><td>1.51（34%）</td><td>2.18（54%）</td></tr>
-<tr><td>512</td><td>1.09（8%）</td><td>1.36（26%）</td><td>1.83（45%）</td></tr>
-<tr><td>1024</td><td>1.06（6%）</td><td>1.25（20%）</td><td>1.59（37%）</td></tr>
-<tr><td>4096</td><td>1.03（3%）</td><td><b>1.13（12%）</b></td><td>1.29（23%）</td></tr>
-</table>
-<p class="figcaption">表：$\mathcal{I}_{\text{noise}}$（括号内为对应吞吐损失 $1-1/\mathcal{I}$），k=8。同一列内自上而下就是「decode → prefill」的 token 增益；同一行内自左向右就是「EP 度拉大差距」。</p>
+<p>其中 $G$ 是 EP rank 数，$T$ 是每步 token 总数，$k$ 是 top-k；$\sqrt{2\ln G}$（$\ln$ 为自然对数）来自「$G$ 个独立同分布高斯样本最大值的期望偏移」，$\sqrt{G/(Tk)}$ 是均匀路由下 rank 负载的相对标准差。该式同时编码了「token 越少越糟」（decode）与「EP 度越大越糟」两个方向，是 Q15 与 Q16 的统一答案。注意它只是<b>下限</b>：真实路由的系统性偏斜叠加其上（所以实测能到 4.0）。</p>
+</div>
+
+<div class="qa">
+<h3>Q16 序列长度 / token 数量在 prefill 和 decode 阶段与 EP 并行度的关系，能用图表示清楚吗？</h3>
+<p>能——把 Q15 的公式代入 $k=8$ 画成曲线，再配网格表（括号内为对应吞吐损失 $1-1/\mathcal{I}$）：</p>
 <div class="mermaid">
 xychart-beta
     title "统计噪声失衡下限（均匀路由近似，k=8）"
@@ -464,21 +604,31 @@ xychart-beta
     line [2.02, 1.72, 1.51, 1.36, 1.25, 1.18, 1.13]
     line [3.36, 2.66, 2.18, 1.83, 1.59, 1.42, 1.29]
 </div>
-<p class="figcaption">图 7：三条线自下而上依次为 EP8 / EP64 / EP256。读图要点：G=64、T=4096 的噪声地板 1.13 已接近 UltraEP 均衡后的 1.01–1.04 之上界，说明均衡后残差主要是系统偏斜与控制开销；而 decode 批规模（T≈128）连噪声地板都有 1.72——<b>decode 天生更难靠自然摊平，只能靠部署期静态均衡兜底</b>。该模型是理解工具：均匀路由假设、未含 top-k 负相关与热度偏斜，真实数值叠加其上<span class="ev ev-r">R</span>。</p>
+<p class="figcaption">图 7：三条线自下而上依次为 EP8 / EP64 / EP256。横轴 $T$ 为每步 token 总数，纵轴为 $\mathcal{I}_{\text{noise}}$。</p>
+<table>
+<tr><th>$T$ \ $G$</th><th>EP8</th><th>EP64</th><th>EP256</th></tr>
+<tr><td>64</td><td>1.25（20%）</td><td>2.02（50%）</td><td>3.36（70%）</td></tr>
+<tr><td>128</td><td>1.18（15%）</td><td><b>1.72（42%）</b></td><td>2.66（62%）</td></tr>
+<tr><td>256</td><td>1.13（12%）</td><td>1.51（34%）</td><td>2.18（54%）</td></tr>
+<tr><td>512</td><td>1.09（8%）</td><td>1.36（26%）</td><td>1.83（45%）</td></tr>
+<tr><td>1024</td><td>1.06（6%）</td><td>1.25（20%）</td><td>1.59（37%）</td></tr>
+<tr><td>4096</td><td>1.03（3%）</td><td><b>1.13（12%）</b></td><td>1.29（23%）</td></tr>
+</table>
+<p>读图要点：表中 $T$ 与 $G$ 含义同 Q15。同一列自上而下就是「decode → prefill」的 token 增益；同一行自左向右就是「EP 度拉大差距」。两个锚点：$G$=64、$T$=4096（典型 prefill）噪声地板 1.13——UltraEP 均衡后实测 1.01–1.04 已贴住地板，说明残差主要是系统偏斜与控制开销；$G$=64、$T$=128（典型 decode 批）地板高达 1.72——<b>decode 天生难靠自然摊平，只能靠部署期静态均衡兜底</b>，这与 Q13/Q14 的结论互相印证。模型口径提示：均匀路由假设、未含 top-k 负相关与热度偏斜，真实数值叠加其上<span class="ev ev-r">R</span>。</p>
+</div>
 
-<h2>11. 参考资料</h2>
+<h2>12. 参考资料</h2>
 <ul>
 <li>论文：<a href="https://arxiv.org/abs/2606.04101">UltraEP: Unleash MoE Training and Inference on Rack-Scale Nodes with Near-Optimal Load Balancing</a>（arXiv:2606.04101，v3，2026-06-18；v1/v2 已撤回）</li>
-<li>代码仓：<a href="https://github.com/Dots-Infra/UltraEP">Dots-Infra/UltraEP</a>（本地快照 commit <code>94cab099</code>；<code>csrc/kernels/{placement,weight_sync,reroute,grad_reduce,load_compute}.cu</code>、<code>ultra_ep/manager.py</code>；不含头文件实测约 5.9k 行）</li>
-<li>官方博客：<a href="https://dots-infra.github.io/UltraEP/zh/">UltraEP: 面向大规模 MoE 训推的「最优」负载均衡方案</a>（v1.0.0，含中文版；本地 <code>docs/blog_v1_zh.md</code>）</li>
-<li>参考集成：<a href="https://github.com/Dots-Infra/Megatron-LM-UltraEP">Megatron-LM-UltraEP</a>（8×Hopper demo + Qwen3-235B recipe；SGLang 集成 experimental）</li>
-<li>DeepEP：<a href="https://github.com/deepseek-ai/DeepEP">deepseek-ai/DeepEP</a>（V1 README，commit <code>0a08009e</code>，2025-12；V2 main，2026-06；issue #39 固定 buffer 讨论）</li>
-<li>相关工作：<a href="https://github.com/deepseek-ai/EPLB">EPLB</a> · <a href="https://github.com/deepseek-ai/LPLB">LPLB</a>（DeepSeek）；<a href="https://arxiv.org/abs/2608.13057">TEMPO</a>（对 training-side balancer 的批判）；ReLibra（arXiv:2605.08639，RL 负载动态性）</li>
-<li>本目录姊妹篇：<a href="moe-ep-overview.html">方案深度解析（EPLB/UltraEP/MoonEP）</a> · <a href="moe-ep-code-analysis.html">源码级对比分析</a></li>
+<li>代码仓：<a href="https://github.com/Dots-Infra/UltraEP">Dots-Infra/UltraEP</a>（本地快照 <code>94cab099</code>；行数为本地实测）与参考集成 <a href="https://github.com/Dots-Infra/Megatron-LM-UltraEP">Megatron-LM-UltraEP</a></li>
+<li>官方博客：<a href="https://dots-infra.github.io/UltraEP/zh/">UltraEP: 面向大规模 MoE 训推的「最优」负载均衡方案</a>（v1.0.0；本地 <code>docs/blog_v1_zh.md</code>）</li>
+<li>DeepEP：<a href="https://github.com/deepseek-ai/DeepEP">deepseek-ai/DeepEP</a>（V1 README，commit <code>0a08009e</code>，2025-12；V2 main，2026-06；issue #39）</li>
+<li>相关工作：<a href="https://github.com/deepseek-ai/EPLB">EPLB</a> · <a href="https://github.com/deepseek-ai/LPLB">LPLB</a>（DeepSeek）；<a href="https://arxiv.org/abs/2608.13057">TEMPO</a>（training-side balancer 批判）；ReLibra（arXiv:2605.08639，RL 负载动态性）</li>
 <li>硬件背景：NVIDIA NVL72 / <a href="https://www.nvidia.com/en-au/data-center/nvlink/">NVLink</a>；华为 CloudMatrix 384（Atlas 900 A3 SuperPoD）公开资料</li>
+<li>姊妹篇：<a href="moe-ep-overview.html">方案深度解析（EPLB/UltraEP/MoonEP）</a> · <a href="moe-ep-code-analysis.html">源码级对比分析</a></li>
 </ul>
 
 <hr>
-<p style="color:#57606a;font-size:.9em">整理：luxiangzz · 2026-09-16 · 证据窗口：论文 v3、仓库 commit 94cab099、DeepEP V1 README（0a08009e）与 V2 main（2026-06）、arXiv 版本页；标注体系与 <a href="moe-ep-overview.html">moe-ep-overview</a> 一致（V/R/U）。</p>
+<p style="color:#57606a;font-size:.9em">整理：luxiangzz · 2026-09-16（全文重写版：Part I 源码精读 + Part II 十六问详解）· 证据窗口：论文 v3、仓库 94cab099、官方博客 v1.0.0、DeepEP V1（0a08009e）/V2 main、arXiv 版本页；标注体系与 <a href="moe-ep-overview.html">moe-ep-overview</a> 一致（V/R/U）。</p>
 </body>
 </html>

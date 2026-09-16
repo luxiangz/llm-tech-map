@@ -4,10 +4,9 @@
 
 | 文件 | 对应本地中文名 | 说明 |
 |---|---|---|
-| index.html | — | 落地索引页 |
 | moe-ep-overview.html | MoE专家并行方案深度解析_EPLB_UltraEP_MoonEP.html | 方案级 v2.0（联网一手复核） |
 | moe-ep-code-analysis.html | 源码级对比分析_EPLB_UltraEP_MoonEP.html | 源码级对比（附本地代码与研读路线图） |
-| ultraep-deep-reading.html | — | UltraEP 深度阅读笔记（2026-09-16 新增：论文×源码×对话对齐，含 dispatch/combine 元数据专题） |
+| ultraep-deep-reading.html | — | UltraEP 深度阅读笔记（2026-09-16 全文重写：Part I 源码精读 + Part II 十六问详解） |
 
 研究范围：DeepSeek EPLB、UltraEP（arXiv:2606.04101，小红书×北大）、MoonEP（Moonshot AI）。
 证据标注：V=一手原文核对 / R=合理推断 / U=待核实（见 moe-ep-overview.html §1）。
