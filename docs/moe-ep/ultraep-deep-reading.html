@@ -372,7 +372,7 @@ flowchart LR
 
 <h1 style="font-size:1.6em">Part II 问题详解</h1>
 <blockquote>
-<p>以下问题按阅读时序分三组：概念组（Q1–Q7，来自一篇 DeepSeek 论文对话）、通信组（Q8–Q10）、均衡与部署组（Q11–Q16，来自本笔记的讨论）。每个回答自含；公式中的符号在公式下方当场定义，或引用 §0.2 符号表。</p>
+<p>以下问题按阅读时序分三组：概念组（Q1–Q7，来自一篇 DeepSeek 论文对话）、通信组（Q8–Q10）、均衡与部署组（Q11–Q16，来自本笔记的讨论，含 Q11A 论文 Figure 4 精读）。每个回答自含；公式中的符号在公式下方当场定义，或引用 §0.2 符号表。</p>
 </blockquote>
 
 <h2>概念组：RSN 与超节点</h2>
@@ -547,6 +547,28 @@ $$
 </div>
 <p>$r$ 遍历 EP 组内 rank；$L_r$ 是 rank $r$ 按当前放置实际接收的 token 数；$G$ 是 rank 数；$\bar{L}$ 是平均负载；$\max_r$ 取最忙者。UltraEP 在<b>每层每 microbatch</b> 粒度、用门控后的精确 token 数统计，均衡前（post-gating）与均衡后（post-reroute）各测一次，内置 profiler 采集并可视化。选 max:mean 而非 max:min 的原因：同步语义下步时由 $\max_r L_r$ 决定、理想计算量是 $\bar{L}$，因此<b>有效利用率 ≈ 1/𝓘，吞吐损失 ≈ 1 − 1/𝓘</b>（𝓘=1.3 丢 23%；𝓘=4 丢 75%），指标可直接换算成吞吐。</p>
 <p><b>② 端到端级</b>——吞吐对 force-balanced 理想上界归一化（94.3% 类数字）。<b>指标边界</b>：𝓘 是 rank 级均衡；rank 摊平后与理想上界的残差来自专家级非一致性（§10.2 末行），不能混为一谈。</p>
+</div>
+
+<div class="qa">
+<h3>Q11A 论文 Figure 4 怎么读？（失衡量与非平稳性的实验证据）</h3>
+<p>Figure 4（论文 §3）回答一个问题：<b>真实流量下，专家负载到底有多不稳定？</b>它是 UltraEP 全部设计动机的实证基础。实验设置：Qwen3-235B（128 个 routed experts、top-8），EP=64，灌真实 prefill 请求，记录连续 200 个 prefill batch 中两个 MoE 层（Layer 13 浅层与 Layer 68 深层）的专家负载<span class="ev ev-v">V</span>（图注与正文 §3 原文核对；图片来自 arXiv HTML 版 assets）。</p>
+<div class="figure"><img src="assets/ultraep-fig4-prefill-load.png" alt="UltraEP 论文 Figure 4" style="max-width:100%;border:1px solid #e5e7eb;border-radius:10px"></div>
+<p class="figcaption">图 A：UltraEP 论文 Figure 4 原图（<a href="https://arxiv.org/abs/2606.04101">arXiv:2606.04101</a> §3）。上排：堆叠面积图；下排：不均衡度折线。</p>
+<p><b>怎么读（四个要点）：</b></p>
+<ul>
+<li><b>上排 = 一个层的负载分布随时间演化</b>。横轴是 prefill batch 序号（0–200，即时间）；纵轴是专家负载占比（0–100%）的堆叠面积图——<b>每种颜色 = 一个专家</b>（128 条色带），某专家在某时刻的色带越宽，它当时抢到的 token 份额越大。</li>
+<li><b>横轴三段底色（蓝/绿/橙）= 数据域</b>：batch 0–50 灌 Science（科学）请求、50–100 灌 Code（代码）、100–200 灌 Mixed（混合），虚线是换域时刻。顶部 Science/Code/Mixed 标签与之一一对应。</li>
+<li><b>下排 = 同一时刻的专家间不均衡度</b>：𝓘<sub>expert</sub> = max/mean——某时刻最热专家的负载是全体专家平均负载的几倍（图注原话 "The imbalance ratio denotes the max per-expert load by mean"）。与上排时间轴严格对齐。</li>
+<li><b>左右两列对比浅层 vs 深层</b>：Layer 13（浅层，偏通用模式）与 Layer 68（深层，特化更强）。</li>
+</ul>
+<p><b>三个关键读图结论</b>：</p>
+<ol>
+<li><b>换数据域 = 专家大洗牌</b>：每次穿过虚线（x≈50、x≈100），色带图案整体变形——Science 段的热专家与 Code 段的热专家几乎是两拨人（专家热度跟着流量语义走）。</li>
+<li><b>同一域内部也在持续漂移</b>：即使在纯 Science 段（0–50），图案也在蠕动，热专家隔几十个 batch 就换人。这直接推翻「稳态分布」假设——而 EPLB 类基于历史统计的周期性均衡，恰恰假设上一次的分布能预测下一次。</li>
+<li><b>下排折线给出量级</b>：𝓘<sub>expert</sub> 几乎从不回到 1，常态 4–8，尖峰 11–18；且深层（Layer 68，峰值 ≈18）比浅层（Layer 13，≈11）更斜。对照 Q12 的随机涨落下限（≈1.13），实测是它的 4–15 倍——失衡几乎全是<b>系统性偏斜</b>而非统计噪声。</li>
+</ol>
+<p><b>这张图为什么放在 §3</b>：它一图三证——① 失衡是常态且剧烈（𝓘≈4–18，按「吞吐损失 ≈ 1 − 1/𝓘」意味着 MoE 段丢 75%–94%）；② 失衡<b>非平稳</b>（换域即洗牌、域内也漂移），历史预测路线根基不稳；③ 每层每 batch 的失衡形态都不同，均衡必须做到<b>每层、每 microbatch、用精确负载</b>——正好是 UltraEP 三个设计决策的论据。旁证的 Figure 5（训练场景：GLM4.5 与 DeepSeek-V3 训练早期 vs 后期）是同一论证的训练版：auxiliary loss 只能压平滑<b>平均</b>分布，压不住 batch 间的振荡<span class="ev ev-v">V</span>。</p>
+<p><b>与本文其他指标的口径区分</b>：Figure 4 的 𝓘 是<b>专家间</b>（max expert / mean expert），不是 §1.1/Q11 优化的 <b>rank 间</b> 𝓘（max rank / mean rank）——专家间失衡按放置聚合成 rank 间失衡，这正是 §1.1 因果链的起点；两个口径不要混用。</p>
 </div>
 
 <div class="qa">
