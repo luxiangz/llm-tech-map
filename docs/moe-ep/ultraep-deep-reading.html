@@ -208,7 +208,9 @@ sequenceDiagram
 <h3>4.2 虚拟层号：PP/VPP 下的多 microbatch 并存</h3>
 <p>流水线（PP/VPP）会让同一层有多个 microbatch 同时在飞。UltraEP 用虚拟层号隔离它们（manager.py:309–330<span class="ev ev-v">V</span>）：</p>
 <div class="formula">
-$\text{vid} = \text{real\_layer} \times \text{max\_microbatches} + (\text{counter} \bmod \text{max\_microbatches})$
+$$
+\text{vid} \;=\; \text{real\_layer} \times \text{max\_microbatches} \;+\; \big(\text{counter} \bmod \text{max\_microbatches}\big)
+$$
 </div>
 <p>放置表、配额表、reroute buffer 都按 vid 索引，slot 用完即循环复用；纯 DDP（<code>max_microbatches=1</code>）时 vid 退化为真实层号。master 指针池按真实层号索引，C++ 侧由 vid 反解<span class="ev ev-v">V</span>。</p>
 
@@ -466,10 +468,50 @@ $$
 
 <div class="qa">
 <h3>Q10 dispatch/combine 具体怎么做，才能避免 alltoallv 那样提前 allgather 全量的元数据？</h3>
-<p>先厘清一个前提：变长 all-to-all 逻辑上<b>只需要每对 (源, 目标) 的计数</b>（$G\times G$ 个整数，$G$ 为 rank 数），不需要全量路由表（规模正比于 token 数 × top-k）。「allgather 全量元数据」是朴素实现把充分统计量做坏了。现代 dispatch/combine 靠三条原则规避（证据：DeepEP V1 README，commit <code>0a08009e</code><span class="ev ev-v">V</span>）：</p>
-<p><b>原则一：只交换充分统计量（计数），且设备驻留。</b>DeepEP normal 模式分两步：<code>get_dispatch_layout(topk_idx)</code> 在设备上算出 <code>num_tokens_per_rank / per_rdma_rank / per_expert / is_token_in_rank</code>——交换的只是计数向量，计数经 NVLink/RDMA buffer 在设备间交换、CPU 不参与<span class="ev ev-r">R</span>（API 形态一手核对）。combine 更彻底：直接复用 dispatch 返回的 handle，一个计数都不再交换<span class="ev ev-v">V</span>。</p>
-<p><b>原则二：元数据随数据内联（in-band）。</b>low-latency（decode）模式连计数交换都省了：接收 buffer 按最坏 token 数预分配（<code>num_max_dispatch_tokens_per_rank</code>）、每专家一对 QP（<code>num_qps_per_rank = num_experts // group.size()</code>），发送端把 token 连同必要信息直接写进对端预注册的固定槽位，返回的 <code>recv_expert_count</code> 是<b>设备张量</b>供 grouped GEMM 在 GPU 上消费——无独立元数据阶段、无同步点<span class="ev ev-v">V</span>。</p>
-<p><b>原则三：最坏尺寸换零同步，且承认代价。</b>normal 模式其实保留了一次 host 同步——README 注释原话「the CPU will wait for GPU's signal to arrive, so this is not compatible with CUDA graph. Unless you specify <code>num_worst_tokens</code>」：训练/prefill 按<b>实际</b>计数动态分配接收张量（省显存，反正训练不用 graph）；<code>num_worst_tokens</code> 是切换到最坏尺寸消灭这次同步的开关。官方 issue #39 还自评：队列式 buffer 省显存但复杂易死锁，固定满容量 buffer 更简单更快——「预留显存换零同步」是明码标价的取舍<span class="ev ev-v">V</span>。</p>
+<p>先厘清一个前提：变长 all-to-all 逻辑上<b>只需要每对（源，目标）的计数</b>（$G\times G$ 个整数，$G$ 为 rank 数），不需要全量路由表（规模正比于 token 数 × top-k）。「allgather 全量元数据」是朴素实现把充分统计量做坏了。先看两者差多少——以 DeepEP README 的 DeepSeek-V3 预训练口径为参数<span class="ev ev-v">V</span>（每 rank 每 microbatch $T_{\text{loc}}$=4096 个 token、top-$k$=8、$N$=256 个 routed experts，设 $G$=64），下表数字为算术演示<span class="ev ev-r">R</span>：</p>
+<table>
+<tr><th>交换内容</th><th>单份大小</th><th>全网交换量（allgather，$G$=64）</th></tr>
+<tr><td>稠密路由表 $[T_{\text{loc}}, N]$ 布尔（朴素「全量元数据」）</td><td>4096 × 256 B = <b>1 MB</b></td><td>64 MB</td></tr>
+<tr><td>稀疏 topk_ids $[T_{\text{loc}}, k]$ int64</td><td>4096 × 8 × 8 B = 256 KB</td><td>16 MB</td></tr>
+<tr><td><b>计数向量（充分统计量）</b> int32 × $G$</td><td>64 × 4 B = <b>256 B</b></td><td><b>16 KB</b></td></tr>
+</table>
+<p class="figcaption">表：元数据的三种形态，充分统计量比全量路由表小 4 个数量级。对照 token 本体（$T_{\text{loc}} \times k \approx 3.3\times10^4$ 个 token 副本 × 7168 维 ≈ 百 MB 级），16 KB 的计数才配称「零头」。</p>
+<p>关键认识：接收端要开工，只需要知道「<b>每个源 rank 给我发多少</b>」，不需要知道「哪个 token 去哪个专家」——后者在发送端本地就已经确定，专家分段可以在数据到位后按到达顺序在设备上现算。把这个认识落成协议，就是 DeepEP 的两条路径（API 事实一手核对<span class="ev ev-v">V</span>；逐步语义为合理推断<span class="ev ev-r">R</span>）：</p>
+<p><b>normal 模式（训练 / prefill）的五步协议</b>：</p>
+<ol>
+<li><b>门控不出卡</b>：router 在本 rank GPU 上完成，得到 <code>topk_ids [T_loc, k]</code>——它从此不再跨 rank 移动；</li>
+<li><b>设备侧计数交换</b>：<code>get_dispatch_layout(topk_idx)</code> 在设备上把 topk_ids 归约成「发给每个目标 rank 多少 token」的计数向量（一个 $G$ 维直方图），并把计数直接写到各对端（NVLink 域内 put / RDMA 域间写），全程无 CPU 参与；</li>
+<li><b>设备上算接收布局</b>：每个 rank 用收到的计数（谁给我发多少）做前缀和，得到接收缓冲里按源 rank 排列的分段偏移——<code>num_tokens_per_rank / num_tokens_per_rdma_rank / num_tokens_per_expert</code> 全是设备张量；</li>
+<li><b>数据搬运</b>：<code>dispatch()</code> 按布局搬 token 本体：机内走 NVLink，跨机走 RDMA，并支持从 NVLink 域向 RDMA 域转发（非对称域带宽转发），SM 数量可配；</li>
+<li><b>唯一一次 host 交互</b>：normal 模式的输出张量按<b>实际</b>接收数分配，CPU 要等一次 GPU 信号才知道尺寸（README 原话 "the CPU will wait for GPU's signal to arrive"）。训练不用 CUDA graph，这次等待无妨；机内场景传 <code>num_worst_tokens</code> 改最坏尺寸分配即可消掉它。</li>
+</ol>
+<div class="mermaid">
+sequenceDiagram
+    participant R as Router 门控（本 rank GPU）
+    participant L as get_dispatch_layout
+    participant P as 对端 ranks（NVL + RDMA）
+    participant D as dispatch kernel
+    participant M as grouped GEMM
+    R->>L: topk_ids [T_loc, k]（本地，不出卡）
+    L->>P: 每目标计数 int32 × G（设备侧点对点写入）
+    P-->>L: 对端计数到达（设备内存）
+    Note over L: 设备上做前缀和得接收分段偏移<br/>全程无 CPU 参与
+    L->>D: 布局就绪（num_tokens_per_* 设备张量）
+    D->>P: token 本体：机内 NVLink put<br/>跨机 RDMA（支持 NVL→RDMA 转发）
+    P-->>D: 数据落入接收缓冲
+    D-->>M: recv_x + recv_topk_idx + recv_expert_count
+    Note over D,M: normal 模式在此有一次 host 同步：<br/>按实际接收数分配输出张量
+    M->>M: 按每专家计数分段计算
+</div>
+<p class="figcaption">图 4：DeepEP normal 模式 dispatch 的分步时序。<span class="ev ev-v">V</span>（API 事实）+ <span class="ev ev-r">R</span>（逐步语义）</p>
+<p><b>low-latency 模式（decode）的槽位协议</b>——干脆没有独立的元数据阶段：</p>
+<ol>
+<li><b>初始化即固定</b>：每对（源，目标）预注册固定容量缓冲（容量 = <code>num_max_dispatch_tokens_per_rank</code>），且每专家一对 QP（<code>num_qps_per_rank = num_experts // group.size()</code>）；</li>
+<li><b>数据即元数据</b>：dispatch 时发送端把 token（FP8 + scale）直接写进对端对应槽位；<code>recv_expert_count</code> 是数据落位后自然更新的<b>设备张量</b>——计数是传输的副产物，不是前置条件；</li>
+<li><b>零同步</b>：没有计数交换、没有 barrier、没有 CPU 参与；缓冲形状恒定，CUDA graph 捕获后 replay 只需恢复 buffer 状态（README："compatible with CUDA graph (but you may restore some buffer status once you replay)"）；</li>
+<li><b>零 SM 重叠</b>：<code>return_recv_hook=True</code> 时实际接收推迟到 <code>hook()</code> 调用那一刻，通信在 RDMA 引擎后台推进——供双批重叠（TBO）使用。</li>
+</ol>
+<p>归纳成三条原则：<b>① 只交换充分统计量</b>——计数是 $G$ 个整数而非 $O(T{\cdot}k)$ 的路由表，combine 更是连计数都不换（复用 dispatch 的 handle）；<b>② 元数据设备驻留或随数据内联</b>——normal 在设备侧点对点交换计数，low-latency 把计数变成数据写入的副产物，两者都消灭了 host 往返；<b>③ 最坏尺寸换零同步</b>——固定容量缓冲 + 设备张量计数换来 CUDA graph 兼容，代价是预留显存，官方 issue #39 自评「队列式 buffer 省显存但复杂易死锁，固定满容量更简单更快」，这是明码标价的取舍<span class="ev ev-v">V</span>。</p>
 <div class="mermaid">
 flowchart TB
     subgraph N["朴素路径（host 往返型）"]
@@ -488,7 +530,7 @@ flowchart TB
     end
     N -.->|"三条原则：计数充分量 · 设备驻留/内联 · 最坏尺寸"| Dp
 </div>
-<p class="figcaption">图 4：朴素 all-to-allv 元数据路径与 DeepEP dispatch 的对照。</p>
+<p class="figcaption">图 5：朴素 all-to-allv 元数据路径与 DeepEP dispatch 的对照。</p>
 <p><b>UltraEP 的同族呼应</b>：权重线的 weight_sync 用 NVSHMEM 单侧 put + epoch ready-flag（§7.3），无全局 barrier、无 host 同步、graph 兼容；并且均衡对 token 线有反哺——负载摊平后 DeepEP 接收 buffer 的 worst-case 分配也随之下调<span class="ev ev-v">V</span>（博客设计原则节）。</p>
 </div>
 
@@ -541,14 +583,14 @@ $$
 <tr><td>all-to-all 特征</td><td>MB 级大消息、带宽型</td><td>KB 级小消息、延迟型</td></tr>
 <tr><td>通信库形态</td><td>DeepEP normal：NVLink+RDMA 转发、SM 数可控、无需 CUDA graph</td><td>DeepEP low-latency：纯 RDMA 固定槽位、零同步、CUDA graph 必开</td></tr>
 <tr><td>均衡杠杆</td><td>逐层精确复制 + 重路由（UltraEP：规划 &lt;100 µs、全程 &lt;300 µs）</td><td>周期性重放置 / 冗余专家 / 权重缓存（EPLB、MoonEP 等）</td></tr>
-<tr><td>失衡的代价形态</td><td>straggler 拉长同步步（吞吐）</td><td>单步时延抖动、TPOT 尾部（p99）</td></tr>
+<tr><td>失衡的代价形态</td><td>straggler 拖慢每层同步执行：该层步长由最慢 rank 决定，损失吞吐</td><td>单步时延抖动、TPOT 尾部（p99）</td></tr>
 </table>
 <div class="mermaid">
 flowchart TB
     subgraph PF["Prefill（计算密集 · 大批量 · 吞吐导向）"]
         direction TB
         pf1["token 供给：每步 T = 数千<br/>（chunked prefill 控制块大小）"] --> pf2["门控后 ≈100% 专家点亮，λ ≈ 16–128<br/>token/专家，GEMM 偏计算密集"]
-        pf2 --> pf3["失衡代价：straggler 拉长同步步<br/>吞吐损失 ≈ 1 − 1/I"]
+        pf2 --> pf3["失衡代价：每层同步执行要等最慢 rank（straggler）<br/>吞吐损失 ≈ 1 − 1/I"]
         pf3 --> pf4["通信：DeepEP normal<br/>NVLink+RDMA 大消息转发 · SM 可控 · 无需 CUDA graph"]
         pf4 --> pf5["均衡杠杆：逐层精确复制 + 重路由<br/>UltraEP：planner &lt;100µs · 全程 &lt;300µs"]
     end
@@ -560,7 +602,7 @@ flowchart TB
         dc4 --> dc5["均衡杠杆：周期性重放置 / 冗余专家 / 权重缓存<br/>（EPLB、MoonEP；逐层动态规划与 graph 冲突）"]
     end
 </div>
-<p class="figcaption">图 5：prefill 与 decode 大 EP 部署的对照——同一模型、同一 EP 度，两个阶段几乎在每个系统维度上都处于不同象限。</p>
+<p class="figcaption">图 6：prefill 与 decode 大 EP 部署的对照——同一模型、同一 EP 度，两个阶段几乎在每个系统维度上都处于不同象限。</p>
 <p>decode 不能照搬 UltraEP 逐层方案的两条硬理由<span class="ev ev-r">R</span>：① 每层动态求解与动态放置和 CUDA graph 捕获要求的静态控制流冲突；② 每步预算百微秒级，收益又被 memory-bound 稀释。</p>
 </div>
 
@@ -581,7 +623,7 @@ flowchart LR
     g1 --> i2["吞吐损失 ≈ 1 − 1/I<br/>且随层数复合"]
     h --> i2
 </div>
-<p class="figcaption">图 6：EP 度放大实际性能差距的逻辑链。</p>
+<p class="figcaption">图 7：EP 度放大实际性能差距的逻辑链。</p>
 <p><b>①自平均</b>：rank 负载是它 $m = N/G$ 个专家负载之和，$m$ 越小，和的相对波动越大；<b>②极值统计</b>：步时取 $G$ 个 rank 的最大值，rank 越多最慢者越极端；<b>③粒度下限</b>：均衡的最小动作是搬一个专家或改一路 token，占该 rank 负载的 $1/m$，$m$ 小则任何动作都是大跳变（NVL 域 &lt; EP 组时下限进一步抬高，§2）；<b>④⑤</b>失衡在同步与通信上双重放大并随层数复合。</p>
 <p>①②可以合成<b>解析下限</b>（均匀路由、纯随机涨落近似<span class="ev ev-r">R</span>）：</p>
 <div class="formula">
@@ -604,7 +646,7 @@ xychart-beta
     line [2.02, 1.72, 1.51, 1.36, 1.25, 1.18, 1.13]
     line [3.36, 2.66, 2.18, 1.83, 1.59, 1.42, 1.29]
 </div>
-<p class="figcaption">图 7：三条线自下而上依次为 EP8 / EP64 / EP256。横轴 $T$ 为每步 token 总数，纵轴为 $\mathcal{I}_{\text{noise}}$。</p>
+<p class="figcaption">图 8：三条线自下而上依次为 EP8 / EP64 / EP256。横轴 $T$ 为每步 token 总数，纵轴为 $\mathcal{I}_{\text{noise}}$。</p>
 <table>
 <tr><th>$T$ \ $G$</th><th>EP8</th><th>EP64</th><th>EP256</th></tr>
 <tr><td>64</td><td>1.25（20%）</td><td>2.02（50%）</td><td>3.36（70%）</td></tr>
