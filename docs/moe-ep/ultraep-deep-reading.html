@@ -453,7 +453,7 @@ flowchart LR
 
 <h1 style="font-size:1.6em">Part II 问题详解</h1>
 <blockquote>
-<p>以下问题按阅读时序分三组：概念组（Q1–Q7，来自一篇 DeepSeek 论文对话）、通信组（Q8–Q10）、均衡与部署组（Q11–Q16，来自本笔记的讨论，含 Q11A 论文 Figure 4 精读）。每个回答自含；公式中的符号在公式下方当场定义，或引用 §0.2 符号表。</p>
+<p>以下问题按阅读时序分三组：概念组（Q1–Q7，来自一篇 DeepSeek 论文对话）、通信组（Q8–Q10A）、均衡与部署组（Q11–Q16，来自本笔记的讨论，含 Q11A 论文 Figure 4 精读）。每个回答自含；公式中的符号在公式下方当场定义，或引用 §0.2 符号表。</p>
 </blockquote>
 
 <h2>概念组：RSN 与超节点</h2>
@@ -613,6 +613,29 @@ flowchart TB
 </div>
 <p class="figcaption">图 6：朴素 all-to-allv 元数据路径与 DeepEP dispatch 的对照。</p>
 <p><b>UltraEP 的同族呼应</b>：权重线的 weight_sync 用 NVSHMEM 单侧 put + epoch ready-flag（§8.3），无全局 barrier、无 host 同步、graph 兼容；并且均衡对 token 线有反哺——负载摊平后 DeepEP 接收 buffer 的 worst-case 分配也随之下调<span class="ev ev-v">V</span>（博客设计原则节）。</p>
+</div>
+
+<div class="qa">
+<h3>Q10A 「放大的 Non-Payload 开销」与「热点专家的扇出瓶颈」怎么理解？</h3>
+<p>这是论文 §4 的两个 key insight，同一个问题的两面：<b>在 RSN 上，权重同步的瓶颈不再是「线够不够快」，而是「调度这些线的开销」</b>。</p>
+<p><b>① Non-Payload 开销：瓶颈从链路带宽转移到控制路径。</b>一次通信里，真正在线上跑的数据字节叫 <b>payload（负载）</b>；其余一切——谁发给谁、切成几块、暂存在哪、写到哪个地址、何时开始——都是 <b>non-payload 开销（控制路径开销）</b>。对比两类通信：</p>
+<table>
+<tr><th></th><th>经典集合通信（NCCL broadcast 等）</th><th>UltraEP 权重/梯度同步</th></tr>
+<tr><td>通信模式</td><td>组固定、模式固定</td><td>每层每 microbatch 的任务集合都变</td></tr>
+<tr><td>切分/寻址</td><td>初始化时一次定死，运行时零决策</td><td>逐 tile 现算：查任务、算远端地址、维护就绪标志</td></tr>
+<tr><td>瓶颈</td><td>链路带宽</td><td>控制路径（线在 tile 之间空转等待）</td></tr>
+</table>
+<p>三个控制工作在代码里逐个可指认<span class="ev ev-v">V</span>：<b>任务切分与流水线化</b>——设备上现算任务清单（<code>build_weight_sync_task_lists_kernel</code>）、tile 靠原子计数抢活；<b>数据暂存</b>——TMA load → SMEM → N 路 store，中继场景「收一个 chunk → 暂存 → 再转发」，每跳都是额外显存事务与延迟；<b>动态寻址</b>——每个 tile 二分查找自己属于哪个任务（<code>get_weight_sync_tile_info</code>）、计算各目的 rank 的对称堆地址、维护带 epoch 的 ready-flag。RSN 的线太快（聚合 260 TB/s 量级），搬 38 MB 权重只要几十微秒，但 tile 之间的控制等待让线上实际吞吐低于峰值——这就是「阻碍了带宽的饱和」，且线越快、控制开销占比越大，即被「放大」。</p>
+<p><b>「盲目增加并行度是浪费的，且可能与重叠的反向计算竞争相同的资源」</b>：瓶颈在控制路径不在算力，SM 加多了只是空转；且反向时 UltraEP <b>故意</b>让通信 kernel 与计算 kernel 共享 SM（持久化 kernel，驻留 SM 数默认 42、须为偶数，<code>ULTRA_EP_GRAD_REDUCE_NUM_SMS</code> 可调）——梯度归约要被 attention/router 反向掩盖，通信霸占全部 SM 会拖慢被依赖的计算，重叠就白做了<span class="ev ev-v">V</span>（博客：精细控制 SM 占用与共享内存 footprint，使通信与计算线程块可调度到同一 SM）。</p>
+<p><b>② 扇出瓶颈：均衡自己制造了通信 straggler。</b>扇出过程四步走查：</p>
+<ol>
+<li>热专家 e 被判定复制：master 在 rank M，副本放到另外 C−1 个 rank，<b>每个副本都需要完整权重</b>（Qwen3-235B 单专家 fc1+fc2 ≈ 37.7 MB bf16）；</li>
+<li>rank M 在同一时刻向 C−1 个目的地各发一份 37.7 MB——一份数据、几十个接收者的多播，即度数 C−1 的<b>扇出</b>；</li>
+<li>C−1 路流全部从 M 的同一个出口注入，全部副本完成时间 ≈ <b>(C−1) × 37.7 MB ÷ 出口带宽</b>，随副本数线性增长。代入数字：偏斜下一个热专家要 20 个副本，即 21 × 37.7 ≈ 792 MB，按几百 GB/s 有效注入带宽要 <b>2–4 ms</b>——对比 300 µs 总预算超一个数量级<span class="ev ev-r">R</span>（算术演示）；</li>
+<li>于是：<b>计算 straggler 消失了，通信 straggler 诞生了</b>——且负载越偏斜（越需要复制）它越严重，均衡的收益被自己引入的通信开销吃掉，即「抵消负载均衡带来的收益」。</li>
+</ol>
+<p><b>「动态子组多播」难在哪</b>：若接收组固定，可用硬件多播（NVLink multicast / NVSHMEM 静态 team）一步到位；但 UltraEP 里副本组每层每 microbatch 都在变，只能退化为逐目的地点对点 put，或<b>每次现建转发树</b>。解法即 §8.2 的两阶段中继树：master 只发 ⌊√C⌋ 份给中继（出口流量从 C−1 份降到 ⌊√C⌋ 份，扇出时间约省 √C 倍），中继由低流量 rank 充当、每次按流量重建；是否启用由扇出收益判定（副本数 ≥ 4 且 副本数 − max(直发扇出, 子扇出) ≥ 2）——温和场景直发，极端热专家才上中继。</p>
+<p><b>两段的内在联系</b>：中继解决扇出，但每一跳中继都多一次「暂存 + 寻址 + 发信号」，<b>加深了 ① 的控制路径开销</b>——这正是论文强调 planner 与通信必须协同设计的原因：规划器给出的方案（开多少副本、中继树怎么建）直接决定数据面的控制开销，两者不能各优化各的。</p>
 </div>
 
 <h2>均衡与部署组：量化、激活与 EP 度</h2>
