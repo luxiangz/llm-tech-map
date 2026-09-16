@@ -31,6 +31,7 @@ description: 面向大模型方向的完整技术知识目录，覆盖从数学�
 - [MoE EP 负载均衡研究笔记索引](docs/moe-ep/)
 - [EPLB · UltraEP · MoonEP 方案深度解析](docs/moe-ep/moe-ep-overview.html)
 - [EPLB · UltraEP · MoonEP 源码级对比分析](docs/moe-ep/moe-ep-code-analysis.html)
+- [UltraEP 深度阅读笔记 —— 论文 × 源码 × 对话对齐](docs/moe-ep/ultraep-deep-reading.html)
 
 ## 学习路径建议
 
@@ -117,7 +118,7 @@ flowchart LR
 
 ### 2.3 模型结构组件
 - [ ] Transformer 全景：Encoder/Decoder/Encoder-Decoder 三种范式
-- [ ] FFN 变体：SwiGLU/GELU/门控机制
+- [ ] FFN 变体：SwiGLU/GELU/门控机制 — 📄 [MoE/FFN 原理与融合算子笔记](docs/inference/moe-ffn-fused-operators.html)
 - [ ] 主流开源架构差异：LLaMA/Qwen/GLM/Kimi/Mistral 组件选择对比
 - [ ] DeepSeek 家族：V3/V3.2/V4 架构演进、V4 PRO 模型代码精读
 
@@ -162,7 +163,7 @@ flowchart LR
 - [ ] 流水线并行：PP 气泡、调度算法、DualPipe/PgPipe
 - [ ] 专家并行 EP、上下文并行 CP、序列并行 SP — 📄 [SP vs CP 详解笔记](docs/parallel/sp-vs-cp.html)
 - [ ] PCP：Prefill Context Parallel 设计与实现 — 📄 [PCP 完整过程梳理笔记](docs/inference/pcp-code-walkthrough.html)
-- [ ] 集合通信：原语、AllReduce 算法、通信计算重叠
+- [ ] 集合通信：原语、AllReduce 算法、通信计算重叠 — 📄 [端到端数据流×内存×通信笔记](docs/parallel/llm-dataflow-memory-communication-stack.html)
 
 ### 3.4 训练加速
 - [ ] FlashAttention、MLA、Ulysses、RingAttention
@@ -179,7 +180,7 @@ flowchart LR
 
 ### 3.6 训练框架与平台
 - [ ] Megatron-LM、DeepSpeed、Torchtitan、Nemotron
-- [ ] 训练框架源码：deepseek-harness、minimind 从零训练
+- [ ] 训练框架源码：deepseek-harness、minimind 从零训练 — 📄 [MiniMind 全链路指南](docs/minimind/)
 - [ ] Slurm/HPC 调度器、Kubernetes 训练调度
 - [ ] 训练集群观测：DCGM/GPU 监控、任务队列管理
 
@@ -294,7 +295,7 @@ flowchart LR
 - [ ] FlashAttention 内核演进、FlashMLA、FlashKDA、DeepGEMM、MSA
 - [ ] GEMV 与 decode 阶段瓶颈、融合 kernel
 - [ ] megakernel 范式
-- [ ] 专家并行内核：UltraEP、moonep
+- [ ] 专家并行内核：UltraEP、moonep — 📄 [MoE EP 研究笔记索引](docs/moe-ep/)
 - [ ] Lightning Indexer 算子
 - [ ] HPC 算子库工程：源码/测试/基准
 

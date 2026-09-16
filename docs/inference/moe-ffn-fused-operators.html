@@ -38,7 +38,7 @@ window.MathJax = {
 <script>
 (function () {
   var sources = [
-    "assets/mathjax-tex-svg.js",
+    "../../assets/lib/mathjax-tex-svg.js",
     "https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js",
     "https://cdn.bootcdn.net/ajax/libs/mathjax/3.2.2/es5/tex-svg.js",
     "https://cdn.staticfile.org/mathjax/3.2.2/es5/tex-svg.js",
@@ -83,9 +83,9 @@ window.MathJax = {
 </ul>
 <p>相关图文件：</p>
 <ul>
-<li><a href="E:/Desktop/业务/EP/ffn_formula_flow.drawio">ffn_formula_flow.drawio</a>：包含 ReLU FFN、SwiGLU FFN、Sparse MoE 三个 sheet</li>
-<li><a href="E:/Desktop/业务/EP/mlp_shape_flow.svg">mlp_shape_flow.svg</a></li>
-<li><a href="E:/Desktop/业务/EP/moe_vs_ffn_diagram.svg">moe_vs_ffn_diagram.svg</a></li>
+<li><a href="assets/ffn_formula_flow.drawio">ffn_formula_flow.drawio</a>：包含 ReLU FFN、SwiGLU FFN、Sparse MoE 三个 sheet</li>
+<li><a href="assets/mlp_shape_flow.svg">mlp_shape_flow.svg</a></li>
+<li><a href="assets/moe_vs_ffn_diagram.svg">moe_vs_ffn_diagram.svg</a></li>
 </ul>
 <hr />
 <h1>第 1 章 从 FFN 到 MoE 的前馈计算原理</h1>
@@ -113,7 +113,7 @@ b2 : [d_model]
       ↓  W2
 [B, T, d_model]
 </code></pre>
-<p>这正好对应图 <a href="E:/Desktop/业务/EP/mlp_shape_flow.svg">mlp_shape_flow.svg</a>。</p>
+<p>这正好对应图 <a href="assets/mlp_shape_flow.svg">mlp_shape_flow.svg</a>。</p>
 <div class="figure">
 <img src="assets/ffn-relu-flow.svg" alt="ReLU FFN 公式与 shape 流程">
 <div class="figcaption">图 1-1：ReLU FFN 的公式流程与 shape 流转</div>
@@ -159,7 +159,7 @@ y = h W_{\mathrm{down}} + b_{\mathrm{down}}\]</div>
 \operatorname{activation}\left(\mathrm{gate\_proj}(x)\right)
 \odot \mathrm{up\_proj}(x)
 \right)\]</div>
-<p>这也是 <a href="E:/Desktop/业务/EP/ffn_formula_flow.drawio">ffn_formula_flow.drawio</a> 中 SwiGLU sheet 的展开内容。</p>
+<p>这也是 <a href="assets/ffn_formula_flow.drawio">ffn_formula_flow.drawio</a> 中 SwiGLU sheet 的展开内容。</p>
 <div class="figure">
 <img src="assets/ffn-swiglu-flow.svg" alt="SwiGLU FFN 公式与 gate/up/down 流程">
 <div class="figcaption">图 1-2：SwiGLU FFN 的 gate/up/down 拆解与 Hadamard 逐元素乘法</div>
@@ -188,7 +188,7 @@ W_{\mathrm{down}}
 \odot
 (W_{\mathrm{up}} x)
 \right)\]</div>
-<p>该结构对应 <a href="E:/Desktop/业务/EP/moe_vs_ffn_diagram.svg">moe_vs_ffn_diagram.svg</a> 和 <a href="E:/Desktop/业务/EP/ffn_formula_flow.drawio">ffn_formula_flow.drawio</a> 的 MoE sheet。</p>
+<p>该结构对应 <a href="assets/moe_vs_ffn_diagram.svg">moe_vs_ffn_diagram.svg</a> 和 <a href="assets/ffn_formula_flow.drawio">ffn_formula_flow.drawio</a> 的 MoE sheet。</p>
 <div class="figure">
 <img src="assets/moe-routing-flow.svg" alt="Sparse MoE 路由与共享专家流程">
 <div class="figcaption">图 1-3：Sparse MoE 的 Router/TopK、routed experts 与 shared experts 展开</div>

@@ -1,0 +1,110 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="720" viewBox="0 0 1200 720" font-family="Microsoft YaHei, Segoe UI, sans-serif">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#f7f9fd"/>
+      <stop offset="100%" stop-color="#eef3fb"/>
+    </linearGradient>
+    <linearGradient id="dense" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#4f83cc"/>
+      <stop offset="100%" stop-color="#2f5fa3"/>
+    </linearGradient>
+    <linearGradient id="router" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#f0a04b"/>
+      <stop offset="100%" stop-color="#d47a1f"/>
+    </linearGradient>
+    <linearGradient id="expert" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#43b0a5"/>
+      <stop offset="100%" stop-color="#278a81"/>
+    </linearGradient>
+    <linearGradient id="active" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#e56a6a"/>
+      <stop offset="100%" stop-color="#c33f3f"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="4" stdDeviation="5" flood-color="#1c2430" flood-opacity="0.12"/>
+    </filter>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L8,3 L0,6 z" fill="#5b6572"/>
+    </marker>
+    <marker id="arrowActive" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L8,3 L0,6 z" fill="#c33f3f"/>
+    </marker>
+  </defs>
+
+  <rect width="1200" height="720" rx="24" fill="url(#bg)"/>
+  <text x="600" y="62" text-anchor="middle" font-size="32" font-weight="700" fill="#16233a">Dense FFN vs. MoE：同样的“前馈层”位置，不同的计算路径</text>
+
+  <!-- left panel -->
+  <rect x="55" y="105" width="500" height="565" rx="20" fill="#ffffff" stroke="#d7e0ec" stroke-width="2" filter="url(#shadow)"/>
+  <text x="305" y="155" text-anchor="middle" font-size="24" font-weight="700" fill="#2f5fa3">Dense FFN</text>
+  <text x="305" y="185" text-anchor="middle" font-size="15" fill="#5b6572">所有 token 共用同一套前馈权重</text>
+
+  <rect x="235" y="225" width="140" height="70" rx="14" fill="#eaf2ff" stroke="#4f83cc" stroke-width="2"/>
+  <text x="305" y="256" text-anchor="middle" font-size="18" font-weight="700" fill="#2f5fa3">输入 x</text>
+  <text x="305" y="278" text-anchor="middle" font-size="13" fill="#5b6572">每层所有 token</text>
+
+  <line x1="305" y1="295" x2="305" y2="340" stroke="#5b6572" stroke-width="3" marker-end="url(#arrow)"/>
+
+  <rect x="170" y="345" width="270" height="105" rx="18" fill="url(#dense)" filter="url(#shadow)"/>
+  <text x="305" y="390" text-anchor="middle" font-size="24" font-weight="800" fill="#ffffff">FFN / MLP</text>
+  <text x="305" y="420" text-anchor="middle" font-size="14" fill="#eaf2ff">一个共享权重块</text>
+
+  <line x1="305" y1="450" x2="305" y2="495" stroke="#5b6572" stroke-width="3" marker-end="url(#arrow)"/>
+
+  <rect x="235" y="500" width="140" height="70" rx="14" fill="#eaf2ff" stroke="#4f83cc" stroke-width="2"/>
+  <text x="305" y="531" text-anchor="middle" font-size="18" font-weight="700" fill="#2f5fa3">输出 y</text>
+  <text x="305" y="553" text-anchor="middle" font-size="13" fill="#5b6572">y = FFN(x)</text>
+
+  <!-- right panel -->
+  <rect x="620" y="105" width="525" height="565" rx="20" fill="#ffffff" stroke="#d7e0ec" stroke-width="2" filter="url(#shadow)"/>
+  <text x="882" y="155" text-anchor="middle" font-size="24" font-weight="700" fill="#0b63ce">Sparse MoE</text>
+  <text x="882" y="185" text-anchor="middle" font-size="15" fill="#5b6572">路由器选择少数专家，只有被选中专家参与计算</text>
+
+  <rect x="810" y="215" width="145" height="62" rx="14" fill="#eaf2ff" stroke="#4f83cc" stroke-width="2"/>
+  <text x="882" y="242" text-anchor="middle" font-size="17" font-weight="700" fill="#2f5fa3">输入 x</text>
+  <text x="882" y="264" text-anchor="middle" font-size="12" fill="#5b6572">token</text>
+
+  <line x1="882" y1="277" x2="882" y2="318" stroke="#5b6572" stroke-width="3" marker-end="url(#arrow)"/>
+
+  <rect x="745" y="323" width="275" height="68" rx="16" fill="url(#router)" filter="url(#shadow)"/>
+  <text x="882" y="350" text-anchor="middle" font-size="18" font-weight="800" fill="#ffffff">Router / Gating</text>
+  <text x="882" y="373" text-anchor="middle" font-size="13" fill="#fff4e2">softmax(TopK(W_r · x))</text>
+
+  <!-- router to experts -->
+  <line x1="710" y1="357" x2="655" y2="405" stroke="#c33f3f" stroke-width="4" marker-end="url(#arrowActive)"/>
+  <line x1="795" y1="357" x2="770" y2="405" stroke="#c33f3f" stroke-width="4" marker-end="url(#arrowActive)"/>
+  <line x1="882" y1="391" x2="882" y2="432" stroke="#5b6572" stroke-width="2" marker-end="url(#arrow)"/>
+  <line x1="970" y1="357" x2="995" y2="405" stroke="#c33f3f" stroke-width="4" marker-end="url(#arrowActive)"/>
+  <line x1="1055" y1="357" x2="1110" y2="405" stroke="#c33f3f" stroke-width="4" marker-end="url(#arrowActive)"/>
+
+  <!-- expert boxes -->
+  <rect x="630" y="435" width="95" height="66" rx="12" fill="url(#expert)" stroke="#278a81" stroke-width="1.5"/>
+  <text x="677" y="466" text-anchor="middle" font-size="17" font-weight="700" fill="#ffffff">E₁</text>
+  <text x="677" y="486" text-anchor="middle" font-size="11" fill="#e8f7f1">Expert 1</text>
+
+  <rect x="750" y="435" width="95" height="66" rx="12" fill="url(#active)" stroke="#c33f3f" stroke-width="2.5"/>
+  <text x="797" y="466" text-anchor="middle" font-size="17" font-weight="700" fill="#ffffff">E₂</text>
+  <text x="797" y="486" text-anchor="middle" font-size="11" fill="#fff2f2">被选中 ✓</text>
+
+  <rect x="870" y="435" width="95" height="66" rx="12" fill="url(#expert)" stroke="#278a81" stroke-width="1.5"/>
+  <text x="917" y="466" text-anchor="middle" font-size="17" font-weight="700" fill="#ffffff">E₃</text>
+  <text x="917" y="486" text-anchor="middle" font-size="11" fill="#e8f7f1">Expert 3</text>
+
+  <rect x="990" y="435" width="95" height="66" rx="12" fill="url(#active)" stroke="#c33f3f" stroke-width="2.5"/>
+  <text x="1037" y="466" text-anchor="middle" font-size="17" font-weight="700" fill="#ffffff">E₅</text>
+  <text x="1037" y="486" text-anchor="middle" font-size="11" fill="#fff2f2">被选中 ✓</text>
+
+  <text x="882" y="525" text-anchor="middle" font-size="13" fill="#5b6572">N 个专家中只激活 K 个（图示 K=2）</text>
+
+  <!-- experts to combine -->
+  <line x1="677" y1="501" x2="820" y2="575" stroke="#5b6572" stroke-width="2" marker-end="url(#arrow)"/>
+  <line x1="797" y1="501" x2="845" y2="575" stroke="#c33f3f" stroke-width="3" marker-end="url(#arrowActive)"/>
+  <line x1="917" y1="501" x2="882" y2="575" stroke="#5b6572" stroke-width="2" marker-end="url(#arrow)"/>
+  <line x1="1037" y1="501" x2="940" y2="575" stroke="#c33f3f" stroke-width="3" marker-end="url(#arrowActive)"/>
+
+  <rect x="780" y="578" width="205" height="62" rx="14" fill="#eaf2ff" stroke="#4f83cc" stroke-width="2"/>
+  <text x="882" y="603" text-anchor="middle" font-size="16" font-weight="700" fill="#2f5fa3">加权输出 y</text>
+  <text x="882" y="624" text-anchor="middle" font-size="12" fill="#5b6572">y = Σ gᵢ(x) · Eᵢ(x)</text>
+
+  <text x="600" y="702" text-anchor="middle" font-size="13" fill="#5b6572">红色表示本次被路由激活的专家；灰色表示未被选中的专家。</text>
+</svg>

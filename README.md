@@ -27,6 +27,7 @@
 - [PCP 完整过程梳理](https://luxiangz.github.io/llm-tech-map/docs/inference/pcp-code-walkthrough.html)
 - [MLA 计算流全图解 & 吸收矩阵对比分析](https://luxiangz.github.io/llm-tech-map/docs/inference/mla-absorb-compute-flow.html)
 - [前缀命中在 Transformer / MoE 中到底节省了什么计算](https://luxiangz.github.io/llm-tech-map/docs/inference/prefix-cache-kv-moe.html)
+- [MoE 与 FFN 原理及 vLLM / vLLM-Ascend 前馈融合算子](https://luxiangz.github.io/llm-tech-map/docs/inference/moe-ffn-fused-operators.html)
 
 ### 并行与通信
 
@@ -39,6 +40,7 @@
 - [专题索引](https://luxiangz.github.io/llm-tech-map/docs/moe-ep/)
 - [方案深度解析](https://luxiangz.github.io/llm-tech-map/docs/moe-ep/moe-ep-overview.html)
 - [源码级对比分析](https://luxiangz.github.io/llm-tech-map/docs/moe-ep/moe-ep-code-analysis.html)
+- [UltraEP 深度阅读笔记](https://luxiangz.github.io/llm-tech-map/docs/moe-ep/ultraep-deep-reading.html)
 
 ## 仓库结构
 
