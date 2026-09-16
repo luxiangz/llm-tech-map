@@ -376,12 +376,43 @@ $$
 <p>冗余槽位的权重/梯度 buffer <b>全部层共享一套</b>（每 rank $R$ 份），运行时零动态分配<span class="ev ev-v">V</span>。博客口径：Qwen3-235B 上单个冗余槽位的额外显存从 9.9 GB（不复用）降到 108 MB<span class="ev ev-v">V</span>。算术复核<span class="ev ev-r">R</span>：Qwen3-235B 隐藏 4096、专家中间维 1536，单专家 $3\times4096\times1536 \approx 18.9\text{M}$ 参数；bf16 权重 37.7 MB + fp32 梯度 75.5 MB ≈ 113 MB/槽；94 层各留一份 ≈ 10.6 GB、复用一份 ≈ 113 MB——与官方数字差 &lt;8%，量级吻合。</p>
 
 <h2>6. 控制面第 1 步：精确负载采集（load_compute.cu）</h2>
-<p>规划器的输入是<b>门控后的精确负载</b> $L_e$。三个 kernel 完成采集（load_compute.cu<span class="ev ev-v">V</span>）：</p>
-<ol>
-<li><b>本地直方图</b>：稠密路径 <code>rmap_local_sum_kernel</code> 把 $[T, N]$ 布尔路由图按列求和（warp 合并读 + 共享内存块内归约 + 全局 atomicAdd）；稀疏路径 <code>sparse_topk_histogram_kernel</code> 直接对 <code>topk_ids [T,k]</code> 做共享内存直方图——框架可走 <code>update_placement_sparse</code> 避免物化稠密路由图。</li>
-<li><b>跨 rank 可见性</b>：每 rank 的直方图写入 <b>NVSHMEM 对称堆</b>（代码注释「alloc by nvshmem」），域内各 rank 直接可读，无需集合通信搬运<span class="ev ev-v">V</span>。</li>
-<li><b>全局归约</b>：<code>reduce_per_rank_loads_kernel</code> 把 $G$ 份每 rank 负载合成全局 $L_e$。随后 profiler 的 <code>stage_pre</code> 钩子把「均衡前」负转载走（manager.py:547）。</li>
-</ol>
+
+<h3>6.0 原理：这一步在解决什么问题</h3>
+<p>规划器（§7）需要知道「门控后每个专家实际收到多少 token」。先想清楚这个信息的<b>数据形状</b>与<b>分布</b>，做法就自然浮现：</p>
+<ul>
+<li><b>它是一张逐源矩阵 Λ = {λ(r,e)}</b>：rank r 的 token 里有多少给了专家 e。关键观察：<b>Λ 的每一行天然是本地的</b>——rank r 自己的 token 选了谁，本 rank 的 router 输出里全有，不需要问任何人；唯一需要跨 rank 汇聚的是<b>列和</b> $L_e = \sum_r \lambda_{r,e}$（专家 e 的全局负载），而那只是一个长度 $N$ 的整数向量。所以「采集」的通信量从矩阵级（MB，若做全量交换）降到向量级（KB）——这是整段设计的总原则：<b>行不出户，只汇列和</b>。</li>
+<li><b>「求列和」就是一次直方图统计</b>。框架给 UltraEP 的门控结果有两种形态，对应两条路径：稠密路由图 <code>routing_map [T, N]</code>（bool，token×专家 的 0/1 矩阵，列和即负载）；稀疏 <code>topk_ids [T, k]</code>（每个 token 选中的专家编号，直方图即负载）。两者信息等价，稀疏形态省 $T \times N$ 的布尔存储与写入（T=4096、N=256 时约 1 MB/层），框架二选一调用。</li>
+<li><b>直方图在 GPU 上的经典难点是写冲突</b>：成千上万线程同时给同一个专家计数，若都走全局内存原子加，争用会拖垮吞吐。标准解法是<b>私有化（privatization）</b>：每个线程块先在自己的一块共享内存里维护局部直方图，块内增量全部打在共享内存上（快且无跨块争用），块收尾时才对全局结果做一次合并原子加——全局原子次数从 O(T·k) 降到 O(块数 × N)。</li>
+<li><b>跨 rank 怎么共享</b>：每 rank 的局部直方图直接写进 <b>NVSHMEM 对称堆</b>——一块在每个 rank 上布局一致、可被域内所有 peer 直接寻址的显存（<code>nvshmem_ptr</code> 把远端地址映射成本地可解引用的指针）。于是「共享」不需要对端配合执行任何通信动作：谁需要，谁自己读，one-sided。域内 G 份直方图总共只有 G × N × 4 B（EP64、N=256 时 64 KB），一个普通 kernel 逐元素加一遍即可，无需 NCCL/NVSHMEM 集合通信、更无需 host 介入。</li>
+<li><b>确定性是免费的</b>：全程的原子加都是<b>整数</b>加法——整数加法交换律/结合律精确成立，原子到达顺序不影响结果，所以这一步天然可复现（对比浮点原子加的顺序不确定性，§10 的确定性归约正是为浮点设计的）。</li>
+</ul>
+
+<h3>6.1 具体做法：三个 kernel 逐个走</h3>
+<div class="mermaid">
+flowchart LR
+    A["门控输出<br/>routing_map [T,N] 或 topk_ids [T,k]"] --> B["kernel 1：本地直方图<br/>（共享内存私有化 + 全局原子合并）"]
+    B --> C["NVSHMEM 对称堆<br/>每 rank 一份 [N] 整数直方图"]
+    C --> D["kernel 2：跨 rank 归约<br/>reduce_per_rank_loads<br/>读 G 份 → 全局 L_e"]
+    D --> E["规划器（§7）<br/>与 profiler 的 stage_pre 快照"]
+</div>
+<p class="figcaption">图 6：负载采集的数据流。全部设备驻留，无 host 参与；通信量 = 每 rank 1 KB 级的整数向量。</p>
+
+<p><b>kernel 1a：稠密路径 <code>rmap_local_sum_kernel</code></b><span class="ev ev-v">V</span>（load_compute.cu:7–73）。任务是把 $[T, N]$ 的 0/1 矩阵按列求和。线程组织按「一列一线程」设计：</p>
+<ul>
+<li><b>维度映射</b>：<code>block_x = 32·⌈N/32⌉</code>（每列一个线程，向上取整到 warp 的倍数），<code>threads_y = 1024 / block_x</code>（一个块同时处理多行）；行维用 grid-stride 循环扫完整个 T；块数 <code>min(256, ⌈T/threads_y⌉)</code>。以 N=256 为例：block_x=256、threads_y=4，即每块一次处理 4 行、每专家一线程累计。</li>
+<li><b>合并读（coalescing）</b>：同一 warp 的 32 个线程读同一行的 32 个相邻列——routing_map 是行主序，相邻线程地址相邻，一次访存事务整段取回，布尔矩阵的读带宽不打折（代码注释原话 "maximizing bandwidth"）。</li>
+<li><b>两级归约</b>：每线程先把分到的行累加成局部和 → 写共享内存 <code>smem_sum[ty·N + tx]</code>（相邻线程相邻地址，零 bank 冲突）→ <code>ty == 0</code> 的线程把块内所有行维的部分和加起来 → <code>atomicAdd</code> 到全局直方图对应槽位。全局原子次数 = 块数 × N，而不是线程数 × T。</li>
+</ul>
+<p><b>kernel 1b：稀疏路径 <code>sparse_topk_histogram_kernel</code></b><span class="ev ev-v">V</span>（load_compute.cu:85–128）。输入直接是 <code>topk_ids</code> 摊平后的 T·k 个专家编号：每个线程 grid-stride 领取条目，越界编号直接丢弃；块内 256 线程共享一块 <code>smem_hist[N]</code> 私有直方图，计数打共享内存，块尾把非零槽位 <code>atomicAdd</code> 合并到全局。框架侧对应 <code>update_placement_sparse(topk_ids)</code>——不需要先把 topk 展开成稠密 0/1 矩阵再统计，省一次物化（对照 §9 的稠密/稀疏双路径，这里采集端就给了同样选择）。</p>
+<p><b>kernel 2：跨 rank 归约 <code>reduce_per_rank_loads_kernel</code></b><span class="ev ev-v">V</span>（load_compute.cu:131–151）。本地直方图落在对称堆后，域内每个 rank 都能直接读到全部 G 份（<code>loads_per_rank [G, N]</code> 视角）；这个 kernel 每线程负责一个专家列，把 G 个数顺序相加写出全局 $L_e$。G×N×4B 在 EP64/N=256 时仅 64 KB——一次纯显存读放大的小遍历，微秒级。注意它不是 <code>allreduce</code>：没有通信协议、没有对端参与、没有环形搬运，就是「数据已经在我能直接读的地方，读一遍加一遍」——对称堆把「通信」变成了「寻址」。</p>
+
+<h3>6.2 与规划器、profiler 的衔接</h3>
+<ul>
+<li><b>交给规划器</b>：全局 $L_e$ 是 §7 二分搜索的输入（可行性谓词 <code>warp_capacity_feasible</code> 的 rank 负载由它聚合而来）；而 Λ 的<b>行信息从未离开过本 rank</b>——后续 SolveReroute 的本地配额优先、比例切分用的都是本地路由图自己（§7、Q6A）。</li>
+<li><b>profiler 快照</b>：<code>stage_pre</code> 钩子（manager.py:547）在规划前把「均衡前」负载存档；重路由完成后 <code>record_post</code> 用配额表重建「均衡后」负载（manager.py:332–357），前后对比即 §1.1 的 𝓘 1.30–4.01 → 1.01–1.04 的数据来源。</li>
+<li><b>诊断模式</b>：<code>update_placement(..., verify_reduced_loads=True)</code> 会用框架侧 <code>all_reduce</code> 再算一遍全局负载并与 UltraEP 结果断言相等（manager.py:552–558）——仅用于测试验证采集正确性，生产路径关闭。</li>
+</ul>
+<p><b>开销定位</b>：本步读写量级为每 rank ~1 MB 的布尔读（稠密）或 T·k 次整数加（稀疏），加上 64 KB 的跨 rank 读，整体只是 §7「规划 &lt;100 µs」预算中很小的一部分——采集便宜，正是「精确负载」路线能成立的第一道闸门。</p>
 
 <h2>7. 控制面第 2 步：quota 规划器（placement.cu）</h2>
 
@@ -402,7 +433,7 @@ flowchart TD
     g --> h["quota oracle：top-k 整数可行配额"]
     h --> i["输出：放置 + q(r,e,t) + rank_quota_prefix"]
 </div>
-<p class="figcaption">图 6：quota 规划器求解流程（博客 §4.1 + placement.cu 结构对照）。</p>
+<p class="figcaption">图 7：quota 规划器求解流程（博客 §4.1 + placement.cu 结构对照）。</p>
 <p>代码级证据（placement.cu<span class="ev ev-v">V</span>）：</p>
 <ul>
 <li><b>可行性谓词</b> <code>warp_capacity_feasible()</code>（placement.cu:76）：给定 $\tau$，每 rank 算 $\text{excess}_r = (L_r - \tau)^+$（超载量）、$\text{slack}_r = (\tau - L_r)^+$（可吸收量），warp 归约判定 $\sum_r \text{excess}_r \le \sum_r \text{slack}_r$ 且逐源可安置。该谓词对 $\tau$ 单调，二分成立<span class="ev ev-r">R</span>。</li>
@@ -464,7 +495,7 @@ flowchart LR
     end
     S1 -.-> S2
 </div>
-<p class="figcaption">图 7：博客配图示例（1 源、9 副本、3 中继，⌊√9⌋=3）。中继收到一个 chunk（若干连续 tile）即向下转发，不等整个专家传完——避免全局 barrier 与通信 bubble<span class="ev ev-v">V</span>。</p>
+<p class="figcaption">图 8：博客配图示例（1 源、9 副本、3 中继，⌊√9⌋=3）。中继收到一个 chunk（若干连续 tile）即向下转发，不等整个专家传完——避免全局 barrier 与通信 bubble<span class="ev ev-v">V</span>。</p>
 
 <h3>8.3 就绪通知</h3>
 <p>task 完成时向各目标 rank 的 ready-flag（带 epoch 计数）发信号（<code>finalize_completed_weight_sync_task</code>，weight_sync.cu:644 起），接收端<b>按专家粒度</b>放行后续 token dispatch，不必等全部权重到位——全程无全局 barrier、无 host 同步<span class="ev ev-v">V</span>。端到端开销：EP64 实测关键路径暴露 &lt;300 µs，占步时 1–2%<span class="ev ev-v">V</span>（README + 博客 nsys 切片）。</p>
@@ -762,7 +793,7 @@ sequenceDiagram
     Note over D,M: normal 模式在此有一次 host 同步：<br/>按实际接收数分配输出张量
     M->>M: 按每专家计数分段计算
 </div>
-<p class="figcaption">图 8：DeepEP normal 模式 dispatch 的分步时序。<span class="ev ev-v">V</span>（API 事实）+ <span class="ev ev-r">R</span>（逐步语义）</p>
+<p class="figcaption">图 9：DeepEP normal 模式 dispatch 的分步时序。<span class="ev ev-v">V</span>（API 事实）+ <span class="ev ev-r">R</span>（逐步语义）</p>
 <p><b>low-latency 模式（decode）的槽位协议</b>——干脆没有独立的元数据阶段：</p>
 <ol>
 <li><b>初始化即固定</b>：每对（源，目标）预注册固定容量缓冲（容量 = <code>num_max_dispatch_tokens_per_rank</code>），且每专家一对 QP（<code>num_qps_per_rank = num_experts // group.size()</code>）；</li>
@@ -789,7 +820,7 @@ flowchart TB
     end
     N -.->|"三条原则：计数充分量 · 设备驻留/内联 · 最坏尺寸"| Dp
 </div>
-<p class="figcaption">图 9：朴素 all-to-allv 元数据路径与 DeepEP dispatch 的对照。</p>
+<p class="figcaption">图 10：朴素 all-to-allv 元数据路径与 DeepEP dispatch 的对照。</p>
 <p><b>UltraEP 的同族呼应</b>：权重线的 weight_sync 用 NVSHMEM 单侧 put + epoch ready-flag（§8.3），无全局 barrier、无 host 同步、graph 兼容；并且均衡对 token 线有反哺——负载摊平后 DeepEP 接收 buffer 的 worst-case 分配也随之下调<span class="ev ev-v">V</span>（博客设计原则节）。</p>
 </div>
 
@@ -906,7 +937,7 @@ flowchart TB
         dc4 --> dc5["均衡杠杆：周期性重放置 / 冗余专家 / 权重缓存<br/>（EPLB、MoonEP；逐层动态规划与 graph 冲突）"]
     end
 </div>
-<p class="figcaption">图 10：prefill 与 decode 大 EP 部署的对照——同一模型、同一 EP 度，两个阶段几乎在每个系统维度上都处于不同象限。</p>
+<p class="figcaption">图 11：prefill 与 decode 大 EP 部署的对照——同一模型、同一 EP 度，两个阶段几乎在每个系统维度上都处于不同象限。</p>
 <p>decode 不能照搬 UltraEP 逐层方案的两条硬理由<span class="ev ev-r">R</span>：① 每层动态求解与动态放置和 CUDA graph 捕获要求的静态控制流冲突；② 每步预算百微秒级，收益又被 memory-bound 稀释。</p>
 </div>
 
@@ -927,7 +958,7 @@ flowchart LR
     g1 --> i2["吞吐损失 ≈ 1 − 1/I<br/>且随层数复合"]
     h --> i2
 </div>
-<p class="figcaption">图 11：EP 度放大实际性能差距的逻辑链。</p>
+<p class="figcaption">图 12：EP 度放大实际性能差距的逻辑链。</p>
 <p><b>①自平均</b>：rank 负载是它 $m = N/G$ 个专家负载之和，$m$ 越小，和的相对波动越大；<b>②极值统计</b>：每层末尾是同步集合通信，所以该层耗时等于 $G$ 个 rank 中<b>最慢一</b>个的耗时（取 max，不是平均）；而「从更多样本里取最大值」这个动作本身就使最大值更极端——即使每个 rank 自身的波动程度不变，对近似高斯的波动有 max ≈ mean + σ·√(2 ln G)（σ 为单 rank 负载的标准差），随 $G$ 单调增大；<b>③粒度下限</b>：均衡的最小动作是搬一个专家或改一路 token，占该 rank 负载的 $1/m$，$m$ 小则任何动作都是大跳变（NVL 域 &lt; EP 组时下限进一步抬高，§2）；<b>④⑤</b>失衡在同步与通信上双重放大并随层数复合。</p>
 <p>①②可以合成<b>解析下限</b>（均匀路由、纯随机涨落近似<span class="ev ev-r">R</span>）：</p>
 <div class="formula">
@@ -950,7 +981,7 @@ xychart-beta
     line [2.02, 1.72, 1.51, 1.36, 1.25, 1.18, 1.13]
     line [3.36, 2.66, 2.18, 1.83, 1.59, 1.42, 1.29]
 </div>
-<p class="figcaption">图 12：三条线自下而上依次为 EP8 / EP64 / EP256。横轴 $T$ 为每步 token 总数，纵轴为 $\mathcal{I}_{\text{noise}}$。</p>
+<p class="figcaption">图 13：三条线自下而上依次为 EP8 / EP64 / EP256。横轴 $T$ 为每步 token 总数，纵轴为 $\mathcal{I}_{\text{noise}}$。</p>
 <table>
 <tr><th>$T$ \ $G$</th><th>EP8</th><th>EP64</th><th>EP256</th></tr>
 <tr><td>64</td><td>1.25（20%）</td><td>2.02（50%）</td><td>3.36（70%）</td></tr>
