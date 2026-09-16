@@ -191,7 +191,59 @@ flowchart LR
     class D hidden;
     class A,E,F normal;
 </div>
-<p class="figcaption">图 1：UltraEP 方案全景。红色 = 关键路径（②规划 + ③权重物化，合计 ≤300 µs）；灰色 = 被隐藏（④与 ③ 的传输并发）；⑥ 与 router/attention 反向重叠。①–④ 全程设备驻留、无 host 同步。</p>
+<p class="figcaption">图 1：UltraEP 方案全景。红色 = 关键路径（②规划 + ③权重物化，合计 ≤300 µs）；灰色 = 被隐藏（④与 ③ 的传输并发）；⑥ 与 router/attention 反向重叠。①–④ 全程设备驻留、无 host 同步。图 1–4 为<b>同一六拍视图</b>下的四种方案对照（基线 / EPLB / LPLB / UltraEP），可逐拍对照每一拍谁在干活、代价在哪。</p>
+
+<h3>3.1.1 对照组全景：什么都不做 / EPLB / LPLB</h3>
+<p>三个对照方案采用与图 1 完全相同的视图语法（红色 = 该方案的瓶颈或关键路径所在；灰色 = 后台/缺位步骤），差别一目了然。</p>
+
+<p><b>基线：什么都不做。</b>②③④ 三拍整体缺位——精确负载在门控后被直接丢弃，token 按初始固定放置硬跑，热点 rank 成为每层的 straggler：</p>
+<div class="mermaid">
+flowchart LR
+    A["① 门控<br/>（精确负载被丢弃）"] --> B2["② 规划：无"]
+    B2 --> C2["③ 权重物化：无"]
+    C2 --> D2["④ 分流：无"]
+    D2 --> E["⑤ dispatch / 专家计算 / combine<br/>按初始固定放置"]
+    E --> G["代价：热点 rank straggler<br/>每层耗时 = max(L_r)<br/>𝓘 = 1.30–4.01 原样暴露"]
+    classDef none fill:#f2f2f2,stroke:#bbbbbb,color:#888888;
+    classDef hot fill:#fdeceb,stroke:#c0392b;
+    class B2,C2,D2 none;
+    class G hot;
+</div>
+<p class="figcaption">图 2：基线方案全景（什么都不做）。灰色 = 缺位步骤；红色 = 每层同步等待的 straggler。均衡收益从未被兑现，𝓘=4 时吞吐损失约 75%（Q11）。</p>
+
+<p><b>EPLB：均衡发生在低频后台。</b>按历史窗口统计做贪心重排放置，下一窗口才生效；每个 microbatch 的关键路径上没有任何均衡动作（②③④ 缺位）——窗口内的偏斜无解，非平稳负载下历史预测失准（Q11A 的 Figure 4/5 证据）：</p>
+<div class="mermaid">
+flowchart LR
+    subgraph BG["周期性后台（窗口级 · 低频 · 不在关键路径）"]
+        S["统计历史窗口路由"] --> P["贪心重排专家放置（LPT）"]
+    end
+    A["① 门控"] --> E["⑤ dispatch / 专家计算 / combine<br/>按上一窗口的放置（②③④缺位）"]
+    P -.->|"下一窗口才生效"| E
+    E --> G["代价：窗口内偏斜无解<br/>历史 ≠ 未来 → 预测失准"]
+    classDef bg fill:#f1f1f1,stroke:#999999;
+    classDef hot fill:#fdeceb,stroke:#c0392b;
+    class S,P bg;
+    class G hot;
+</div>
+<p class="figcaption">图 3：EPLB 方案全景。灰色 = 低频后台重排；红色 = 窗口内无法处理的偏斜。决策输入是历史统计，前提假设「负载平稳」与 §1.2/Q11A 的实测相悖。</p>
+
+<p><b>LPLB：EPLB 放置 + 每步在线 LP 重路由。</b>重路由上了关键路径、也用上了实时负载，但解空间被既有放置锁死——EPLB 欠的账，LP 修不满：</p>
+<div class="mermaid">
+flowchart LR
+    subgraph BG["周期性后台（沿用 EPLB 放置）"]
+        P2["LPT 重排放置"]
+    end
+    A["① 门控<br/>实时精确负载"] --> L["④ 在线 LP 重路由<br/>token 只能分给既有实例"]
+    L --> E["⑤ dispatch / 专家计算 / combine"]
+    P2 -.->|"放置偏差成为硬约束"| L
+    L --> G["代价：可解性受限<br/>放置欠的账，路由修不满<br/>（②③ 副本物化缺位）"]
+    classDef bg fill:#f1f1f1,stroke:#999999;
+    classDef hot fill:#fdeceb,stroke:#c0392b;
+    class P2 bg;
+    class L hot;
+    class G hot;
+</div>
+<p class="figcaption">图 4：LPLB 方案全景。红色 = 每步在线 LP 重路由（关键路径且受可解性约束）。对比图 1：UltraEP 用「副本带配额出生」的耦合求解（②③④ 同时在场）绕开了这一限制。</p>
 
 <h3>3.2 四个根本设计选择</h3>
 <p>方案的形状由四个「选了什么、放弃了什么」决定。每一个都有明确的备选项和放弃的理由：</p>
@@ -298,7 +350,7 @@ sequenceDiagram
     D->>E: ⑦ 各 rank 对物理副本 grouped GEMM
     E->>D: ⑧ combine 送回原 rank
 </div>
-<p class="figcaption">图 2：一次前向的完整调用链（每 microbatch × 每层重复）。①–④ 全部设备驻留、无 host 同步，CUDA graph 兼容<span class="ev ev-v">V</span>（README + 源码）。</p>
+<p class="figcaption">图 5：一次前向的完整调用链（每 microbatch × 每层重复）。①–④ 全部设备驻留、无 host 同步，CUDA graph 兼容<span class="ev ev-v">V</span>（README + 源码）。</p>
 
 <h3>4.3 反向调用链</h3>
 <p>反向与前向对偶，由三个仅反向生效的 autograd 钩子编排（README 接口示例<span class="ev ev-v">V</span>）：<b>RestoreReplicaWeights</b>（Dgrad 前阻塞恢复该 microbatch 的副本布局）、<b>StartGradReduce</b>（专家反向后异步启动副本→master 的 Wgrad 归约，与 router/attention 反向重叠）、<b>JoinGradReduce</b>（层尾汇合）。权重重分发与梯度归约都可调驻留 SM 数（§10），确保被计算完全掩盖。</p>
@@ -350,7 +402,7 @@ flowchart TD
     g --> h["quota oracle：top-k 整数可行配额"]
     h --> i["输出：放置 + q(r,e,t) + rank_quota_prefix"]
 </div>
-<p class="figcaption">图 3：quota 规划器求解流程（博客 §4.1 + placement.cu 结构对照）。</p>
+<p class="figcaption">图 6：quota 规划器求解流程（博客 §4.1 + placement.cu 结构对照）。</p>
 <p>代码级证据（placement.cu<span class="ev ev-v">V</span>）：</p>
 <ul>
 <li><b>可行性谓词</b> <code>warp_capacity_feasible()</code>（placement.cu:76）：给定 $\tau$，每 rank 算 $\text{excess}_r = (L_r - \tau)^+$（超载量）、$\text{slack}_r = (\tau - L_r)^+$（可吸收量），warp 归约判定 $\sum_r \text{excess}_r \le \sum_r \text{slack}_r$ 且逐源可安置。该谓词对 $\tau$ 单调，二分成立<span class="ev ev-r">R</span>。</li>
@@ -412,7 +464,7 @@ flowchart LR
     end
     S1 -.-> S2
 </div>
-<p class="figcaption">图 4：博客配图示例（1 源、9 副本、3 中继，⌊√9⌋=3）。中继收到一个 chunk（若干连续 tile）即向下转发，不等整个专家传完——避免全局 barrier 与通信 bubble<span class="ev ev-v">V</span>。</p>
+<p class="figcaption">图 7：博客配图示例（1 源、9 副本、3 中继，⌊√9⌋=3）。中继收到一个 chunk（若干连续 tile）即向下转发，不等整个专家传完——避免全局 barrier 与通信 bubble<span class="ev ev-v">V</span>。</p>
 
 <h3>8.3 就绪通知</h3>
 <p>task 完成时向各目标 rank 的 ready-flag（带 epoch 计数）发信号（<code>finalize_completed_weight_sync_task</code>，weight_sync.cu:644 起），接收端<b>按专家粒度</b>放行后续 token dispatch，不必等全部权重到位——全程无全局 barrier、无 host 同步<span class="ev ev-v">V</span>。端到端开销：EP64 实测关键路径暴露 &lt;300 µs，占步时 1–2%<span class="ev ev-v">V</span>（README + 博客 nsys 切片）。</p>
@@ -710,7 +762,7 @@ sequenceDiagram
     Note over D,M: normal 模式在此有一次 host 同步：<br/>按实际接收数分配输出张量
     M->>M: 按每专家计数分段计算
 </div>
-<p class="figcaption">图 5：DeepEP normal 模式 dispatch 的分步时序。<span class="ev ev-v">V</span>（API 事实）+ <span class="ev ev-r">R</span>（逐步语义）</p>
+<p class="figcaption">图 8：DeepEP normal 模式 dispatch 的分步时序。<span class="ev ev-v">V</span>（API 事实）+ <span class="ev ev-r">R</span>（逐步语义）</p>
 <p><b>low-latency 模式（decode）的槽位协议</b>——干脆没有独立的元数据阶段：</p>
 <ol>
 <li><b>初始化即固定</b>：每对（源，目标）预注册固定容量缓冲（容量 = <code>num_max_dispatch_tokens_per_rank</code>），且每专家一对 QP（<code>num_qps_per_rank = num_experts // group.size()</code>）；</li>
@@ -737,7 +789,7 @@ flowchart TB
     end
     N -.->|"三条原则：计数充分量 · 设备驻留/内联 · 最坏尺寸"| Dp
 </div>
-<p class="figcaption">图 6：朴素 all-to-allv 元数据路径与 DeepEP dispatch 的对照。</p>
+<p class="figcaption">图 9：朴素 all-to-allv 元数据路径与 DeepEP dispatch 的对照。</p>
 <p><b>UltraEP 的同族呼应</b>：权重线的 weight_sync 用 NVSHMEM 单侧 put + epoch ready-flag（§8.3），无全局 barrier、无 host 同步、graph 兼容；并且均衡对 token 线有反哺——负载摊平后 DeepEP 接收 buffer 的 worst-case 分配也随之下调<span class="ev ev-v">V</span>（博客设计原则节）。</p>
 </div>
 
@@ -854,7 +906,7 @@ flowchart TB
         dc4 --> dc5["均衡杠杆：周期性重放置 / 冗余专家 / 权重缓存<br/>（EPLB、MoonEP；逐层动态规划与 graph 冲突）"]
     end
 </div>
-<p class="figcaption">图 7：prefill 与 decode 大 EP 部署的对照——同一模型、同一 EP 度，两个阶段几乎在每个系统维度上都处于不同象限。</p>
+<p class="figcaption">图 10：prefill 与 decode 大 EP 部署的对照——同一模型、同一 EP 度，两个阶段几乎在每个系统维度上都处于不同象限。</p>
 <p>decode 不能照搬 UltraEP 逐层方案的两条硬理由<span class="ev ev-r">R</span>：① 每层动态求解与动态放置和 CUDA graph 捕获要求的静态控制流冲突；② 每步预算百微秒级，收益又被 memory-bound 稀释。</p>
 </div>
 
@@ -875,7 +927,7 @@ flowchart LR
     g1 --> i2["吞吐损失 ≈ 1 − 1/I<br/>且随层数复合"]
     h --> i2
 </div>
-<p class="figcaption">图 8：EP 度放大实际性能差距的逻辑链。</p>
+<p class="figcaption">图 11：EP 度放大实际性能差距的逻辑链。</p>
 <p><b>①自平均</b>：rank 负载是它 $m = N/G$ 个专家负载之和，$m$ 越小，和的相对波动越大；<b>②极值统计</b>：每层末尾是同步集合通信，所以该层耗时等于 $G$ 个 rank 中<b>最慢一</b>个的耗时（取 max，不是平均）；而「从更多样本里取最大值」这个动作本身就使最大值更极端——即使每个 rank 自身的波动程度不变，对近似高斯的波动有 max ≈ mean + σ·√(2 ln G)（σ 为单 rank 负载的标准差），随 $G$ 单调增大；<b>③粒度下限</b>：均衡的最小动作是搬一个专家或改一路 token，占该 rank 负载的 $1/m$，$m$ 小则任何动作都是大跳变（NVL 域 &lt; EP 组时下限进一步抬高，§2）；<b>④⑤</b>失衡在同步与通信上双重放大并随层数复合。</p>
 <p>①②可以合成<b>解析下限</b>（均匀路由、纯随机涨落近似<span class="ev ev-r">R</span>）：</p>
 <div class="formula">
@@ -898,7 +950,7 @@ xychart-beta
     line [2.02, 1.72, 1.51, 1.36, 1.25, 1.18, 1.13]
     line [3.36, 2.66, 2.18, 1.83, 1.59, 1.42, 1.29]
 </div>
-<p class="figcaption">图 9：三条线自下而上依次为 EP8 / EP64 / EP256。横轴 $T$ 为每步 token 总数，纵轴为 $\mathcal{I}_{\text{noise}}$。</p>
+<p class="figcaption">图 12：三条线自下而上依次为 EP8 / EP64 / EP256。横轴 $T$ 为每步 token 总数，纵轴为 $\mathcal{I}_{\text{noise}}$。</p>
 <table>
 <tr><th>$T$ \ $G$</th><th>EP8</th><th>EP64</th><th>EP256</th></tr>
 <tr><td>64</td><td>1.25（20%）</td><td>2.02（50%）</td><td>3.36（70%）</td></tr>
