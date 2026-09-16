@@ -37,7 +37,6 @@
 
 ### MoE 专家并行（EP）负载均衡
 
-- [专题索引](https://luxiangz.github.io/llm-tech-map/docs/moe-ep/)
 - [方案深度解析](https://luxiangz.github.io/llm-tech-map/docs/moe-ep/moe-ep-overview.html)
 - [源码级对比分析](https://luxiangz.github.io/llm-tech-map/docs/moe-ep/moe-ep-code-analysis.html)
 - [UltraEP 深度阅读笔记](https://luxiangz.github.io/llm-tech-map/docs/moe-ep/ultraep-deep-reading.html)
