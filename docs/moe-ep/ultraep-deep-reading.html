@@ -453,7 +453,7 @@ flowchart LR
 
 <h1 style="font-size:1.6em">Part II 问题详解</h1>
 <blockquote>
-<p>以下问题按阅读时序分三组：概念组（Q1–Q7，来自一篇 DeepSeek 论文对话）、通信组（Q8–Q10A）、均衡与部署组（Q11–Q16，来自本笔记的讨论，含 Q11A 论文 Figure 4 精读）。每个回答自含；公式中的符号在公式下方当场定义，或引用 §0.2 符号表。</p>
+<p>以下问题按阅读时序分三组：概念组（Q1–Q7，来自一篇 DeepSeek 论文对话，含 Q6A 论文 Algorithm 1 逐行精读）、通信组（Q8–Q10A）、均衡与部署组（Q11–Q16，来自本笔记的讨论，含 Q11A 论文 Figure 4 精读）。每个回答自含；公式中的符号在公式下方当场定义，或引用 §0.2 符号表。</p>
 </blockquote>
 
 <h2>概念组：RSN 与超节点</h2>
@@ -508,6 +508,70 @@ flowchart LR
 <li><b>RSN 原生持久化 Tile 流传输</b>：把权重切成 tile，用持久化 kernel + TMA + 共享内存双缓冲 + NVSHMEM 内存语义流式搬运，吃满 scale-up 域带宽（§8.1）。</li>
 <li><b>基于中继的扇出缓解</b>：热专家副本很多时，源 rank 直发会成为出口瓶颈；用按流量实时构建的两阶段中继树分摊（§8.2）。</li>
 </ul>
+</div>
+
+<div class="qa">
+<h3>Q6A 论文 Algorithm 1「Replication &amp; Reroute Joint Solving」逐行详解</h3>
+<p>这是 §7 那个 quota 规划器的数学形态，由两个函数组成：<code>SolveReplication</code>（二分阈值 + 贪心可行性探针，输出副本放置 X 与配额 U）和 <code>SolveReroute</code>（把 U 物化成逐源分流表 Q）。先给清理后的伪代码，再逐段讲。</p>
+<pre>
+输入：精确负载矩阵 Λ = {λ(r,e)}，槽位预算 N_slot，配额下限 u_min，均衡目标 β
+输出：槽位指派 X，配额 U，分流表 Q
+
+Function SolveReplication(Λ, N_slot, u_min, β):
+  λ_e ← Σ_r λ(r,e)                     # 专家 e 总负载
+  ℓ_r ← Σ_{e∈E_r} λ_e                  # rank r 初始负载（全压 master）
+  τ_lo ← β·⌈mean(ℓ)⌉;  τ_hi ← max_r ℓ_r
+  while τ_lo < τ_hi:
+    τ ← ⌊(τ_lo + τ_hi)/2⌋
+    exc_r ← max(ℓ_r − τ, 0);  slk_r ← max(τ − ℓ_r, 0)
+    初始化 ũ: ũ(e, h(e)) ← λ_e（全归 master），副本位 0
+    foreach 超载 rank r（按 exc 降序）:
+      foreach master 专家 e ∈ E_r（按 λ_e 降序）:
+        cap_e ← e 剩余可转出负载
+        while exc_r > 0 且 cap_e > 0:
+          T ← 可行目标集（slk>0 ∧ 有空槽 ∧ 未放过 e）
+          if T = ∅: break
+          t* ← argmax_slk(T)
+          δ ← min(exc_r, slk_t*, cap_e)
+          if δ < u_min: break
+          ũ(e, h(e)) −= δ;  ũ(e, t*) += δ     # 副本带配额出生
+          exc_r −= δ; slk_t* −= δ; cap_e −= δ
+    if Σ_r exc_r = 0:  U ← Ũ; τ_hi ← τ; X ← 物化(Ũ)   # 可行，向下探
+    else:              τ_lo ← τ + 1                    # 不可行，向上抬
+  return X, U
+
+Function SolveReroute(Λ, U):
+  foreach 专家 e, 宿主 t ∈ H(e):
+    q(t,e,t) ← min(λ(t,e), u(e,t))     # 本地配额优先（locality）
+    扣减残余需求 λ̂ 与残余配额 û
+  foreach 残余需求 λ̂(r,e) > 0 的源 r:
+    foreach 残余配额 û(e,t) > 0 的宿主 t:
+      q(r,e,t) ← round(λ̂(r,e) × û(e,t) / Σ_{t'} û(e,t'))   # 按比例+确定性取整
+  逐 token 指派：按各实例配额前缀和，第 j 个 token 发给前缀首次覆盖 j 的实例
+  return Q
+
+(X, U) ← SolveReplication(...);  Q ← SolveReroute(Λ, U);  return X, U, Q
+</pre>
+<p><b>记号与输入输出</b>：λ(r,e) 是「rank r 的 token 中分给专家 e 的数量」（门控后当场统计）；ℓ_r 是 rank r 的初始负载（全部压在 master 上的形态）；h(e) 是 e 的 master 所在 rank，H(e) 是 e 全部实例所在 rank 集合。输出 X（哪个槽位放哪个副本）、U（每个实例接收多少，即正文 §7.1 的配额定义）、Q（每个源 rank 发往每个实例多少）。<b>一个记号坑</b>：伪代码第 3 行 (1/R)Σℓ 里的 R 是 <b>rank 个数</b>（本笔记的 G），槽位预算写的是 N_slot（本笔记的 R），两书符号不同。</p>
+<p><b>SolveReplication 的三个要点：</b></p>
+<ol>
+<li><b>二分区间的两个端点都有含义</b>（τ_lo = β·⌈均值⌉，τ_hi = max ℓ_r）：均值是<b>不可逾越的下限</b>——总负载固定，任何方案都不能让最大 rank 低于均值，所以不值得搜更小的 τ（β 是放松旋钮，β=1.2 表示容忍最忙 rank 到均值的 1.2 倍）；τ = max ℓ_r 时什么都不做就可行。二分找的是<b>可行阈值 τ* 的最小值</b>。正确性由单调性保证：τ 越大，exc 越少、slk 越多，可行性只会变松——可行域是数轴上的一段区间，取左端点用二分。</li>
+<li><b>一次探针 = 一次水量填充式贪心</b>：超载 rank 按 exc 降序、rank 内专家按 λ_e 降序（最热的先出手），每个专家的负载导给「slack 最大且有槽位、且未放过该专家副本」的 rank，每次搬运量 δ = min(exc, slk, cap) 三方取最小。δ &lt; u_min 就放弃——开一个只接几个 token 的副本不值得（真实默认 <code>MIN_TOKENS_PER_REPLICA</code>=1024，见 §7.3 表）。</li>
+<li><b>「Joint」的心脏在更新配额的那两行</b>：ũ(e,h(e)) −= δ、ũ(e,t*) += δ——<b>放置决策（开副本）与路由容量（配额）在同一个动作里同时落账</b>，副本「带着自己的口粮出生」。这直接杜绝「满足放置启发式却吃不到流量的无效副本」，也是对 EPLB（先放置）/ LPLB（再路由）两阶段割裂的回答（§3.2 选择 ③）。</li>
+</ol>
+<p><b>SolveReroute 的两个要点</b>：① <b>本地配额优先（locality）</b>——源 rank 自己宿主 e 的实例时，自己的 token 优先消费本地配额（q(t,e,t) = min(λ(t,e), u(e,t))），这部分流量零跨 rank 传输；论文强调这只是换了「谁消费已解出的配额」，不动配额本身，故不破坏阈值。② <b>残余按比例分配 + 确定性取整</b>——源 rank 的残余需求按各宿主残余配额占比分（round 函数保证逐源需求与逐实例配额双双精确守恒，且各 rank 独立算出完全一致的结果，无需广播）；最后配额做前缀和，(r,e) 的第 j 个 token 发给「前缀首次覆盖 j」的实例——一次 rank 本地的上界查找（即 §9 的 <code>sparse_quota_replica_index</code>）。</p>
+<p><b>用 §3.3 的玩具例子走一遍二分全程</b>（ℓ = 40/24/24/52，均值 35，N_slot=1）：</p>
+<table>
+<tr><th>轮</th><th>lo</th><th>hi</th><th>探针 τ</th><th>探针结果</th><th>动作</th></tr>
+<tr><td>1</td><td>35</td><td>52</td><td>43</td><td>E7′→GPU1（9），可行</td><td>记录方案，hi←43</td></tr>
+<tr><td>2</td><td>35</td><td>43</td><td>39</td><td>E7′→GPU1（13）+ E1′→GPU2（1），可行</td><td>hi←39</td></tr>
+<tr><td>3</td><td>35</td><td>39</td><td>37</td><td>E7 需开两个副本（GPU1 13 + GPU2 2），GPU2 槽位耗尽后 E1 的 3 个 token 无处去 → <b>不可行</b></td><td>lo←38</td></tr>
+<tr><td>4</td><td>38</td><td>39</td><td>38</td><td>E7′→GPU1（14）、E1′→GPU2（2），可行</td><td>hi←38</td></tr>
+<tr><td>收敛</td><td>38</td><td>38</td><td>—</td><td>输出 τ*=38：X = {E7′@GPU1, E1′@GPU2}</td><td>—</td></tr>
+</table>
+<p>注意第 3 轮：τ=37 失败的原因是<b>槽位约束</b>（可行目标集 T 变空），不是水量不够——「槽位预算决定均衡下限」在算法里的精确位置就在 T 的构造处（§3.3 的推演 R=2 → τ 可压到 35 对应这里）。</p>
+<p><b>伪代码 ↔ 代码对应</b>：预计算 = <code>load_compute.cu</code> 三个直方图 kernel（§6）；二分 + 贪心探针 = <code>placement.cu</code> 的 <code>warp_capacity_feasible</code>（exc/slk 判定）+ 导出循环（<code>sorted_experts</code> 降序、<code>smem_warp_slots_used</code> 记槽位）；u_min / β = <code>ULTRA_EP_QUOTA_MIN_TOKENS_PER_REPLICA</code>=1024 / <code>ULTRA_EP_BALANCE_THRESHOLD</code>=1.0（§7.3）；no-duplicate = <code>update_placement</code> 文档串「replicas never placed on the same GPU as their master」；比例分配 + 确定性取整 = <code>build_rank_quota_prefix</code> 的余数处理；逐 token 前缀指派 = <code>rank_quota_prefix</code> → <code>sparse_quota_replica_index</code>（§9）。全部对应均可在源码逐行核对<span class="ev ev-v">V</span>。</p>
+<p><b>GPU 实现注记</b>（论文 §5.3）：算法在 GPU 上由<b>单个协作线程块在单个 SM</b> 上执行——负载矩阵与放置状态全部驻留共享内存，多个 warp 并行评估多个候选阈值探针、warp 归约做裁决，同一个 kernel 直接吐出槽位映射、配额与前缀元数据。二分主循环本身串行（每轮依赖上轮可行性），但探针内部的贪心被 warp 并行化——这是 EP64 下求解 &lt;100 µs 的实现来源<span class="ev ev-v">V</span>。</p>
 </div>
 
 <div class="qa">
@@ -797,6 +861,6 @@ xychart-beta
 </ul>
 
 <hr>
-<p style="color:#57606a;font-size:.9em">整理：luxiangzz · 2026-09-16（全文重写版：Part I 源码精读 + Part II 十六问详解）· 证据窗口：论文 v3、仓库 94cab099、官方博客 v1.0.0、DeepEP V1（0a08009e）/V2 main、arXiv 版本页；标注体系与 <a href="moe-ep-overview.html">moe-ep-overview</a> 一致（V/R/U）。</p>
+<p style="color:#57606a;font-size:.9em">整理：luxiangzz · 2026-09-16（全文重写版：Part I 源码精读 + Part II 十八问详解）· 证据窗口：论文 v3、仓库 94cab099、官方博客 v1.0.0、DeepEP V1（0a08009e）/V2 main、arXiv 版本页；标注体系与 <a href="moe-ep-overview.html">moe-ep-overview</a> 一致（V/R/U）。</p>
 </body>
 </html>
