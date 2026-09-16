@@ -32,6 +32,9 @@ ul, ol { padding-left: 1.8em; }
 .figcaption { margin: .4em 0 1.2em; color: #57606a; font-size: .92em; text-align: center; }
 .qa { border: 1px solid #e5e7eb; border-radius: 10px; padding: 4px 20px 12px; margin: 1.6em 0; background: #fcfdfe; }
 .qa > h3 { border-bottom: 1px dashed #d8dee4; padding-bottom: .3em; margin-top: 1.2em; }
+details.expand { border: 1px solid #e2e5ea; border-radius: 10px; padding: 8px 18px; margin: 1.4em 0; background: #fbfcfe; }
+details.expand summary { cursor: pointer; font-family: "Microsoft YaHei", "PingFang SC", sans-serif; font-weight: 700; color: #2c5fa8; padding: 6px 0; }
+details.expand[open] summary { border-bottom: 1px dashed #d8dee4; margin-bottom: 8px; }
 </style>
 <script>
 window.MathJax = {
@@ -137,6 +140,25 @@ $$
 <li><b>EPLB</b>（DeepSeek, 2025）：按前一时间窗口的路由统计<b>周期性</b>重排专家放置，隐含假设「历史负载可预测未来负载」。但细粒度 MoE（数百个小专家）的专家热度在 microbatch / 层 / 数据域间剧烈漂移，预测失准后重排甚至负优化<span class="ev ev-v">V</span>（博客动机节）。</li>
 <li><b>LPLB</b>（DeepSeek, 2025）：在 EPLB 放置之上用线性规划在线调整 token 重路由，但被「可解性约束 + EPLB 放置偏差」削弱<span class="ev ev-v">V</span>（博客 §4.1）。</li>
 <li><b>算法侧均衡</b>（auxiliary loss / routing bias）只保证统计意义上的均衡，管不到单个 microbatch 的偏斜<span class="ev ev-v">V</span>。博客的分工表述：算法侧负责训练稳定性与专家特化，系统侧负责把每个 microbatch 已经发生的偏斜重新摊平，二者自然叠加。</li>
+
+<details class="expand">
+<summary>展开：算法侧 vs 系统侧到底各管什么？（给不熟训练的读者的完整铺垫）</summary>
+<p><b>第一步：router 是「活」的。</b>训练与推理的本质区别在于：门控（router）本身是一个<b>可学习的神经网络</b>——通常就是一个矩阵 $W_g$，把 token 隐向量乘上去得到各专家打分，再选 top-k。训练每一轮做四件事：① 取一个 batch 过 router 选专家、算输出；② 用任务损失（如下一个词预测的交叉熵）衡量输出好坏；③ 反向传播算出每个参数的梯度；④ 优化器把 $W_g$ 与所有专家权重朝降损失方向挪一小步。关键在于：router 参数<b>只被任务损失驱动</b>——它只关心「选谁预测更准」，完全不管「选得均不均匀」。</p>
+<p><b>第二步：放任不管会发生专家坍缩。</b>初始化时 router 随机，少数专家碰巧 early 吃到更多 token → 被训练得更频繁、表示更好 → router 发现「送 token 给它们损失更低」→ 送得更多……恶性循环（Switch Transformer 最早系统记录）。结果是一半专家几乎收不到 token（饿死）：参数浪费、训练不稳定。</p>
+<p><b>第三步：算法侧均衡 = 在训练信号上动手脚。</b>auxiliary loss 的做法是把总损失改成 $\mathcal{L}_{\text{total}} = \mathcal{L}_{\text{task}} + \alpha \cdot \mathcal{L}_{\text{balance}}$（task = 任务损失，balance = 均衡项），其中均衡项在「各专家接收比例与路由概率都等于 1/N」时最小——反向传播的梯度于是<b>同时</b>推 router：既为准确调整，也为均匀调整。DeepSeek-V3 的 routing bias 是同一目标的另一种实现：不加深损失，给每个专家一个标量偏置 $b_i$（只参与 top-k 选择、不参与输出加权），每步结束后过载者减一点、饥饿者加一点——一个反馈控制器，慢慢拧 router 的选择倾向。</p>
+<p><b>第四步：为什么只保证「统计意义」的均衡。</b>这两种机制的作用对象都是 router 的参数/偏置，而参数只能一步一步慢慢挪——第 $t$ 步的 batch 是用第 $t-1$ 步的 router 路由的，<b>辅助信号对「眼前这个 batch 已发生的偏斜」无能为力</b>，只能让第 $t+1000$ 步的平均行为更均匀。Q11A 的 Figure 5 正是后果的实证：两个<b>都带着 auxiliary loss 训练</b>的模型（GLM4.5 用 GShard 式、DeepSeek-V3 用 DeepSeek 式），单个 batch 的负载照样剧烈振荡——平均分布被压平了，逐 batch 偏斜纹丝不动。另有一层内在张力：均衡压太狠会伤害<b>专家特化</b>（我们恰恰希望「代码专家」多接代码），所以 α 不能无限大。</p>
+<p><b>第五步：系统侧均衡 = 不碰参数，只摆盘。</b>UltraEP 一个参数都不改、一个梯度都不算：门控已发生，就拿着「这个 batch 实际的分配结果」重新摆盘——开副本、按配额分流——让<b>硬件</b>看到的负载是平的。对模型输出数学等价，管的是「这次计算在哪执行」，不管「模型学成什么样」。</p>
+<p><b>第六步：为什么自然叠加。</b>两者在三个维度正交：</p>
+<table>
+<tr><th></th><th>算法侧（aux loss / bias）</th><th>系统侧（UltraEP）</th></tr>
+<tr><td>作用对象</td><td>router 的参数/偏置</td><td>当前 batch 的放置与路由</td></tr>
+<tr><td>时间尺度</td><td>上千个训练步（慢）</td><td>单个 microbatch（快）</td></tr>
+<tr><td>优化目标</td><td>模型质量：专家都活着、特化稳定</td><td>硬件效率：无 straggler、𝓘≈1</td></tr>
+<tr><td>失效场景</td><td>逐 batch 偏斜（管不了）</td><td>专家饿死（它不碰参数）</td></tr>
+</table>
+<p>串行看一遍完整训练就懂「叠加」：auxiliary loss 在<b>几千步尺度</b>上保证每个专家持续收到梯度、逐渐特化（模型质量根基）；而其中<b>任何一个 microbatch 内部</b>热度仍会摆到 4–18 倍——UltraEP 在<b>每个 batch 尺度</b>上把这些已发生的偏斜摊平（硬件效率根基）。一个管「长期学什么」，一个管「当下怎么跑」。UltraEP 实验本身就是证明：GLM4.5 / DeepSeek-V3 都<b>带着</b>各自的 auxiliary loss 训练，UltraEP 在此之上仍拿到 +42%。</p>
+<p><b>接回推理视角（最重要）</b>：推理时 router 是<b>冻结</b>的——auxiliary loss / routing bias 根本不存在，没有任何机制在为均衡工作。Figure 4 里 prefill 4–18 倍的逐 batch 偏斜就是推理世界的「裸奔状态」。对推理来说，系统侧均衡不是「叠加的另一半」，而是<b>唯一的均衡手段</b>——这也是 UltraEP 选 prefill 作为推理主战场的原因。</p>
+</details>
 </ul>
 <p>UltraEP 的回应：门控一结束就拿到<b>精确负载</b>（exact post-gating load），在每个 microbatch 的每层<b>实时</b>重均衡——复制热专家到冗余槽位、按配额把 token 重路由到副本（§6–§9）。代价是均衡操作暴露在关键路径上、以 microbatch 为最小粒度高频执行，因此必须把决策与通信都压到百微秒级——这是全部设计的出发点。</p>
 
