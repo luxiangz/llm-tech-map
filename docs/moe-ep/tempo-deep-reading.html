@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TEMPO 深度阅读笔记 —— 相图、Makespan 调度与「代理失配」</title>
+<!-- 霞鹜文楷：开源可商用的中文楷体风格字体；加载失败时自动回退到微软雅黑 -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/lxgw-wenkai-webfont@1.7.0/style.css">
+<style>
+body { font-family: "LXGW WenKai", "Microsoft YaHei", "PingFang SC", "Segoe UI", sans-serif; font-size: 17.5px; line-height: 1.85; letter-spacing: 0.01em; max-width: 1080px; margin: 40px auto; padding: 0 28px; color: #1f2328; background: #fff; }
+h1, h2, h3, h4, .kicker { font-family: "Microsoft YaHei", "PingFang SC", sans-serif; }
+h1 { font-size: 2.0em; border-bottom: 2px solid #e5e7eb; padding-bottom: .35em; }
+h2 { font-size: 1.45em; border-bottom: 1px solid #e5e7eb; padding-bottom: .2em; margin-top: 2em; }
+h3, h4, h5, h6 { margin-top: 1.6em; }
+a { color: #0969da; text-decoration: none; }
+a:hover { text-decoration: underline; }
+code { background: #f6f8fa; padding: .12em .35em; border-radius: 4px; font-family: "Cascadia Code", Consolas, "Microsoft YaHei", monospace; font-size: .92em; }
+pre { background: #f6f8fa; padding: 16px; border-radius: 8px; overflow: auto; line-height: 1.45; }
+pre code { background: none; padding: 0; }
+table { border-collapse: collapse; width: 100%; margin: 1.2em 0; display: block; overflow-x: auto; }
+th, td { border: 1px solid #d0d7de; padding: 8px 10px; text-align: left; vertical-align: top; }
+th { background: #f6f8fa; font-family: "Microsoft YaHei", "PingFang SC", sans-serif; }
+blockquote { margin: 1em 0; padding: .6em 1em; border-left: 4px solid #d0d7de; color: #57606a; background: #f6f8fa; }
+hr { border: none; border-top: 1px solid #d8dee4; margin: 2em 0; }
+.formula { background: #f6f8fa; padding: 12px 16px; border-radius: 8px; overflow-x: auto; margin: 1em 0; }
+ul, ol { padding-left: 1.8em; }
+.ev { display: inline-block; font-size: .78em; font-weight: 700; border-radius: 4px; padding: 0 .45em; margin-left: .3em; vertical-align: 1px; font-family: "Microsoft YaHei", sans-serif; }
+.ev-v { background: #dafbe1; color: #116329; }
+.ev-r { background: #fff8c5; color: #7d4e00; }
+.ev-u { background: #ffebe9; color: #82071e; }
+.mermaid { text-align: center; margin: 1.4em 0; }
+.figcaption { margin: .4em 0 1.2em; color: #57606a; font-size: .92em; text-align: center; }
+.qa { border: 1px solid #e5e7eb; border-radius: 10px; padding: 4px 20px 12px; margin: 1.6em 0; background: #fcfdfe; }
+.qa > h3 { border-bottom: 1px dashed #d8dee4; padding-bottom: .3em; margin-top: 1.2em; }
+details.expand { border: 1px solid #e2e5ea; border-radius: 10px; padding: 8px 18px; margin: 1.4em 0; background: #fbfcfe; }
+details.expand summary { cursor: pointer; font-family: "Microsoft YaHei", "PingFang SC", sans-serif; font-weight: 700; color: #2c5fa8; padding: 6px 0; }
+</style>
+<script>
+window.MathJax = {
+  tex: {
+    inlineMath: [['$', '$']],
+    displayMath: [['$$', '$$'], ['\\[', '\\]']],
+    processEscapes: false
+  },
+  svg: { fontCache: 'global' }
+};
+</script>
+<script>
+(function () {
+  var sources = [
+    "../../assets/lib/mathjax-tex-svg.js",
+    "https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js",
+    "https://cdn.bootcdn.net/ajax/libs/mathjax/3.2.2/es5/tex-svg.js",
+    "https://cdn.staticfile.org/mathjax/3.2.2/es5/tex-svg.js",
+    "https://unpkg.com/mathjax@3/es5/tex-svg.js"
+  ];
+  function load(i) {
+    if (i >= sources.length) {
+      var node = document.getElementById("mathjax-load-fail");
+      if (node) node.style.display = "block";
+      return;
+    }
+    var s = document.createElement("script");
+    s.src = sources[i];
+    s.onload = function () {
+      if (window.MathJax && window.MathJax.typesetPromise) {
+        window.MathJax.typesetPromise().catch(function () {});
+      } else {
+        load(i + 1);
+      }
+    };
+    s.onerror = function () { load(i + 1); };
+    document.head.appendChild(s);
+  }
+  load(0);
+})();
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+<script>mermaid.initialize({ startOnLoad: true, theme: "neutral", fontFamily: '"Microsoft YaHei", "PingFang SC", sans-serif' });</script>
+</head>
+<body>
+<a href="../../index.html" style="position:fixed;top:12px;right:14px;z-index:99;background:#f6f7f9;border:1px solid #e2e5ea;border-radius:999px;padding:4px 12px;font-size:14px;color:#2c5fa8;text-decoration:none;box-shadow:0 1px 4px rgba(0,0,0,.08)">← 技术地图首页</a>
+<a href="../index.html" style="position:fixed;top:48px;right:14px;z-index:99;background:#f6f7f9;border:1px solid #e2e5ea;border-radius:999px;padding:4px 12px;font-size:14px;color:#2c5fa8;text-decoration:none;box-shadow:0 1px 4px rgba(0,0,0,.08)">← 技术地图</a>
+<div id="mathjax-load-fail" style="display:none;position:fixed;top:12px;left:14px;z-index:99;background:#fff4e5;border:1px solid #e8b04b;color:#8a5300;border-radius:8px;padding:8px 12px;font-size:13px">公式渲染组件未能加载，当前显示的是 LaTeX 源码。</div>
+
+<h1>TEMPO 深度阅读笔记 —— 相图、Makespan 调度与「代理失配」</h1>
+
+<blockquote>
+<p>对象：<a href="https://arxiv.org/abs/2608.13057">TEMPO: Makespan-Aware Expert-Parallel Load Balancing Across Memory- and Compute-Bound Regimes（arXiv:2608.13057，v2，2026-08-14）</a>——KlingAI Research（快手可灵）的服务侧 EP 调度器。它是本目录 <a href="ultraep-deep-reading.html">UltraEP 笔记</a> §13 里那条标 <span class="ev ev-u">U</span> 的「TEMPO 批评」的正主。本文与 UltraEP 笔记同体例：<b>Part I</b>（§0–§8）按「问题 → 实测发现 → 形式化 → 方案总览 → 对照关系 → 实验 → 局限」单线精读；<b>Part II</b> 收录阅读中产生的问题逐题详解。证据标注：<span class="ev ev-v">V</span> 一手核对（论文 v2 HTML 全文 / arXiv 版本页）<span class="ev ev-r">R</span> 合理推断<span class="ev ev-u">U</span> 待核实。整理：2026-09-17。</p>
+</blockquote>
+
+<h2>0. 阅读指南与符号表</h2>
+
+<h3>0.1 材料与定位</h3>
+<ul>
+<li>论文 v2（2026-08-14，v1 为 2026-08-13）HTML 全文逐节核对，18 页，含附录 A（证明）–H（MoonEP 对比）。作者 8 人：Jie Li、Chenxin Jia、Jinliang Shen、Cunzhuang Liu、Ruiyi Ding、Jianwen Xian、Kang He、Chengru Song（通讯），单位 <b>KlingAI Research</b><span class="ev ev-v">V</span>。</li>
+<li><b>代码状态</b>：摘要声明 "Code is available" 并给出 <code>github.com/jeshxxx/TEMPO</code>，但该地址写作时 <b>404</b>（未发布或已私有）<span class="ev ev-u">U</span>。因此本文没有 UltraEP 笔记那样的源码走读，实现细节以论文 §4 + 附录 D（SGLang patch 清单）为依据，逐条标注。</li>
+<li><b>定位一句话</b>：UltraEP 回答「训练与 prefill 的关键路径上怎么摊平」，TEMPO 回答「serving（decode 为主）里，给定静态放置，每个 batch 的 token 该怎么分到副本上才最快」——它不动权重、不做复制，只做 <b>per-batch dispatch</b>，求解器跑在关键路径之外。</li>
+</ul>
+
+<h3>0.2 符号表</h3>
+<table>
+<tr><th>符号</th><th>含义</th><th>典型取值</th></tr>
+<tr><td>$N$ / $K$</td><td>逻辑专家数 / top-k</td><td>DSv3：256 / 8</td></tr>
+<tr><td>$n_e$</td><td>本 batch 分给专家 $e$ 的 token 数（router 输出）</td><td>—</td></tr>
+<tr><td>$g$ / $G_g$ / $N_g$</td><td>GPU 编号 / GPU $g$ 上<b>被激活的副本数</b> / GPU $g$ 收到的 token 数</td><td>—</td></tr>
+<tr><td>$a, b$</td><td>平坦段截距与斜率；$b$ = <b>激活地板</b>（多激活一个副本的权重流时间）</td><td>DSv3 fp8：$b$≈8.32 µs</td></tr>
+<tr><td>$c, \beta$</td><td>线性段截距与斜率（每 token 的计算时间）</td><td>DSv3：β≈0.358 ns/token 量级（校准值）</td></tr>
+<tr><td>$n^*$</td><td>两段拐点：每专家 token 数低于它时权重流主导</td><td>fp8 ≈156–168；bf16 ≈331</td></tr>
+<tr><td>$b_2$ / $T$</td><td>tile 阶梯斜率（$b_2 \approx b/3$）/ tile 数 $T=\sum_e \lceil n_e/128 \rceil$</td><td>DSv3：$b_2$=2.65 µs</td></tr>
+<tr><td>$t_g$</td><td>GPU $g$ 的 MoE 块时间 = $\max(a+bG_g,\; c+\beta N_g,\; c_2+\gamma N_g)$（第三项为 all-to-all 通信）</td><td>—</td></tr>
+<tr><td>$R(e)$ / $x_{e,g}$ / $z_{e,g}$</td><td>专家 $e$ 的副本集 / 分给 GPU $g$ 的 token 份额 / 激活指示 $z=\mathbf{1}[x>0]$</td><td>—</td></tr>
+<tr><td>$M(A)$</td><td>调度 $A$ 的 makespan：$\max_g t_g$</td><td>—</td></tr>
+<tr><td>$B$</td><td>每 GPU 批 token 数（decode 几十~几百；prefill 数千）</td><td>64–8192</td></tr>
+<tr><td>$E_{\mathrm{eff}}$ / $B^*$ / $p_1$</td><td>期望激活副本数 / 平坦→线性策略的翻转边界批大小 / 最热专家流行度</td><td>$B^*_{\mathrm{a2a}}$≈300</td></tr>
+<tr><td>$\tau$</td><td>集成切换容差（新解须比现解好 &gt;1% 才切换）</td><td>1%</td></tr>
+</table>
+
+<h2>1. 问题：两个「代理」都会失配</h2>
+
+<h3>1.1 EP 同步结构与可回收时间</h3>
+<p>每个 MoE 层：router → dispatch all-to-all → grouped expert GEMM → combine all-to-all，层末同步。<b>decode 服务跑在 CUDA graph 下，负载相关项就是 grouped GEMM</b>；层时间 = $\max_g t_g$，再乘以几十层。实测每 batch 的瓶颈 GPU 常态性跑到均值的 1.5–2×——<b>「平均均衡」（placement 的职责）与「本 batch 均衡」（dispatch 的职责）之间的差，就是可回收时间</b><span class="ev ev-v">V</span>。</p>
+
+<h3>1.2 两类现有调度器与它们的隐含假设</h3>
+<table>
+<tr><th>家族</th><th>代表</th><th>均衡的量</th><th>隐含假设</th></tr>
+<tr><td>token 代理</td><td>EPLB（放置）/ LPLB / <b>UltraEP</b></td><td>每 GPU token 数</td><td>专家耗时 ∝ token 数</td></tr>
+<tr><td>激活代理</td><td>METRO</td><td>每 GPU 激活专家数</td><td>专家耗时 ∝ 激活副本数</td></tr>
+<tr><td>权重移动</td><td>MoonEP</td><td>搬权重换取完美 token 均衡</td><td>权重搬运可被摊薄/重叠</td></tr>
+</table>
+<p>TEMPO 的核心实测发现：<b>两个假设在真实硬件上都不成立</b>，而且失效方向随 batch 规模翻转。同一 batch 上四种代理调度的时间差中位 <b>1.4–1.6×</b>（p95 至 1.7×）<span class="ev ev-v">V</span>：</p>
+<table>
+<tr><th>$B$（token/GPU）</th><th>static</th><th>uniform 分摊</th><th>token-LP</th><th>METRO</th><th>离散度</th></tr>
+<tr><td>128（地板区）</td><td>1.17</td><td><b>1.51</b></td><td>1.17</td><td><b>1.11 最优</b></td><td>1.37</td></tr>
+<tr><td>512</td><td><b>1.47</b></td><td>1.12</td><td><b>1.00 最优</b></td><td>1.05</td><td>1.47</td></tr>
+<tr><td>1024</td><td><b>1.56</b></td><td>1.04</td><td><b>1.00 最优</b></td><td>1.06</td><td>1.56</td></tr>
+</table>
+<p class="figcaption">表 1（论文 Table 1 中位数）：同一 recorded batch、同一放置、$R$=64，四种代理调度相对 TEMPO 解的块时间。<b>没有跨区间安全的固定代理</b>：最差 regime 的中位惩罚从 11%（METRO）到 56%（static）。</p>
+
+<h3>1.3 混合 regime 是常态而非角落</h3>
+<p>用校准出的 $n^*$ 当分类器统计四个真实负载 trace：decode 档（128–512 token/GPU）下 <b>92–100% 的 batch 同时包含 ≥20% 的平坦区专家和 ≥20% 的线性区 token</b>；$B$=512 时平坦区专家占激活的 47%、线性区专家承载 91% 的 token。转接带不是角落案例，而是 decode 的常态工作区<span class="ev ev-v">V</span>。</p>
+
+<h2>2. 实测根基：两段 max-affine 代价模型</h2>
+
+<h3>2.1 两个 regime 的物理机制</h3>
+<p>对 SGLang/DeepEP decode 实际使用的 DeepGEMM fp8 masked grouped GEMM 做 $(G, \text{tokens-per-expert})$ 网格微基准（CUDA graph 计时、权重拷贝轮换防 L2 复用、固定 expected_m 冻结 JIT）<span class="ev ev-v">V</span>：</p>
+<ul>
+<li><b>平坦区（$n_e < n^* \approx 156$）</b>：耗时几乎不随 token 数变化，只随<b>激活副本数 $G$</b> 线性——每多激活一个专家就要把它的权重从 HBM 流一遍。地板 $b$ 的物理验证：专家 FFN 参数量 $3 d_{\text{model}} d_{\text{ff}}$（DSv3 fp8 = 44.0 MB）÷ HBM 峰值带宽 = roofline 下限 13.1 µs，实测拟合 $b$=14.8 µs，恰在 roofline 的 <b>1.13–1.24×</b>（即 80–88% 峰值带宽）——<b>地板就是权重流</b><span class="ev ev-v">V</span>。</li>
+<li><b>线性区（$n_e > n^*$）</b>：grouped GEMM 按 <b>128-token M-tile</b> 处理，代价是 token 数的<b>阶梯函数</b>（[1,128] 内平坦、129 跳一阶）；细粒度实测显示后续台阶是亚线性的（同一专家的额外 tile 从 L2 复用权重，每边界 +11–24%），于是用一个参数 $b_2 \approx b/3$ 捕捉，得到 tile 感知模型<span class="ev ev-v">V</span>：</li>
+</ul>
+<div class="formula">
+$$
+t = \max\bigl(\underbrace{a + bG + b_2(T-G)}_{\text{激活/权重流}},\; \underbrace{c + \beta N}_{\text{token 计算}}\bigr), \qquad T = \sum_e \left\lceil \frac{n_e}{128} \right\rceil
+$$
+</div>
+<p>tile 项把多 tile 区的模型误差从 ~10%（最差 25%）降到 <b>2.0%</b>；decode 区（$n_e \le 128$）不受影响。两种模型的适用分界：decode 关掉 $b_2$，prefill 研究打开（4096–8192 token/GPU 的 recorded 路由上，tile 感知改变 97–99% batch 的解、中位省 4.5–6.0%）。</p>
+
+<h3>2.2 误价的不对称性</h3>
+<p>iso-token 集合（同 N 不同 G）真实时间差最高 2.5×（Qwen3）/ 7.6×（DSv3）；iso-activation 集合 18× / 24×。方向上的不对称：METRO 深入计算区最高错到 <b>2.8×</b>；token-LP 落进内存区错 5–17%——<b>这解释了为什么生产界先注意到 METRO 方向的失败</b><span class="ev ev-v">V</span>。碎片化被硬件<b>双倍计费</b>：碎片让专家权重被重复加载（$b$ 收费）、又各自向上取整到 tile（tile padding 收费）。</p>
+
+<h2>3. 形式化与相图：每个代理「在家乡都好」的数学镜像</h2>
+
+<h3>3.1 Fixed-charge makespan 问题</h3>
+<div class="formula">
+$$
+\min \; \max_g \; \max\Bigl(a + b \textstyle\sum_e z_{e,g},\;\; c + \beta \textstyle\sum_e x_{e,g}\Bigr)
+$$
+</div>
+<p>约束：$\sum_g x_{e,g} = n_e$，$x$ 只能落在 $R(e)$ 上。这是一个<b>带固定费用的 makespan 问题</b>：激活一个副本要付固定费 $b$，token 按线性费 $\beta$ 计价。</p>
+<ul>
+<li><b>Theorem 1（NP-complete）</b>：仅 2 个 GPU、全复制、$a=c=0$ 时已 NP-complete——归约自 Balanced PARTITION：max 结构把单一预算 $T$ 变成「激活基数上限 K=m/2」与「token 容量上限 C=W」两个同时成立的背包约束<span class="ev ev-v">V</span>。</li>
+<li><b>Lemma 1</b>：$a=b=0$ 时目标退化为 $\min\max_g N_g$——<b>正是 token-LP，即 LPLB/UltraEP 的调度目标</b>；<b>Lemma 2</b>：$c=\beta=0$ 时退化为 $\min\max_g G_g$——半匹配问题。<b>问题在每个纯 regime 内是多项式的，只在 regime 相互作用时 NP-hard</b>——这正是「各代理在家乡都好、转接带需要新算法」的系统观察的数学镜像<span class="ev ev-v">V</span>。</li>
+<li><b>Theorem 2（加性近似保证）</b>：全复制下，按 token 降序轮转放置的整专家算法 $A_3$ 满足 $M(A_3) \le \mathrm{OPT} + \max(b, \beta n_{\max})$；换算成相对下界的乘性误差：recorded decode batch 上中位 4.1%、最大 7.7%（4× token 规模时 31%）。</li>
+</ul>
+
+<h3>3.2 相图：翻転边界可以解析预测</h3>
+<p>对合成 Zipf 路由扫 $(B, s, \text{复制倍数}, \mathrm{EP}, \text{shape})$ 得到相图（每格标注哪种<b>固定</b>策略最优、以及 TEMPO 相对最优固定策略的增益）：<b>(i)</b> 最优固定策略在图上翻转——小 $B$（内存区）激活均衡赢、大 $B$（计算区）token-LP 赢，边界随偏斜/复制/形状移动；<b>(ii)</b> 翻转边界 $B^*$ 解析可预测：平均机制 $\beta B K = b E_{\mathrm{eff}}/n_{\text{gpus}}$ 给出 $B^*_{\text{avg}}$，热专家机制（最热专家所在 GPU 先进入线性区）给出更早触发的 $B^*_{\text{hot}}$，$B^*=\min$ 两者，在 12/12 个网格列上落入实测翻转带<span class="ev ev-v">V</span>；<b>(iii)</b> TEMPO 逐格贴住每格最优（最差 ≥ −0.3%，在 1% 集成带内），混合区赢 <b>8.5%（DSv3）/ 10.2%（Qwen3）/ 11.8%（DSv2, 1.5× 复制）</b>；<b>(iv)</b> 规模外推 EP32–64：混合区均值 6–6.5%（最大 15.5%），且<b>恰好在理论预言处归零</b>（整个 batch 阶梯进入计算区，TEMPO 与 token-LP 重合）——通信项不改变任何结论（&lt;1pp）。</p>
+
+<h2>4. 完整方案：从淳朴 dispatcher 到 TEMPO</h2>
+
+<h3>4.1 淳朴方案与它的失血点</h3>
+<p>如果只讲逻辑，TEMPO 的淳朴形态是四拍：<b>量</b>（每窗口收集各专家 token 计数）→ <b>解</b>（在代价模型下解 makespan 最优的 token 分配）→ <b>发</b>（生成逻辑→物理的 dispatch 表）→ <b>跑</b>（decode 图内按表把 token 概率性地分到副本）。直接实现会死在三处：<b>① 求解嵌在 decode 图内</b>——每层每步付内核与集合通信代价；<b>② 代价值是拍脑袋的</b>——模型错一格，解就错一格；<b>③ 表的更新与图的重放竞争</b>——GIL 与竞态。下面的组件逐一止血。</p>
+
+<div class="mermaid">
+sequenceDiagram
+    participant C as 计数（图内融合 kernel）
+    participant S as 求解进程（离关键路径）
+    participant T as dispatch 表发布
+    participant D as decode 图（关键路径）
+    Note over C: 每 kernel：概率分发 + 原子累积计数<br/>（padding 行掩码，零清零内核）
+    C->>S: 侧流快照 + gloo 跨 rank 窗口差分
+    S->>S: tempo_fast 四阶段（毫秒级，numpy）
+    S->>T: pinned 暂存 → 一次 H2D 发布
+    T->>D: 逻辑→物理表（≤200ms 陈旧度）
+    Note over D: 关键路径零额外内核、零集合通信<br/>撕裂行回退均匀分布（永不路由到无副本 GPU）
+</div>
+<p class="figcaption">图 1：TEMPO 方案全景。求解整体在关键路径<b>外</b>（对照 UltraEP：求解在每层关键路径<b>上</b>）；图内只有一个融合 kernel，边际成本为零。</p>
+
+<h3>4.2 改进 A：黑盒校准——代价表是「拟合」出来的，不是推导的</h3>
+<p>在部署管线上跑 $(G, N)$ 网格、记录 $(G, N, t)$、交替_assignment_ 拟合两段 max-affine，每种（kernel, dtype, 硬件）组合约 10 分钟。这一步是<b>承重墙</b>而非仪式：整管 refit 一次迭代即收敛（β 0.358→0.356），而<b>错校准</b>（GEMM-only 参数用在带未融合逐 token kernel 的管线上）在 B=128 时让 TEMPO 亏 16%<span class="ev ev-v">V</span>。对比 UltraEP：UltraEP 的输入是精确整数计数（门控后天然确定），TEMPO 的输入是<b>带参数的时间模型</b>——两条路线的「地基」性质完全不同。</p>
+
+<h3>4.3 改进 B：tempo_fast 四阶段求解器</h3>
+<ol>
+<li><b>代价感知贪心播种</b>：专家按 token 降序，整只放到边际代价最低的副本上——<b>整只放置</b>很关键：切碎冷专家正是 token-LP 的错误；</li>
+<li><b>增广链再平衡</b>：平坦区瓶颈是 $\max_g G_g$，单步移动会「按下葫芦浮起瓢」，用 1–2 步增广链（半匹配增广路径的截断版，即 $\beta\to 0$ 极限的最优算法）；</li>
+<li><b>瓶颈局部搜索 + 部分迁移</b>：线性区把 token 从瓶颈 GPU 挪走——整专家迁移与三分搜索的部分切分（固定切点数时目标分段线性单峰），迭代 ≤300 次；</li>
+<li><b>带 1% 切换容差的集成</b>：token-LP 与（复制允许时的）轮转证书 $A_3$ 都是可行点，按模型打分，只有好 &gt;1% 才切换——「不比 token-LP 差 1% 以内」<b>由构造保证</b>，且把 Theorem 2 的加性保证传递给部署求解器。</li>
+</ol>
+<p><b>质量与代价</b>：对 10 秒 HiGHS MILP 的 makespan 比值均值 <b>1.005</b> / p95 1.024 / max 1.033；相图网格上 ≤1.0102。求解时间 <b>1.9 ms</b>（B≤256，纯 Python）——比 MILP 快约 550×，大 B 时 LP 分支 ~20 ms，全部在关键路径之外。消融证明每个阶段守一个不同 region、无可删<span class="ev ev-v">V</span>：去掉部分迁移最高劣化 16.3%（EP32 转接带）、去掉增广链 2.7%（中 B 平坦区）、去掉集成 4.5%（EP64 深计算区）。累积消融更有趣：<b>两个非平凡阶段互为对方的 regime 守卫</b>——地板区（B=128）增广链贡献全部 −9.8%，流量区里链单独反而把 0.883 恶化到 0.940（流量绑定后再均衡激活数是错的）、由局部搜索修复。</p>
+
+<h3>4.4 改进 C：通信与拓扑感知</h3>
+<p>把模型从 GEMM 扩到整个 MoE 块：all-to-all 随 rank 收到的 token 数扩展，代价加第三段 max-affine：$t_g = \max(a+bG_g,\; c+\beta N_g,\; c_2+\gamma N_g)$。逐项消融证明<b>各项不是单调叠加</b>：去掉流量项在 B=512–1024 损失过半收益；去掉地板项与裸 token 均衡<b>完全等价</b>（激活项没了，剩下的项都随 token 单调）——<b>地板项是唯一让目标函数不可被 token 归约的项</b>。多节点上，flat 表在 all-to-all 瓶颈点比 static 还差 3.5%；两段式改造（先解 makespan、再按「同节点优先」做源→副本配对，每 GPU 负载可证不变、只改配对）翻正为 +4%（Qwen3 端到端 +7.2%），且每源节点一张表、图内 kernel 不变。</p>
+
+<h3>4.5 改进 D：SGLang 集成——图内零边际成本</h3>
+<ul>
+<li><b>图内只有一个融合 kernel</b>：概率分发（经持久化逻辑→物理表）与计数收集融合，累积计数器免掉清零/拷贝内核；CUDA graph padding 行被掩码（否则退化路由会伪造幻影热专家——<b>这个 bug 在 LPLB 已发布路径里同样存在</b>，TEMPO 顺手修了）<span class="ev ev-v">V</span>；</li>
+<li><b>求解走独立进程而非线程</b>：refresher 线程侧流快照计数器 → 专用 gloo 组跨 rank 聚合窗口差分 → numpy-only worker 进程求解。进程内版本因 GIL 争用端到端损 8–10%，离进程消除；</li>
+<li><b>无双缓冲的竞态安全</b>：空闲专家行不动、无效副本列两张表里都是零、kernel 用时逐行重归一化——读到新旧混合的行仍是合法分布；单行撕裂最坏和为零，此时回退到「在持有该专家的副本上均匀分布」（每行一次比较）。代价是 ≤200 ms 陈旧度换关键路径零成本；</li>
+<li>集成只触碰 <b>7 个 patch 点</b>，在 EPLB 重平衡下存活<span class="ev ev-v">V</span>。</li>
+</ul>
+
+<h2>5. 与 UltraEP / MoonEP / METRO 的对照关系</h2>
+
+<h3>5.1 对我们第一篇笔记最重要的三条</h3>
+<ol>
+<li><b>UltraEP 被「括号」住了，而非被推翻</b>：Lemma 1 说明 UltraEP 的 quota 目标在 dispatch 粒度上<b>与 token-LP 重合</b>，论文原话是 Table 4 "brackets" 它——在计算区，TEMPO 的解与 token-LP 重合（即 UltraEP 的目标是对的）；在 decode 地板区，token 计数完全失配（激活盲），UltraEP 式的逐层权重物化在 95–107 µs 的整层预算下没有落点。这给了 UltraEP 笔记 §13「为什么只覆盖 prefill 不覆盖 decode」一个<b>定量版本</b>的答案<span class="ev ev-r">R</span>。</li>
+<li><b>之前标 U 的批评获得准确语义</b>：v2 的 Related Work 不再说 UltraEP「cannot be reproduced」这类含混措辞，而是精确到目标函数层面——quota ≡ token-LP，属 token 代理家族；家族性缺陷（decode 激活盲）与工程可用性是两回事<span class="ev ev-v">V</span>。</li>
+<li><b>MoonEP 是「另一个半球」</b>：MoonEP 搬权重换完美 token 均衡；附录 H 实测 decode 规模下仅权重预取就 283–502 µs，超过整层预算（DeepEP dispatch+combine 95–107 µs）——「内存区里搬一个专家的权重约等于使用它的代价」；计费口径下更是 +277–320%。但在 prefill 规模 + 极端偏斜（MaxVio ≳ 20）时 MoonEP 反超 DeepEP（2.55 ms 平坦 vs DeepEP 2.23→2.85 ms 恶化）——<b>两个机制恰好划分了相图</b><span class="ev ev-v">V</span>。</li>
+</ol>
+
+<h3>5.2 四机制分工表</h3>
+<table>
+<tr><th>机制</th><th>代表</th><th>主场 regime</th><th>离场方式</th></tr>
+<tr><td>什么都不做</td><td>static placement</td><td>放置新鲜 + 路由近均匀</td><td>任何偏斜累积</td></tr>
+<tr><td>激活代理</td><td>METRO</td><td>深内存区（B=128 最优 1.11）</td><td>计算区最高 2.8×</td></tr>
+<tr><td>token 代理</td><td>EPLB / LPLB / UltraEP</td><td>计算区（token-LP 即最优）</td><td>内存区 5–17%（激活盲）</td></tr>
+<tr><td>权重移动</td><td>MoonEP</td><td>计算区 + 极端偏斜（MaxVio≳20）</td><td>decode 区带宽负收益</td></tr>
+<tr><td>时间模型 makespan</td><td><b>TEMPO</b></td><td>混合区（转接带）</td><td>纯 regime 内与最优代理重合（±1%）</td></tr>
+</table>
+
+<h2>6. 实验数字核对表</h2>
+<table>
+<tr><th>事实</th><th>数值</th><th>口径 / 出处</th><th>证据</th></tr>
+<tr><td>拐点 $n^*$</td><td>fp8 ≈156–168；bf16 ≈331</td><td>DeepGEMM masked，Testbed A（附录 B 校准）</td><td><span class="ev ev-v">V</span></td></tr>
+<tr><td>模型误差</td><td>两段 4–8%；+tile 项后多 tile 区 2.0%</td><td>Table 6 拟合</td><td><span class="ev ev-v">V</span></td></tr>
+<tr><td>求解质量</td><td>vs 10s MILP：均值 1.005 / max 1.033；1.9 ms（B≤256）</td><td>§4.2；550× 加速、关键路径外</td><td><span class="ev ev-v">V</span></td></tr>
+<tr><td>Testbed A 微基准</td><td>93% 排序一致；重校准后增益迁移误差 2.2–5.5pp</td><td>§5.1–5.2</td><td><span class="ev ev-v">V</span></td></tr>
+<tr><td>相图增益</td><td>混合区 8.5% / 10.2% / 11.8%；外推 EP32–64 最大 15.5%</td><td>§3.2–3.3（模型计分）</td><td><span class="ev ev-v">V</span></td></tr>
+<tr><td>vs LPLB（同机制对比）</td><td>decode 吞吐 +38–70%、ShareGPT +65%、中位 ITL 约减半</td><td>§5.9，Qwen3-235B-FP8 EP8；主体是架构差（LPLB 图内 per-layer 集合通信）</td><td><span class="ev ev-v">V</span></td></tr>
+<tr><td>vs static（诚实口径）</td><td>v1 落后 9–20% → v2 落后 2.3–11%，但在全部 6 配置上赢自己的 no-op 控制 +0.2–1.6%</td><td>§5.9；「求解免费，剩的是 94 层放大的重映射数据路径」</td><td><span class="ev ev-v">V</span></td></tr>
+<tr><td>Testbed B 端到端</td><td>Qwen3-235B 吞吐 +4–6%、p99 −15.6%；DeepSeek-V3（赢区外）只有机制成本</td><td>摘要 + §5.10（bracket 设计：一个在赢区内、一个在赢区外）</td><td><span class="ev ev-v">V</span></td></tr>
+<tr><td>诚实负结果</td><td>DeepSeek-V2-Lite（小专家 bf16）：自适应调度是平局</td><td>§5.8——与模型预测一致（小 b ⇒ 调度筹码小）</td><td><span class="ev ev-v">V</span></td></tr>
+<tr><td>多节点</td><td>flat 表 −3.5% → 拓扑感知 +4%（Qwen3 e2e +7.2%）</td><td>§5.15，2 节点 EP16</td><td><span class="ev ev-v">V</span></td></tr>
+</table>
+
+<h2>7. 相图哲学与局限（论文自陈 L1–L6）</h2>
+<ul>
+<li><b>L1 头条数字在模型空间</b>：相图/规模图来自校准模拟器，两端用墙钟锚定，中段迁移误差 2–6pp——所以 Testbed A/B 的墙钟闭环是论文的方法论支柱；</li>
+<li><b>L2 规模</b>：serving 证据止步 8 GPU 与 2×8（EP16）；DSv3 全尺度（EP32+、58 层深乘）仍是外推；</li>
+<li><b>L3 赢区是有条件的，且已被画出来</b>：小专家 bf16 无增益（实测）；赢区条件——放置陈旧度落在预测的 batch 带内（B=64–256，夹住 $B^*_{\mathrm{a2a}}$≈300）、复制预算紧、图内 token-LP 在位、多节点 EP 且专家计算占比足；v1 重映射税 9–20% 在 v2 缩到 2–11%，由数据路径而非求解器支付；</li>
+<li><b>L4 静态校准</b>：kernel/驱动更新要重跑 10 分钟校准（流程已自动化、一次收敛）；</li>
+<li><b>L5 (G,N) 模型的地板</b>：DeepGEMM 在均匀 per-slot 负载下更快——模型外的第三维决定近平局，这正是集成用 1% 带的原因；作者拒绝为单个 kernel 的怪癖过拟合，标记为未来工作；</li>
+<li><b>L6 部署系统有意不追理论最优</b>：NP-hard 所以 tempo_fast 是有界启发式；异步解上一窗口计数（定价 ~2pp 端到端）；whole-slot 粒度、继承 EPLB 放置而不联合优化。作者的原话值得整段记住：「这些权衡绑定之处，对我们数字的诚实解读是<b>零税平局</b>而非胜利——这正是相图的处方。」</li>
+</ul>
+<blockquote>
+<p><b>全文的真正主张</b>（摘要原文）：<b>「A phase diagram, not a universal win, is the claim: it predicts both outcomes before deployment.」</b>——主张的不是「TEMPO 全面更快」，而是一张部署前就能预言「谁在哪赢、赢多少、什么时候零收益」的相图。</p>
+</blockquote>
+
+<hr>
+
+<h1 style="font-size:1.6em">Part II 问题详解</h1>
+<blockquote>
+<p>本篇的问答来自对 TEMPO 的阅读过程，以及它与<a href="ultraep-deep-reading.html"> UltraEP 笔记</a>的互文。符号在公式下或 §0.2 定义。</p>
+</blockquote>
+
+<h2>对照与互文组</h2>
+
+<div class="qa">
+<h3>Q1 「token 数」和「激活副本数」两个代理为什么都会失配？</h3>
+<p>因为专家耗时对两者的依赖关系<b>随 $n_e$ 换段</b>（§2）：$n_e < n^*$ 时 grouped GEMM 的耗时被权重流地板锁死——把 8 个 token 分给一个专家和把 120 个 token 分给它耗时几乎一样（Testbed B 实测 $n$=1 与 $n$=64 的曲线重合），此时决定耗时的是<b>激活了几个副本</b>（每个副本付一次 $b$ 的权重流费），token 均衡是盲的；$n_e > n^*$ 后 GEMM 进入线性区，耗时由 token 数（精确到 128-tile）决定，此时<b>激活计数</b>是盲的——把一个 512-token 的热专家整只放在某 GPU 上，激活计数再好看，那块卡也跑成 straggler。更糟的是混合是常态（§1.3）：同一个 batch 里冷专家在地板区、热专家在线性区，<b>任何单一代理都只顾得上一半</b>。TEMPO 的目标函数（两个 max 嵌套）让每一项「只在它自己的 regime 里说话」，这就是它与所有单一代理的分野。</p>
+</div>
+
+<div class="qa">
+<h3>Q2 TEMPO 是怎么「批评」UltraEP 的？这对我们第一篇笔记的 U 标注意味着什么？</h3>
+<p>v2 的批评精确且克制，分三层：① <b>归类</b>：UltraEP 属 token 代理家族——它的 quota 目标在 dispatch 粒度上与 token-LP 重合（Lemma 1），因此 Table 1/4 的 token-LP 列就是它的行为上界与下界的「括号」；② <b>家族缺陷</b>：token 计数在内存区（decode）是激活盲的——这解释了 UltraEP 为什么只覆盖训练与 prefill（那里 token 数与耗时的线性假设成立）；③ <b>不否认工程价值</b>：v2 没有延续 v1 时期「training-side balancers cannot be reproduced end-to-end on a serving stack」的宽泛措辞（我们 UltraEP 笔记 §13 标 <span class="ev ev-u">U</span> 的那句），而是收敛为目标函数层面的归类。<b>对第一篇笔记的修正</b>：那条批评的准确含义是「目标函数在 decode 失配」，而非「工程上无法落地」——U 标注解除，两个系统在相图上各据一个半球。</p>
+</div>
+
+<div class="qa">
+<h3>Q3 问题被证明 NP-complete，为什么 1.9 ms 就能解到 MILP 的 1.005 倍？</h3>
+<p>三个原因叠加：① <b>最优性只在转接带值钱</b>：Lemma 1/2 表明纯 regime 内问题退化为多项式可解的 token-LP / 半匹配——NP-complete 只出现在 regime 相互作用处，而实际 batch 里「需要真正组合搜索的专家」只是一小部分，其余贪心即近优；② <b>四阶段各守一个失败模式</b>（§4.3），消融证明它们在各自 region 里不可删，且互为对方的 regime 守卫；③ <b>1% 切换容差</b>把「模型无法分辨的近平局」交给模型外的第三维（DeepGEMM 偏好均匀 per-slot 负载，L5）裁决，避免为模型噪声支付真实的切换开销。加上求解在关键路径外（毫秒预算宽松 550 倍），「NP-hard」与「毫秒可用」并不矛盾。</p>
+</div>
+
+<div class="qa">
+<h3>Q4 为什么「搬 token」在 decode 免费、「搬权重」不免费？（与 UltraEP 扇出问题的对照）</h3>
+<p>decode 的整层 MoE 预算只有 95–107 µs（DeepEP dispatch+combine，8 GPU 实测），而地板区里「使用一个专家」的成本 ≈ 把它的权重流一遍（$b$ = 权重字节 ÷ HBM 带宽 ≈ 使用成本的 80–88%）。所以 <b>搬这个专家的权重 ≈ 再付一次使用费</b>——MoonEP 的权重预取单独就 283–502 µs，超预算 3–5 倍；且副本收到的是 decode 的零星 token，永远攒不回搬运成本（计费口径 +277–320%）。而搬 token 的边际成本是几字节的路由表更新，且 TEMPO 把它进一步压成图内查表。这与 UltraEP 笔记 Q10A 的扇出讨论同构：<b>权重移动的成本结构决定了它只在「每层计算足够长、能摊薄搬运」的 prefill/训练区划算</b>——UltraEP 的 300 µs 预算在 prefill 的数千 token 下成立，MoonEP 的预取在 MaxVio≳20 的极端偏斜 prefill 下成立（此时 DeepEP 自己都会恶化到 2.85 ms），decode 则是 token-moving 的独占领地。</p>
+</div>
+
+<div class="qa">
+<h3>Q5 相图怎么读？</h3>
+<p>相图的横轴是 batch 规模 $B$（每 GPU token 数），纵轴是路由偏斜 $s$（或复制倍数/EP 度/模型形状作面板），每个格子里标注：① <b>字母 = 该格最优的固定策略</b>（M = METRO 式激活均衡，L = token-LP，E = EPLB 式均匀）；② <b>底纹/数字 = TEMPO 相对该最优固定策略的增益</b>。读法三条：字母翻转的边界就是代理失配带，且边界位置可由 $B^*=\min(B^*_{\text{avg}}, B^*_{\text{hot}})$ 解析预测（偏斜大时热专家机制让边界左弯）；TEMPO 的增益集中在边界带（混合区），纯 regime 内归零；底纹为负（TEMPO 更差）的格子不超过 −0.3%（1% 集成带内）。部署意义：上线前用校准模型算一遍相图，就知道<b>自己的工作点落在哪个区、值不值得上自适应调度</b>。</p>
+</div>
+
+<div class="qa">
+<h3>Q6 dispatch 表更新为什么不加锁/双缓冲也是安全的？</h3>
+<p>因为表被设计成「任何时刻、任何中间状态都是合法分布」：① 空闲专家的行不被更新（新旧一致）；② 无效副本列在旧表和新表里都是零；③ in-graph kernel 在使用时<b>逐行重归一化</b>——读到旧行、新行、或新旧混合的行，都是一个合法的概率分布；④ 唯一的危险是单行撕裂后恰好和为零，此时 kernel 回退为「在持有该专家的副本上均匀分布」（每行一次比较）。最坏后果是一个 batch 用了陈旧或均匀的切分——<b>绝不会路由到没有该专家副本的 GPU，也不会除零</b>。这是用「≤200 ms 陈旧度」换「关键路径零同步」的明码标价，与 UltraEP 的 epoch ready-flag（§8.3）同属「放宽一致性换零 barrier」的家族，只是一致性窗口从微秒级放大到毫秒级——因为 dispatch 决策本来就容忍窗口级陈旧（流行度漂移远慢于 200 ms，§5.8 的敏感性扫描验证了这一点）。</p>
+</div>
+
+<div class="qa">
+<h3>Q7 这篇与 UltraEP 笔记怎么互文？两篇合起来看的世界观是什么？</h3>
+<p>三个层次：① <b>时间尺度互补</b>——UltraEP 在每层关键路径上花 ≤300 µs 做精确均衡（训练/prefill 的步时以秒计，付得起）；TEMPO 把求解挪到关键路径外、以 ≤200 ms 陈旧度换取 decode 图内零成本（decode 步时百微秒级，付不起任何图内代价）；② <b>目标函数互补</b>——UltraEP 的 quota≡token-LP 在计算区恰是最优（Lemma 1），TEMPO 的 max-affine makespan 在混合区接管；相图把「谁对」变成了 $B$ 与 $n^*$ 的比较，不再需要站队；③ <b>方法论互补</b>——UltraEP 的输入是门控后的精确整数（零模型误差），TEMPO 的输入是十分钟校准的时间模型（4–8% 误差、墙钟闭环验证）：<b>能拿到精确计数时用精确计数，拿不到（或代价不成比例）时用校准模型</b>。合起来读：负载均衡的完整地图 = placement 层（EPLB，平均）× dispatch 层（LPLB/UltraEP/TEMPO/METRO，本 batch）× 移动对象选择（token vs 权重），而相图是这张地图的图例。</p>
+</div>
+
+<h2>8. 参考资料</h2>
+<ul>
+<li>论文：<a href="https://arxiv.org/abs/2608.13057">TEMPO: Makespan-Aware Expert-Parallel Load Balancing Across Memory- and Compute-Bound Regimes</a>（arXiv:2608.13057，v2，2026-08-14；v1 2026-08-13）</li>
+<li>代码：论文给出的 <code>github.com/jeshxxx/TEMPO</code> 写作时 404<span class="ev ev-u">U</span>；实现依据以论文 §4 + 附录 D（SGLang patch 清单，7 个 patch 点）为准</li>
+<li>被对照系统：<a href="ultraep-deep-reading.html">UltraEP 笔记</a>（同目录；§13 的 TEMPO 批评 U 标注由本篇 Q2 解除）· <a href="https://github.com/deepseek-ai/EPLB">EPLB</a> · <a href="https://github.com/deepseek-ai/LPLB">LPLB</a> · METRO · MoonEP（附录 H 实测对比）· DeepGEMM</li>
+<li>姊妹篇：<a href="moe-ep-overview.html">方案深度解析（EPLB/UltraEP/MoonEP）</a> · <a href="moe-ep-code-analysis.html">源码级对比分析</a></li>
+</ul>
+
+<hr>
+<p style="color:#57606a;font-size:.9em">整理：luxiangzz · 2026-09-17 · 证据窗口：arXiv v2 HTML 全文（2026-08-14 版本页核对）、代码仓 404 现状；标注体系与 <a href="moe-ep-overview.html">moe-ep-overview</a> 一致（V/R/U）。</p>
+</body>
+</html>

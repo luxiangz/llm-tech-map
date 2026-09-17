@@ -588,7 +588,7 @@ flowchart LR
 <h2>13. 版本史与批判性讨论</h2>
 <ul>
 <li><b>版本史</b><span class="ev ev-v">V</span>（arXiv 版本页）：v1（2026-06-02）与 v2（2026-06-05）均 Withdrawn，v3（2026-06-18）为当前版；开源 v1.0.0 发布于 2026-07-15。署名 13 人（一作 Xinming Wei，北大，于小红书实习期间完成），单位含北大、小红书、上海 AI Lab、独立研究者。</li>
-<li><b>TEMPO 的批评</b>（arXiv:2608.13057）：将 UltraEP 与 LLEP、TAOT 归为 training-side balancers，认为其难以在 serving 栈上端到端复现（原文片段截断，语义待核<span class="ev ev-u">U</span>）；旁证：SGLang 集成 experimental<span class="ev ev-v">V</span>。</li>
+<li><b>TEMPO 的批评</b>（arXiv:2608.13057）：将 UltraEP 与 LLEP、TAOT 归为 training-side balancers，认为其难以在 serving 栈上端到端复现（v1 片段，语义当时待核）；旁证：SGLang 集成 experimental<span class="ev ev-v">V</span>。<b>2026-09-17 更新</b>：v2 全文核对后语义已明确——批评收敛为「UltraEP 的 quota 目标在 dispatch 粒度上与 token-LP 重合，属 token 代理家族、decode 区激活盲」，是目标函数归类而非工程否定，工程否定已不存在，<span class="ev ev-v">V</span> 详见 <a href="tempo-deep-reading.html">TEMPO 深度阅读笔记</a> Q2。</li>
 <li><b>为什么只覆盖 prefill 不覆盖 decode</b>：论文与博客均未明说。合理解释<span class="ev ev-r">R</span>：decode 每步 token 极少（百级），每层复制 + 重路由的相对开销会远超 300 µs 量级收益；且逐层动态规划与 decode 必开的 CUDA graph 静态控制流冲突；decode 的失衡另有静态方案兜底（EPLB / MoonEP，见 Q13–Q14）。</li>
 <li><b>带宽账（为什么必须限定 scale-up 域）</b><span class="ev ev-r">R</span>：以 Qwen3-235B 单专家 ≈ 37.7 MB（bf16）计，EP64 每层物化 R 个副本的跨 rank 传输在 GB/s × 百微秒 ≈ 数十 MB 量级，只有 NVLink 域（≥100 GB/s/rank）装得进 300 µs 预算；RDMA 域单卡 ~50 GB/s 且多 rank 共享，必然爆预算——与 §2 的硬约束互为因果。</li>
 <li><b>生态位</b>：博客结尾把后训练（RL rollout 的强动态负载，引 ReLibra, arXiv:2605.08639）列为下一战场，主张做 MoE RL 的统一负载调节层<span class="ev ev-v">V</span>——与 MoonEP 的 decode/推理叙事正面相遇（见姊妹篇对比矩阵）。</li>

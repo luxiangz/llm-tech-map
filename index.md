@@ -32,6 +32,7 @@ description: 面向大模型方向的完整技术知识目录，覆盖从数学�
 - [EPLB · UltraEP · MoonEP 方案深度解析](docs/moe-ep/moe-ep-overview.html)
 - [EPLB · UltraEP · MoonEP 源码级对比分析](docs/moe-ep/moe-ep-code-analysis.html)
 - [UltraEP 深度阅读笔记 —— 论文 × 源码精读 × 问题详解](docs/moe-ep/ultraep-deep-reading.html)
+- [TEMPO 深度阅读笔记 —— 相图、Makespan 调度与「代理失配」](docs/moe-ep/tempo-deep-reading.html)
 
 ## 学习路径建议
 
@@ -295,7 +296,7 @@ flowchart LR
 - [ ] FlashAttention 内核演进、FlashMLA、FlashKDA、DeepGEMM、MSA
 - [ ] GEMV 与 decode 阶段瓶颈、融合 kernel
 - [ ] megakernel 范式
-- [ ] 专家并行内核：UltraEP、moonep — 📄 [MoE EP 方案深度解析](docs/moe-ep/moe-ep-overview.html)
+- [ ] 专家并行内核：UltraEP、moonep、tempo — 📄 [MoE EP 方案深度解析](docs/moe-ep/moe-ep-overview.html)
 - [ ] Lightning Indexer 算子
 - [ ] HPC 算子库工程：源码/测试/基准
 
