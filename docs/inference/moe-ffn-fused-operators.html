@@ -30,7 +30,6 @@ hr { border: none; border-top: 1px solid #d8dee4; margin: 2em 0; }
 .formula { background: #f6f8fa; padding: 12px 16px; border-radius: 8px; overflow-x: auto; margin: 1em 0; }
 ul, ol { padding-left: 1.8em; }
 .figure { margin: 1.4em 0; text-align: center; }
-.mermaid { text-align: center; margin: 1.4em 0; }
 .figure img { max-width: 100%; height: auto; border: 1px solid #e5e7eb; border-radius: 10px; background: #fff; }
 .figcaption { margin-top: .5em; color: #57606a; font-size: .92em; text-align: center; }
 @media (min-width: 1500px) {
@@ -77,8 +76,6 @@ window.MathJax = {
   load(0);
 })();
 </script>
-<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
-<script>mermaid.initialize({ startOnLoad: true, theme: "neutral", fontFamily: '"Microsoft YaHei", "PingFang SC", sans-serif' });</script>
 </head>
 <body>
 <nav id="toc-nav"><div class="toc-title">目录</div><div id="toc-links"></div></nav>
@@ -98,7 +95,7 @@ window.MathJax = {
 </ul>
 <p>相关图文件：</p>
 <ul>
-<li><a href="assets/ffn_formula_flow.drawio">ffn_formula_flow.drawio</a>：包含 ReLU FFN、SwiGLU FFN、Sparse MoE、EP Dispatch/Combine 四个 sheet</li>
+<li><a href="assets/ffn_formula_flow.drawio">ffn_formula_flow.drawio</a>：包含 ReLU FFN、SwiGLU FFN、Sparse MoE、EP Dispatch/Combine 四个 sheet；图 1-4 为其导出 <a href="assets/ep-dispatch-combine-flow.svg">ep-dispatch-combine-flow.svg</a></li>
 <li><a href="assets/mlp_shape_flow.svg">mlp_shape_flow.svg</a></li>
 <li><a href="assets/moe_vs_ffn_diagram.svg">moe_vs_ffn_diagram.svg</a></li>
 </ul>
@@ -234,28 +231,11 @@ W_{\mathrm{down}}
 <li><b>shared expert 不参与 dispatch</b>：它每个 rank 都有，token 在本地直接计算即可（deepseek 类模型连同其线性门控一起本地完成）。</li>
 <li><b>重复专家与逻辑→物理路由</b>：若系统进一步做负载均衡（如副本冗余方案），热点专家会在多个 rank 有副本；此时 dispatch 的目的地从「逻辑专家」变为「物理副本」，token 按各副本的配额分摊——这也是第 2 章各 fused MoE 算子都在「finalize/combine」一步做 weighted sum 的原因。</li>
 </ul>
-<p>下面把这一过程补充为 <a href="assets/ffn_formula_flow.drawio">ffn_formula_flow.drawio</a> 的新 sheet「EP Dispatch/Combine Flow」（与 ReLU FFN / SwiGLU FFN / Sparse MoE 三个 sheet 并列），示意两个 rank 之间的完整数据流：</p>
-<div class="mermaid">
-flowchart LR
-    subgraph G0["GPU0 · token 所在 rank"]
-        direction TB
-        tok["batch tokens<br/>x₁ x₂ x₃"] --> rtr["Router / TopK<br/>softmax + TopK"]
-        rtr --> idx["topk_ids + 路由权重 gᵢ"]
-        idx --> disp["DISPATCH all-to-all<br/>把每个 token 发往其选中专家所在 rank"]
-        sh["shared expert：本 rank 直接计算<br/>（不走 dispatch）"]
-    end
-    subgraph G1["GPU1 · 专家 E0 / E1 所在 rank"]
-        direction TB
-        recv["接收缓冲（按源分段）"] --> gemm["grouped GEMM<br/>gate/up → SiLU ⊙ up → down<br/>（专家权重本地不动）"]
-        gemm --> out["专家输出 gᵢ·Eᵢ(x)"]
-    end
-    disp -. "① 计数向量先行交换：每对 rank 一个整数，设备侧完成" .-> recv
-    disp -- "② token 本体" --> recv
-    out -- "③ COMBINE all-to-all" --> comb["送回 token 原所在 rank"]
-    comb --> final["y = Σ gᵢ·Eᵢ(x) + shared<br/>→ 残差相加 → 下层输入"]
-    sh -.-> final
+<p>完整数据流如图 1-4 所示：上半部是 token 所在 rank（GPU0 泳道），中部是 DISPATCH 通道与专家所在 rank（GPU1 泳道），下部经 COMBINE 回到源 rank 求和；右侧面板展开 grouped GEMM 内部与 dispatch/combine 的分步细节。其 drawio 源文件（<a href="assets/ffn_formula_flow.drawio">ffn_formula_flow.drawio</a> 的「EP Dispatch/Combine Flow」sheet）沿用 Sparse MoE Routing Flow 的视觉体系。</p>
+<div class="figure">
+<img src="assets/ep-dispatch-combine-flow.svg" alt="EP 引入后的 dispatch/combine 完整流程">
 </div>
-<div class="figcaption">图 1-4：EP 引入后的 dispatch / combine 完整过程（与 ffn_formula_flow.drawio 的「EP Dispatch/Combine Flow」sheet 对应）：权重不动，动的是 token（dispatch）、专家输出（combine）与计数向量</div>
+<div class="figcaption">图 1-4：EP 引入后的 dispatch / combine 完整过程。红色为通信通道与被选中专家，绿色为本地计算（shared expert、加权求和），蓝色为数据；专家权重全程不移动</div>
 <p>与本文第 2 章的对应关系：vLLM 的 <code>FusedMoE</code> 内部正是「dispatch → grouped GEMM → combine」三段的 fused 编排（2.1 节），vLLM-Ascend 则把它们映射为 <code>npu_moe_init_routing</code>（dispatch 前的 token 重排）、<code>npu_grouped_matmul</code>（专家计算）与 <code>npu_moe_compute_prenorm/finalize_routing</code>（combine 与加权归并）等算子（2.2 节）；通信本身由专用 all-to-all 库承担，负载均衡系统则在此基础上改写 token 的目的地（逻辑路由 → 物理副本路由）。</p>
 <hr />
 <h1>第 2 章 vLLM 与 vLLM-Ascend 中的前馈融合算子</h1>
