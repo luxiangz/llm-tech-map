@@ -316,7 +316,7 @@
     <mxGraphModel dx="900" dy="1100" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1200" pageHeight="900" math="1" shadow="0">
       <root>
         <mxCell id="0" />
-        <mxCell id="1" parent="1" />
+        <mxCell id="1" parent="0" />
         <mxCell id="ep_title" parent="1" style="rounded=1;html=1;strokeColor=none;fillColor=#ffffff;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=1;fontSize=18;fontStyle=1;" value="EP 引入后的完整流程：Router → Dispatch → Grouped GEMM → Combine" vertex="1">
           <mxGeometry x="300" y="20" width="600" height="40" as="geometry" />
         </mxCell>
