@@ -6,6 +6,14 @@
 <title>MoE 与 FFN 原理及 vLLM / vLLM-Ascend 前馈融合算子</title>
 <style>
 body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif; line-height: 1.72; max-width: 1080px; margin: 40px auto; padding: 0 28px; color: #1f2328; background: #fff; }
+#toc-nav { position: fixed; top: 0; left: 0; bottom: 0; width: 250px; overflow-y: auto; padding: 18px 14px 24px; background: #f7f9fb; border-right: 1px solid #e2e5ea; font-size: 13.5px; z-index: 50; }
+#toc-nav .toc-title { font-family: "Microsoft YaHei", "PingFang SC", sans-serif; font-weight: 700; color: #1f2328; margin: 4px 0 10px; font-size: 14px; }
+#toc-nav a { display: block; color: #3d4a5c; text-decoration: none; padding: 3px 8px; border-radius: 6px; line-height: 1.5; }
+#toc-nav a:hover { background: #e8eef6; color: #0f62fe; }
+#toc-nav a.toc-h1 { font-weight: 700; color: #1f2328; margin-top: 10px; }
+#toc-nav a.toc-h2 { padding-left: 18px; }
+#toc-nav a.toc-h3 { padding-left: 32px; color: #6b7787; }
+@media (max-width: 1500px) { #toc-nav { display: none; } }
 h1 { font-size: 2.0em; border-bottom: 2px solid #e5e7eb; padding-bottom: .35em; }
 h2 { font-size: 1.45em; border-bottom: 1px solid #e5e7eb; padding-bottom: .2em; margin-top: 2em; }
 h3, h4, h5, h6 { margin-top: 1.6em; }
@@ -24,6 +32,9 @@ ul, ol { padding-left: 1.8em; }
 .figure { margin: 1.4em 0; text-align: center; }
 .figure img { max-width: 100%; height: auto; border: 1px solid #e5e7eb; border-radius: 10px; background: #fff; }
 .figcaption { margin-top: .5em; color: #57606a; font-size: .92em; text-align: center; }
+@media (min-width: 1500px) {
+  body { margin-left: calc(50% - 540px + 250px); margin-right: auto; }
+}
 </style>
 <script>
 window.MathJax = {
@@ -67,6 +78,7 @@ window.MathJax = {
 </script>
 </head>
 <body>
+<nav id="toc-nav"><div class="toc-title">目录</div><div id="toc-links"></div></nav>
 <a href="../../index.html" style="position:fixed;top:12px;right:14px;z-index:99;background:#f6f7f9;border:1px solid #e2e5ea;border-radius:999px;padding:4px 12px;font-size:14px;color:#2c5fa8;text-decoration:none;box-shadow:0 1px 4px rgba(0,0,0,.08)">← 技术地图首页</a>
 <div id="mathjax-load-fail" style="display:none;position:fixed;top:12px;left:14px;z-index:99;background:#fff4e5;border:1px solid #e8b04b;color:#8a5300;border-radius:8px;padding:8px 12px;font-size:13px">公式渲染组件未能加载，当前显示的是 LaTeX 源码。</div>
 <h1>MoE 与 FFN 原理及 vLLM / vLLM-Ascend 前馈融合算子</h1>
@@ -83,7 +95,7 @@ window.MathJax = {
 </ul>
 <p>相关图文件：</p>
 <ul>
-<li><a href="assets/ffn_formula_flow.drawio">ffn_formula_flow.drawio</a>：包含 ReLU FFN、SwiGLU FFN、Sparse MoE 三个 sheet</li>
+<li><a href="assets/ffn_formula_flow.drawio">ffn_formula_flow.drawio</a>：包含 ReLU FFN、SwiGLU FFN、Sparse MoE、EP Dispatch/Combine 四个 sheet</li>
 <li><a href="assets/mlp_shape_flow.svg">mlp_shape_flow.svg</a></li>
 <li><a href="assets/moe_vs_ffn_diagram.svg">moe_vs_ffn_diagram.svg</a></li>
 </ul>
@@ -203,6 +215,40 @@ W_{\mathrm{down}}
 → token combine
 </code></pre>
 <p>因此优化前馈层不只是优化单个 FFN，还包括路由、调度、通信、分组矩阵乘和激活融合。</p>
+
+<h2>1.4 加入 EP 之后：dispatch 与 combine 的完整过程</h2>
+<p>1.3 节的 MoE 是<b>单卡视图</b>：所有专家都在本地，Router 选完直接算。专家并行（EP）把 $N$ 个专家均摊到 $G$ 个 rank 上（每 rank 约 $N/G$ 个），token 却在每个 rank 都可能产生——于是出现了「<b>token 在 A 卡、它要的专家在 B 卡</b>」的错位，必须用通信把两者对齐。完整过程在 Router 与专家计算之间多出两段 all-to-all：</p>
+<pre><code class="language-text">Router / TopK（本 rank 门控，得到 topk_ids 与权重 g）
+→ 计数交换（每对 rank 之间发多少 token；设备侧完成）
+→ DISPATCH all-to-all（token 本体发往专家所在 rank）
+→ 本 rank grouped GEMM（对落地的 token 按专家分组计算 gate/up → SiLU ⊙ up → down）
+→ COMBINE all-to-all（专家输出送回 token 原所在 rank）
+→ 按 gᵢ 加权求和 + shared expert（继续残差流）</code></pre>
+<p>几个关键点：</p>
+<ul>
+<li><b>权重不动，动的是 token</b>：整个过程中专家权重始终留在放置时分配好的 rank 上；走网络的是 token（dispatch）、专家输出（combine）和一份很小的计数向量。一对 all-to-all（dispatch + combine）就是系统文献里说的「token all-to-all」。</li>
+<li><b>计数交换先行于数据搬运</b>：dispatch 是变长的——每个 rank 收到多少 token 取决于本 batch 的路由结果。接收端必须先知道「每个源 rank 给我发多少」才能算出接收偏移。朴素做法把路由表整个 allgather 或搬到 CPU（全量元数据，$O(T \cdot k)$ 规模）；现代实现（DeepEP 等）只交换<b>计数向量</b>（每对 rank 一个整数，$O(G)$ 规模），且全程设备驻留。</li>
+<li><b>shared expert 不参与 dispatch</b>：它每个 rank 都有，token 在本地直接计算即可（deepseek 类模型连同其线性门控一起本地完成）。</li>
+<li><b>重复专家与逻辑→物理路由</b>：若系统进一步做负载均衡（如 UltraEP），热点专家会在多个 rank 有副本；此时 dispatch 的目的地从「逻辑专家」变为「物理副本」，token 按各副本的配额分摊——这也是第 2 章各 fused MoE 算子都在「finalize/combine」一步做 weighted sum 的原因。</li>
+</ul>
+<p>下面把这一过程补充为 <a href="assets/ffn_formula_flow.drawio">ffn_formula_flow.drawio</a> 的新 sheet「EP Dispatch/Combine Flow」（与 ReLU FFN / SwiGLU FFN / Sparse MoE 三个 sheet 并列），示意两个 rank 之间的完整数据流：</p>
+<div class="formula">
+<pre><code class="language-text">GPU0 (token 所在)                      GPU1 (专家所在)
+─────────────────────                ─────────────────────
+batch tokens → Router/TopK
+   │ topk_ids（例：x₀ 命中 GPU1 的 E0）
+   ▼
+DISPATCH all-to-all ────────────────▶ 接收缓冲（按源分段）
+                                        │
+                                        ▼
+                                     grouped GEMM（E0/E1）
+                                        │
+GPU0 ◀──────── COMBINE all-to-all ──── 专家输出
+   │
+   ▼
+y = Σ gᵢ·Eᵢ(x) + shared → 残差相加 → 下层</code></pre>
+</div>
+<p>与本文第 2 章的对应关系：vLLM 的 <code>FusedMoE</code> 内部正是「dispatch → grouped GEMM → combine」三段的 fused 编排（2.1 节），vLLM-Ascend 则把它们映射为 <code>npu_moe_init_routing</code>（dispatch 前的 token 重排）、<code>npu_grouped_matmul</code>（专家计算）与 <code>npu_moe_compute_prenorm/finalize_routing</code>（combine 与加权归并）等算子（2.2 节）；而通信本身由 DeepEP 一类专用库承担， UltraEP 类系统则在此基础上按精确负载改写 token 的目的地（副本配额分流）。</p>
 <hr />
 <h1>第 2 章 vLLM 与 vLLM-Ascend 中的前馈融合算子</h1>
 <h2>2.1 vLLM：FusedMoE 与 grouped GEMM 主线</h2>
@@ -616,5 +662,26 @@ expert_token_nums
 <li><code>npu_ffn</code> 对 GEGLU/SwiGLU/ReGLU 有门槛要求，不是所有 FFN 都适合直接融合，需要按文档做性能判断。</li>
 <li><code>expert_tokens_num_type</code> 的 0/1/2 含义、量化 MoE 的 NZ 权重格式和 <code>_C_ascend</code> 私有算子均在演进，接入前应与目标 CANN 版本的对应文档核对。</li>
 </ul>
+<script>
+(function () {
+  var root = document.body;
+  var heads = root.querySelectorAll("h1, h2, h3");
+  var box = document.getElementById("toc-links");
+  var used = {};
+  heads.forEach(function (h) {
+    if (h.closest("#toc-nav")) return;
+    var text = h.textContent.trim();
+    if (!text) return;
+    var id = h.id || ("sec-" + text.replace(/[^\u4e00-\u9fa5A-Za-z0-9]+/g, "-").slice(0, 40));
+    if (used[id]) { id += "-" + (++used[id]); } else { used[id] = 1; }
+    h.id = id;
+    var a = document.createElement("a");
+    a.href = "#" + id;
+    a.textContent = text.length > 26 ? text.slice(0, 26) + "…" : text;
+    a.className = h.tagName === "H1" ? "toc-h1" : (h.tagName === "H2" ? "toc-h2" : "toc-h3");
+    box.appendChild(a);
+  });
+})();
+</script>
 </body>
 </html>
