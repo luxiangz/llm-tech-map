@@ -1016,6 +1016,125 @@ flowchart TB
   </ul>
 </div>
 
+<h2 id="appendix-a">附录 A：负载不均衡问题逐条展开说明</h2>
+
+<p>本附录对应 3.3 的总览表，按系统层逐条展开。每条按「机制 → 影响 → 解法与代表工作」组织，尽量给出可核对的数字与链接。</p>
+
+<h3>A.1 通信层</h3>
+
+<h4>A.1.1 All-to-all 通信开销升高</h4>
+<ul>
+  <li><strong>机制：</strong>MoE 每层两次 all-to-all（dispatch 把 token 送到专家所在 rank，combine 把专家输出送回原 rank）。专家数越大、EP 度越高，参与通信的 rank 对越多，动态 token-expert 分派使通信量逐 batch 变化。</li>
+  <li><strong>影响：</strong>前沿 MoE 训练前向近一半时间在 A2A；推理 decode 通信占比同样高。A2A 完成时间由最重 rank 决定，负载不均直接拉高通信尾延迟。</li>
+  <li><strong>解法与代表工作：</strong>通信均衡损失让 token 尽量走本地专家（GShard、DeepSeek）；分层聚合降低跨节点流量（OHIO）；拓扑感知设计（rail-only）；co-activation 同卡放置减少跨卡目的地（<a href="https://arxiv.org/abs/2607.05116" target="_blank">CAP</a>）。</li>
+</ul>
+
+<h4>A.1.2 通信目的地集中（hot column）</h4>
+<ul>
+  <li><strong>机制：</strong>热专家路由集中，导致所有源 rank 的 token 都发往同几个热目的 rank。<a href="https://arxiv.org/abs/2605.20982" target="_blank">DODOCO</a> 观察到 send-counts 矩阵呈“竖条纹”：所有源 rank 收敛到同一批热目的。</li>
+  <li><strong>影响：</strong>A2A 完成时间 = 最大列和，热列决定通信下界；仅靠 expert-to-rank 重映射无法消除，因为路由本身没变。</li>
+  <li><strong>解法与代表工作：</strong>DODOCO 给出诊断（扩大 EP 不改善 per-expert 集中度）；CAP 用 co-activation 放置与通信感知剪枝；分层聚合把热点流量先归并再分发。</li>
+</ul>
+
+<h4>A.1.3 跨节点迁移代价被带宽差放大</h4>
+<ul>
+  <li><strong>机制：</strong>scale-up（NVLink，单机数百 GB/s）与 scale-out（RDMA，每 NIC 数十 GB/s）带宽差约一个数量级。专家权重若跨节点迁移，代价是节点内的数倍到十倍。</li>
+  <li><strong>影响：</strong>在标准 RDMA 集群上，热路径专家迁移贵到不可行，实时重均衡被物理带宽锁死。</li>
+  <li><strong>解法与代表工作：</strong><a href="https://arxiv.org/abs/2606.04101" target="_blank">UltraEP</a> 用 rack-scale node（RSN）把整个 EP 组放进 scale-up 域；DeepEP 优化 intra-rack 通信。</li>
+</ul>
+
+<h4>A.1.4 通信与计算无法重叠</h4>
+<ul>
+  <li><strong>机制：</strong>dispatch → grouped GEMM → combine 串行执行，通信期间 GPU 算力闲置。</li>
+  <li><strong>影响：</strong>设备利用率低，推理吞吐下降，尤其是通信占比高的 decode 场景。</li>
+  <li><strong>解法与代表工作：</strong>FasterMoE、Lina、MegaBlocks 做细粒度流水与 chunk 级通信计算重叠；DeepSeek 系列把 MoE 计算与 token 通信 fine-grained 调度重叠。</li>
+</ul>
+
+<h3>A.2 计算层</h3>
+
+<h4>A.2.1 Straggler / makespan</h4>
+<ul>
+  <li><strong>机制：</strong>EP 每层两次同步（A2A），整层耗时 = 最重 rank 的耗时（makespan）。负载 skew 使最重 rank 拖住所有 rank。</li>
+  <li><strong>影响：</strong>其余 rank 空转，吞吐被最慢卡锁死。<a href="https://arxiv.org/abs/2606.04101" target="_blank">UltraEP</a> 测得不平衡指标 𝓘 在 1.30–4.01，即并行效率上界只剩 25%–77%。</li>
+  <li><strong>解法与代表工作：</strong>实时精确均衡（<a href="https://arxiv.org/abs/2606.04101" target="_blank">UltraEP</a>）、makespan-aware dispatch（<a href="https://arxiv.org/abs/2608.13057" target="_blank">TEMPO</a>）、静态放置（EPLB/LPLB）。</li>
+</ul>
+
+<h4>A.2.2 小 batch grouped GEMM 效率低</h4>
+<ul>
+  <li><strong>机制：</strong><a href="https://arxiv.org/abs/2608.13057" target="_blank">TEMPO</a> 实测专家耗时两段式：n* ≈ 156–168 tokens 以下是 memory-bound（权重流式，成本挂在激活副本数上）；以上是 compute-bound（128-token M-tile padding）。decode 小 batch 下冷专家在 flat 区、热专家在 linear 区，两者并存。</li>
+  <li><strong>影响：</strong>按 token 拆分专家会制造额外 padding（每个 fragment 都 round up 到 128 的倍数）；按激活数均衡又会把 token 堆到热副本。两个经典 proxy 各自在对方的 regime 里系统性地错。</li>
+  <li><strong>解法与代表工作：</strong>TEMPO 用 max-affine cost model 直接优化 makespan，而非 token 数或激活数。</li>
+</ul>
+
+<h4>A.2.3 副本计算冗余</h4>
+<ul>
+  <li><strong>机制：</strong>复制专家 = 多一份物理实例，多一次 GEMM 机会；只有真正分流到 token 的副本才有收益。</li>
+  <li><strong>影响：</strong>盲目复制（如 EPLB 的 round-robin 分流）产生冗余计算，控制面开销抵消均衡收益。</li>
+  <li><strong>解法与代表工作：</strong><a href="https://arxiv.org/abs/2606.04101" target="_blank">UltraEP</a> 的 quota-driven 只在副本带来足够均衡增益时才物化；<a href="https://arxiv.org/abs/2603.28768" target="_blank">CRAFT</a> 按层估算 replica benefit 做预算分配。</li>
+</ul>
+
+<h3>A.3 内存层</h3>
+
+<h4>A.3.1 热专家副本膨胀显存</h4>
+<ul>
+  <li><strong>机制：</strong>复制热专家提升并行度，但每份副本都占显存，总副本数受内存预算约束。</li>
+  <li><strong>影响：</strong>挤占 KV cache 与激活空间，限制并发 batch 和上下文长度。<a href="https://arxiv.org/abs/2603.28768" target="_blank">CRAFT</a> 指出 uniform replication 反而降吞吐。</li>
+  <li><strong>解法与代表工作：</strong><a href="https://arxiv.org/abs/2602.19938" target="_blank">R&amp;Q</a>（复制热专家 + 量化冷专家保预算）、CRAFT（内存预算 knapsack）、<a href="https://arxiv.org/abs/2607.08782" target="_blank">Director</a>（容量约束 (1+ε)）。</li>
+</ul>
+
+<h4>A.3.2 激活峰值 OOM</h4>
+<ul>
+  <li><strong>机制：</strong>负载 skew 的接收端，过载 rank 的激活缓冲被灌满，形成显存热点。</li>
+  <li><strong>影响：</strong><a href="https://arxiv.org/abs/2606.04101" target="_blank">UltraEP</a> 测得训练时 MoE 激活峰值是 ideal 的 2×、推理 11×；OOM 风险，训练被迫开 activation checkpoint 换显存。</li>
+  <li><strong>解法与代表工作：</strong>UltraEP 摊平接收端热点，峰值显存接近 ideal。</li>
+</ul>
+
+<h3>A.4 控制面</h3>
+
+<h4>A.4.1 rebalance 的放置 / 求解开销</h4>
+<ul>
+  <li><strong>机制：</strong>专家放置是 NP-hard（可归约到 Generalized Assignment），精确求解慢，在线场景不可接受。</li>
+  <li><strong>影响：</strong>求解若落在关键路径，直接增加推理延迟。</li>
+  <li><strong>解法与代表工作：</strong><a href="https://arxiv.org/abs/2608.13057" target="_blank">TEMPO</a> 的 ~2ms 启发式（对 10s MILP 比值 1.005）；<a href="https://arxiv.org/abs/2606.04101" target="_blank">UltraEP</a> 的 &lt;100µs 二分阈值求解；<a href="https://arxiv.org/abs/2607.08782" target="_blank">Director</a> 的多项式时间 (1+ε) 近似。</li>
+</ul>
+
+<h4>A.4.2 专家迁移开销在关键路径</h4>
+<ul>
+  <li><strong>机制：</strong>routing 之后才知道真实负载，此时迁移落在 routing 与 MoE 计算之间，且与 all-to-all 争抢通信带宽。</li>
+  <li><strong>影响：</strong>迁移开销直接拖慢本层，甚至抵消均衡收益；reactive 方案天然受此限制。</li>
+  <li><strong>解法与代表工作：</strong><a href="https://arxiv.org/abs/2607.08782" target="_blank">Director</a> 把迁移安排在 compute-bound 阶段，避开 all-to-all；<a href="https://arxiv.org/abs/2608.14205" target="_blank">FreeBalance</a> 用预测预路由，把迁移与 attention 重叠。</li>
+</ul>
+
+<h4>A.4.3 历史负载统计滞后</h4>
+<ul>
+  <li><strong>机制：</strong>EPLB 用历史窗口统计做放置，但生产流量非平稳（多任务、流式、多模态），历史无法代表当前。</li>
+  <li><strong>影响：</strong>放置失准甚至负优化；<a href="https://arxiv.org/abs/2606.04101" target="_blank">UltraEP</a> 观察到 expert popularity 在 microbatch、层、数据域之间剧烈变化。</li>
+  <li><strong>解法与代表工作：</strong>UltraEP（门控后精确负载）、<a href="https://arxiv.org/abs/2608.14205" target="_blank">FreeBalance</a>（残差流预测 next-layer）、EPLB（周期 refresh 作为基线）。</li>
+</ul>
+
+<h4>A.4.4 mock token 高估失衡</h4>
+<ul>
+  <li><strong>机制：</strong>通信 benchmark 常用 uniform-random token 模拟路由，但真实路由由 token identity、嵌入与序列结构共同决定。</li>
+  <li><strong>影响：</strong><a href="https://arxiv.org/abs/2605.20982" target="_blank">DODOCO</a> 测得 mock 高估 Gini 最多 2.35×，且 Zipf 合成反而更糟（1.2–3.9×），系统按错误负载画像设计。</li>
+  <li><strong>解法与代表工作：</strong>DODOCO 建议 mock / real 双报告，按模型校准 level factor。</li>
+</ul>
+
+<h3>A.5 硬件拓扑</h3>
+
+<h4>A.5.1 scale-up 域限制</h4>
+<ul>
+  <li><strong>机制：</strong>单机 NVLink 域只有 4/8 GPU，而大 EP 组（32/64）放不进去，专家迁移被迫跨节点。</li>
+  <li><strong>影响：</strong>均衡下限大于 1，跨节点迁移昂贵，实时精确均衡在普通集群上不可行。</li>
+  <li><strong>解法与代表工作：</strong><a href="https://arxiv.org/abs/2606.04101" target="_blank">UltraEP</a> 的 rack-scale node（RSN）把 scale-up 域扩展到整机架（64+ GPU）。</li>
+</ul>
+
+<h4>A.5.2 异构硬件</h4>
+<ul>
+  <li><strong>机制：</strong>不同 GPU 代际的微架构不同，memory-bound 地板 b、转折点 n*、tile 行为都不同。</li>
+  <li><strong>影响：</strong>单一均衡策略不通用，收益边界随硬件移动（CANN/Ascend、不同 GPU 代数尤其如此）。</li>
+  <li><strong>解法与代表工作：</strong><a href="https://arxiv.org/abs/2608.13057" target="_blank">TEMPO</a> 的黑盒标定 cost model（约 10 分钟测量），并按硬件重标定 phase diagram。</li>
+</ul>
+
 <footer>
   本文件由 Codex 根据公开论文与网页信息整理，仅供研究参考。部分最新论文为预印本，结论请以正式发表版本和复现实验为准。
 </footer>
