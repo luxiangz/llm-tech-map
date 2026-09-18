@@ -2,8 +2,9 @@ _site/
 .jekyll-cache/
 .sass-cache/
 .zcode/
-# analyzer/ 下只发布 LLM-Viewer 的静态构建产物，源码目录（含嵌套 git 仓库）不入仓
+# analyzer/ 下只发布 LLM-Viewer 的静态构建产物（llmviewer，避开与源码目录 LLM-Viewer 的大小写路径冲突）
 analyzer/*
-!analyzer/llm-viewer/
+!analyzer/llmviewer/
 *.bkp
 .\$*
+analyzer/LLM-Viewer/
