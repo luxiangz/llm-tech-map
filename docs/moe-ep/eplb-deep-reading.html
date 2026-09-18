@@ -119,6 +119,39 @@ window.MathJax = {
 <div class="formula">\[ \min_{\text{放置},\, c}\ \ \max_{g \in \mathrm{GPUs}}\ \sum_{i \in \mathrm{GPU}_g} \mathrm{eff}_i, \qquad \mathrm{eff}_i = \frac{w_i}{c_i}, \qquad \text{s.t. } |\mathrm{GPU}_g| = \frac{N_{\mathrm{phy}}}{G}\ \ \forall g \]</div>
 <p>两个硬约束保证可部署：<strong>每卡槽位数相等</strong>（显存/参数均衡，$N_{\mathrm{phy}} \bmod G = 0$），层次化模式下再加<strong>组不跨节点</strong>（通信均衡）。这是一个带整数约束的 min-max 装箱问题（NP-hard），EPLB 用两步贪心求近似解——这正是它只有 170 行的原因，也是后来 LPLB 用线性规划求精解的动机。<span class="ev ev-r">R</span></p>
 
+<p>下面把这一个优化式拆成四步解释：<strong>为什么是负载最重卡，而不是总负载；$\mathrm{eff}_i = w_i/c_i$ 是怎么出现的；两个约束分别对应什么工程事实；它为什么确实是一个“装箱”问题。</strong></p>
+
+<h4>2.3.1 第一步：优化目标为什么是 $\max_g L_g$，而不是 $\sum_g L_g$</h4>
+<p>MoE 层在专家并行下的延迟不是所有卡的总计算量，而是<strong>最慢那张卡的完工时间</strong>。all-to-all dispatch/combine 之后，整层必须等所有卡都完成 expert FFN 才能进入下一层，因此每层完成时间近似为</p>
+<div class="formula">\[ T_{\mathrm{layer}} \approx \max_{g}\ \mathrm{Work}_g \;\propto\; \max_{g}\ \sum_{i \in \mathrm{GPU}_g} \mathrm{load}_i \]</div>
+<p>若定义卡 $g$ 的负载 $L_g = \sum_{i \in \mathrm{GPU}_g} \mathrm{load}_i$，那么优化目标是 $\min \max_g L_g$。把总负载 $\sum_g L_g$ 做平均是没有意义的：哪怕总负载完全一样，只要一个专家把某一卡顶爆，那一卡就是 straggler。这正是 V3 §4.5.3 里“某个领域的请求集中于某专家、导致它所在 rank 过载”的直接形式化。</p>
+
+<h4>2.3.2 第二步：$\mathrm{eff}_i = w_i / c_i$ 不是新定义，是“复制后的每副本负载”</h4>
+<p>初始时每个逻辑专家只有一个物理副本，$c_i=1$，卡负载就是放在该卡上的专家负载之和。冗余专家机制允许把专家 $i$ 复制到 $c_i$ 张卡上。若 dispatch 时把属于 $i$ 的 token 在 $c_i$ 个副本之间均匀分流，则每个副本平均只承接 $w_i/c_i$ 的 token 流；这个量才是参与装箱的“物品重量”。</p>
+<p>所以 $\mathrm{eff}_i$ 的语义应读作：</p>
+<div class="formula">\[ \mathrm{eff}_i = \frac{\text{逻辑专家 } i \text{ 的总负载}}{\text{其物理副本数}} = \text{每个物理槽位平均分担的负载} \]</div>
+<p>副本数 $c_i$ 是整数，并受物理槽位总数约束 $\sum_i c_i = N_{\mathrm{phy}}$。增加 $c_i$ 会摊薄 $\mathrm{eff}_i$，但也会占用更多槽位，这就是“用显存换负载均衡”的量化表达。</p>
+
+<h4>2.3.3 第三步：两个约束从哪来</h4>
+<ul>
+<li><strong>每卡槽位数相等：</strong>$|GPU_g| = N_{\mathrm{phy}}/G$。专家参数在 EP 下按卡存放，每张卡能放多少专家由显存上限决定；若某卡多放专家，另一卡必然少放，这会造成显存不均衡、内存容量成为新的 straggler。因此可部署的放置必须保证每卡专家数相同，也要求 $N_{\mathrm{phy}} \bmod G = 0$。</li>
+<li><strong>层次化模式下的“组不跨节点”：</strong>V3 的 node-limited routing（$M=4$）把一组专家固定在一个节点内，组内走 NVLink，跨节点才走 IB。若一个专家组被打散到多个节点，token dispatch 就不得不跨 IB，通信开销显著上升。因此层次化版本把“组”作为节点级装箱单位，等价于每个节点内的槽位打包满足容量约束，组不拆散。</li>
+</ul>
+
+<h4>2.3.4 第四步：为什么这是装箱问题，且 NP-hard</h4>
+<p>把问题收缩到一个特例就看得最清楚：先冻结副本数 $c$（即每个专家的“物品重量” $w_i/c_i$ 已确定），只做放置。此时我们面对的是：<strong>把 $N_{\mathrm{phy}}$ 个重量各异的物品装进 $G$ 个容量均为 $C$ 的箱子，每个箱子恰好装 $K = N_{\mathrm{phy}}/G$ 个物品，目标是最小化箱子中重量之和的最大值。</strong></p>
+<div class="formula">\[ \min_{\pi}\ \max_{g}\ \sum_{i \in B_g} a_i, \qquad a_i=\frac{w_i}{c_i},\quad |B_g|=K,\quad \bigsqcup_g B_g = \{1,\dots,N_{\mathrm{phy}}\} \]</div>
+<p>“恰好 $K$ 个物品”可等价化为经典 <strong>multiprocessor scheduling</strong> 问题：$G$ 台同构机器、$N_{\mathrm{phy}}$ 个任务、每个任务必须完整放到一台机器，目标是最小化 makespan（最长机器完成时间）。这个问题是 NP-hard；若再把副本数 $c_i$ 也作为整数变量一起优化，只是额外增加“通过复制把一个重量拆成多个更轻物品”的选择维度，并不会变简单。所以 EPLB 的完整问题也是 NP-hard。</p>
+<p>把复制也放进来后，装箱问题的“物品”与“箱子容量”还有一层特殊关系：</p>
+<p>总“物品重量”会随复制而下降，但“物品个数”却从 $N_{\mathrm{log}}$ 增到 $N_{\mathrm{phy}}$：</p>
+<div class="formula">\[ \sum_i \mathrm{eff}_i = \sum_i \frac{w_i}{c_i} \le \sum_i w_i \]</div>
+<p>这正是 EPLB 不用精确求解、而用两层贪心的原因：</p>
+<ol>
+<li><strong>先决定每个专家复制几份</strong>（连续视角近似：让热专家的 $w_i/c_i$ 尽量贴近某个目标负载）；</li>
+<li><strong>再把 $N_{\mathrm{phy}}$ 个已定重量的物品按降序装入当前最轻的箱子</strong>（`balanced_packing`，对应 4.1 节）。</li>
+</ol>
+<p>这样就把一个 NP-hard 的 min-max 装箱问题，降成了一个可解释、可增量执行的近似解。后续 LPLB 用线性规划把这个目标转成可精确优化的 LP 形式，也是为了解决同一套不等式约束下贪心解可能偏离最优的问题。</p>
+
 <h2>3. 核心思想：冗余专家（Redundant Experts）</h2>
 <p>只做<strong>置换</strong>（permutation）的均衡有个天花板：当某单个专家的负载超过每卡平均负载时，无论怎么排列，装下它的那张卡必然超载。冗余专家补上这块短板——<strong>复制是连续可调的负载分担旋钮</strong>：副本数 $c_i$ 每加一，该专家的有效负载减半式下降。V3 论文原文："we introduce a deployment strategy of redundant experts, which duplicates high-load experts and deploys them redundantly"，且高负载专家由在线统计检测、周期性调整（约每 10 分钟）。<span class="ev ev-v">V</span></p>
 <p>副本怎么被使用？路由仍按逻辑专家算（TopK 得到逻辑 id），dispatch 时查 <code>log2phy</code> 表把 token 送到某个物理副本（按 rank 取模等方式分流），副本输出再按 <code>phy2log</code> 归并。<strong>路由分数与模型行为完全不变</strong>——变的是「同一个逻辑专家住在哪里、住几份」。</p>
