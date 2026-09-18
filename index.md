@@ -34,6 +34,9 @@ description: 面向大模型方向的完整技术知识目录，覆盖从数学�
 - [UltraEP 深度阅读笔记 —— 论文 × 源码精读 × 问题详解](docs/moe-ep/ultraep-deep-reading.html)
 - [TEMPO 深度阅读笔记 —— 相图、Makespan 调度与「代理失配」](docs/moe-ep/tempo-deep-reading.html)
 
+### 交互式工具
+- [LLM-Viewer —— LLM 网络结构可视化 × Roofline 性能分析（纯浏览器端，无需后端）](analyzer/llmviewer/)
+
 ## 学习路径建议
 
 <pre class="mermaid">
