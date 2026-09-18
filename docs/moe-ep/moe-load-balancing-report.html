@@ -1,0 +1,918 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MoE 基础、问题与负载均衡前沿综述</title>
+<style>
+  :root{
+    --bg:#f7f8fb;
+    --panel:#ffffff;
+    --ink:#1c2430;
+    --muted:#5b6572;
+    --line:#e3e7ef;
+    --accent:#0b63ce;
+    --accent-soft:#eaf2ff;
+    --warn:#9a5b00;
+    --warn-soft:#fff4e2;
+    --ok:#0a7d52;
+    --ok-soft:#e8f7f1;
+    --code-bg:#f2f4f8;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0;
+    background:var(--bg);
+    color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Microsoft YaHei",sans-serif;
+    line-height:1.72;
+    font-size:16px;
+  }
+  .wrap{max-width:1120px;margin:0 auto;padding:28px 22px 80px}
+  header{
+    background:linear-gradient(135deg,#0b3d91 0%,#0b63ce 58%,#2f80ed 100%);
+    color:#fff;
+    border-radius:18px;
+    padding:30px 30px 26px;
+    box-shadow:0 12px 30px rgba(11,63,145,.18);
+  }
+  header h1{margin:0 0 10px;font-size:30px;line-height:1.3}
+  header p{margin:4px 0;color:#eaf2ff}
+  .badge{
+    display:inline-block;
+    background:rgba(255,255,255,.16);
+    border:1px solid rgba(255,255,255,.28);
+    padding:2px 9px;
+    border-radius:999px;
+    margin-right:8px;
+    font-size:13px;
+  }
+  h2{
+    font-size:24px;
+    margin:42px 0 12px;
+    padding-bottom:8px;
+    border-bottom:2px solid var(--line);
+  }
+  h3{font-size:19px;margin:26px 0 8px}
+  h4{font-size:16px;margin:18px 0 6px}
+  p{margin:9px 0}
+  a{color:var(--accent);text-decoration:none;word-break:break-all}
+  a:hover{text-decoration:underline}
+  .panel{
+    background:var(--panel);
+    border:1px solid var(--line);
+    border-radius:14px;
+    padding:18px 20px;
+    margin:14px 0;
+    box-shadow:0 2px 8px rgba(20,30,50,.04);
+  }
+  .callout{
+    border-left:4px solid var(--accent);
+    background:var(--accent-soft);
+    padding:12px 14px;
+    border-radius:8px;
+    margin:14px 0;
+  }
+  .callout.warn{
+    border-left-color:#e8a23c;
+    background:var(--warn-soft);
+  }
+  code{
+    background:var(--code-bg);
+    padding:1px 6px;
+    border-radius:5px;
+    font-family:"SFMono-Regular",Consolas,"Liberation Mono",monospace;
+    font-size:.92em;
+  }
+  .formula{
+    overflow-x:auto;
+    background:var(--code-bg);
+    padding:12px 14px;
+    border-radius:10px;
+    font-family:"SFMono-Regular",Consolas,"Liberation Mono",monospace;
+    font-size:.95em;
+    margin:12px 0;
+    line-height:1.9;
+  }
+  .formula .math{
+    white-space:nowrap;
+    font-size:1.06em;
+    color:#16233a;
+  }
+  .formula .sep{
+    color:#8a94a6;
+    margin:0 .55em;
+    white-space:nowrap;
+  }
+  .frac{
+    display:inline-flex;
+    flex-direction:column;
+    vertical-align:middle;
+    text-align:center;
+    margin:0 .18em;
+    line-height:1.15;
+    font-size:.9em;
+  }
+  .frac>span{
+    display:block;
+    padding:0 .18em;
+  }
+  .frac>span:first-child{
+    border-bottom:1px solid currentColor;
+  }
+  pre.mermaid{
+    background:var(--panel);
+    border:1px solid var(--line);
+    border-radius:10px;
+    padding:10px;
+    margin:12px 0;
+    text-align:center;
+  }
+  table{
+    width:100%;
+    border-collapse:collapse;
+    margin:14px 0;
+    background:#fff;
+    font-size:14px;
+  }
+  th,td{
+    border:1px solid var(--line);
+    padding:9px 10px;
+    vertical-align:top;
+    text-align:left;
+  }
+  th{background:#f0f3f8;font-weight:650}
+  tr:nth-child(even) td{background:#fbfcfe}
+  .tag{
+    display:inline-block;
+    background:var(--accent-soft);
+    color:var(--accent);
+    border-radius:6px;
+    padding:0 7px;
+    font-size:12px;
+    font-weight:650;
+    margin-right:6px;
+    white-space:nowrap;
+  }
+  .tag.sys{background:#f0f8ff;color:#0b63ce}
+  .tag.inf{background:#f2f2ff;color:#5b4fcf}
+  .tag.theory{background:#eefaf4;color:#0a7d52}
+  ul,ol{margin:8px 0 8px 22px;padding:0}
+  li{margin:5px 0}
+  .toc{
+    background:#fff;
+    border:1px solid var(--line);
+    border-radius:14px;
+    padding:16px 20px;
+    columns:2;
+    column-gap:28px;
+    font-size:15px;
+  }
+  .toc a{display:block;padding:3px 0;color:var(--ink)}
+  .toc a:hover{color:var(--accent)}
+  footer{
+    margin-top:40px;
+    color:var(--muted);
+    font-size:13px;
+    border-top:1px solid var(--line);
+    padding-top:14px;
+  }
+  @media(max-width:760px){
+    .toc{columns:1}
+    header h1{font-size:25px}
+    table{font-size:12px}
+  }
+</style>
+<script>
+window.MathJax = {
+  tex: {
+    inlineMath: [['$', '$'], ['\\(', '\\)']],
+    displayMath: [['$$', '$$'], ['\\[', '\\]']],
+    processEscapes: true
+  },
+  svg: { fontCache: 'global' }
+};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js" async></script>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+<script>mermaid.initialize({ startOnLoad: true, theme: "neutral", fontFamily: '"Microsoft YaHei", "PingFang SC", sans-serif' });</script>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <div>
+    <span class="badge">技术综述</span>
+    <span class="badge">更新至 2026-09-10</span>
+  </div>
+  <h1>MoE 基础、演进、问题与负载均衡前沿</h1>
+  <p>从稠密 FFN 到稀疏 Mixture-of-Experts，梳理基础细节、完整问题清单，并按“训练期路由 / 系统调度 / 推理期”三条主线整理前沿负载均衡论文、关键技术方案与原文链接。</p>
+</header>
+
+<div class="panel">
+  <h3 style="margin-top:0">一页结论</h3>
+  <ul>
+    <li><strong>MoE 的本质：</strong>用可学习路由器在每层动态选择少量专家，使总参数量大幅增加，但单 token 激活参数量与计算量近似不变。</li>
+    <li><strong>最大矛盾：</strong>“专家专业化”天然希望路由集中，而“硬件效率”天然希望负载均衡，两者存在张力。</li>
+    <li><strong>负载均衡演进：</strong>辅助损失（GShard/Switch）→ 更细粒度/全局批次损失（DeepSeekMoE、Qwen3）→ 无辅助损失偏置（DeepSeek-V3 Loss-Free）→ 组合优化与凸对偶框架（BIP、φ-balancing、ALF-LB 理论）→ 系统级实时调度（LLEP、UltraEP、TEMPO）。</li>
+    <li><strong>落地建议：</strong>训练期优先采用 <code>global-batch LBL + sequence-level balance + device-level balance</code> 作为稳健基线；追求性能上限再用 <code>Loss-Free bias</code> 或 $\phi$-balancing；推理/后训练阶段单独处理 EP 负载，使用容量感知、复制量化、动态重路由或实时精度调节。</li>
+  </ul>
+</div>
+
+<nav class="toc">
+  <a href="#s1">1. MoE 基础与演进</a>
+  <a href="#s2">2. MoE 基础细节</a>
+  <a href="#s3">3. MoE 会遇到的问题</a>
+  <a href="#s4">4. 负载均衡前沿论文</a>
+  <a href="#s5">5. 关键技术方案总结</a>
+  <a href="#s6">6. 参考链接汇总</a>
+</nav>
+
+<h2 id="s1">1. MoE 基础与演进</h2>
+
+<div class="panel">
+  <p>稠密 Transformer 的每一层 FFN 对所有 token 使用同一套权重。MoE 将 FFN 替换为一组专家 $E_1,\ldots,E_N$，由路由器 $G(x)$ 为每个 token 选择少量专家。这样模型总参数可以很大，但每个 token 只激活 $K \ll N$ 个专家，因此计算量远小于参数量的增长。</p>
+  <div class="formula">\[ y = x + \sum_{i} g_i(x) \cdot E_i(x) \]</div>
+</div>
+
+<table>
+  <thead>
+    <tr>
+      <th>时间/工作</th>
+      <th>关键贡献</th>
+      <th>对负载均衡的意义</th>
+      <th>链接</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>1991，Jacobs 等 MoE</td>
+      <td>提出 mixture-of-experts 概念与门控网络</td>
+      <td>奠定动态专家选择思想</td>
+      <td><a href="https://www.cs.toronto.edu/~fritz/absps/adaptive.pdf" target="_blank">Adaptive Mixtures of Local Experts</a></td>
+    </tr>
+    <tr>
+      <td>2017，Shazeer 等 Sparsely-Gated MoE</td>
+      <td>大规模稀疏门控，Top-K + noisy gating + 负载均衡损失</td>
+      <td>现代稀疏 MoE 的起点，首次把 load-balance loss 引入训练</td>
+      <td><a href="https://arxiv.org/abs/1701.06538" target="_blank">arXiv:1701.06538</a></td>
+    </tr>
+    <tr>
+      <td>2020，GShard</td>
+      <td>600B 多语言模型；Top-2、expert capacity、随机路由、local groups</td>
+      <td>系统化处理 token 丢弃与专家容量，使超大 MoE 可训</td>
+      <td><a href="https://arxiv.org/abs/2006.16668" target="_blank">arXiv:2006.16668</a></td>
+    </tr>
+    <tr>
+      <td>2021，Switch Transformer</td>
+      <td>Top-1 简化路由；提出经典 $N\sum_i f_i P_i$ 辅助负载均衡损失</td>
+      <td>把负载均衡做成主流训练目标，验证 1T 参数规模</td>
+      <td><a href="https://arxiv.org/abs/2101.03961" target="_blank">arXiv:2101.03961</a></td>
+    </tr>
+    <tr>
+      <td>2021，BASE Layers</td>
+      <td>基于排列/在线最优分配的确定性路由，无 learned router</td>
+      <td>显式构造均衡分配，免辅助损失</td>
+      <td><a href="https://arxiv.org/abs/2103.16716" target="_blank">arXiv:2103.16716</a></td>
+    </tr>
+    <tr>
+      <td>2021，Hash Layers</td>
+      <td>用 hash 函数路由到专家</td>
+      <td>零路由参数、天然近似均衡</td>
+      <td><a href="https://arxiv.org/abs/2106.04426" target="_blank">arXiv:2106.04426</a></td>
+    </tr>
+    <tr>
+      <td>2021，GLaM</td>
+      <td>1.2T 参数 MoE；Top-2 + 每层辅助损失</td>
+      <td>验证工业级 MoE 的规模与质量权衡</td>
+      <td><a href="https://arxiv.org/abs/2112.06905" target="_blank">arXiv:2112.06905</a></td>
+    </tr>
+    <tr>
+      <td>2022，Expert Choice</td>
+      <td>反转方向：专家选 token，固定 bucket size</td>
+      <td>由“专家侧”保证容量均衡，无需显式 aux loss</td>
+      <td><a href="https://arxiv.org/abs/2202.09368" target="_blank">arXiv:2202.09368</a></td>
+    </tr>
+    <tr>
+      <td>2022，StableMoE</td>
+      <td>两阶段路由：先训练 noisy teacher，再蒸馏到轻量 router 并冻结</td>
+      <td>解决路由抖动，稳定专家分配</td>
+      <td><a href="https://arxiv.org/abs/2204.08396" target="_blank">arXiv:2204.08396</a></td>
+    </tr>
+    <tr>
+      <td>2024，Mixtral 8×7B</td>
+      <td>开源高质量 Top-2 MoE；每 token 2 专家</td>
+      <td>展示实用化开源 MoE 的性能</td>
+      <td><a href="https://arxiv.org/abs/2401.04088" target="_blank">arXiv:2401.04088</a></td>
+    </tr>
+    <tr>
+      <td>2024，DeepSeekMoE</td>
+      <td>细粒度专家切分 + 共享专家隔离 + 专家/设备/通信三层负载损失</td>
+      <td>在专业化与负载均衡之间取得更好折中</td>
+      <td><a href="https://arxiv.org/abs/2401.06066" target="_blank">arXiv:2401.06066</a></td>
+    </tr>
+    <tr>
+      <td>2024，DeepSeek-V2/V3</td>
+      <td>Loss-Free Balancing：router logits 前加可学习 expert bias，按近期负载在线更新</td>
+      <td>取消 aux loss，避免干扰梯度，成为大模型主流方案</td>
+      <td><a href="https://arxiv.org/abs/2408.15664" target="_blank">ALF-LB arXiv:2408.15664</a>；<a href="https://arxiv.org/abs/2412.19437" target="_blank">DeepSeek-V3 arXiv:2412.19437</a></td>
+    </tr>
+    <tr>
+      <td>2024–2025，Qwen 系列 MoE</td>
+      <td>细粒度专家、共享专家、global-batch LBL 等工程实践</td>
+      <td>说明损失统计粒度对专业化的影响</td>
+      <td><a href="https://arxiv.org/abs/2505.09388" target="_blank">Qwen3 arXiv:2505.09388</a></td>
+    </tr>
+  </tbody>
+</table>
+
+<div class="callout">
+  <strong>演进主线：</strong>先让模型“能稀疏地跑起来”，再解决“专家该选谁”，最后解决“如何让所有专家都被高效使用且不伤害任务性能”。负载均衡从附属正则项，逐渐成为路由本身、优化算法、并行系统、推理系统的共同设计对象。
+</div>
+
+<h2 id="s2">2. MoE 基础细节</h2>
+
+<h3>2.1 标准稀疏 MoE 层</h3>
+<div class="panel">
+  <p>设隐藏维度为 $d$，专家数为 $N$，每 token 激活 $K$ 个专家。第 $l$ 层 MoE 输出为：</p>
+  <div class="formula">\[ y = \sum_{i \in \mathrm{TopK}} g_i(x) \cdot E_i(x), \qquad g_i(x) = \operatorname{softmax}_i\left(W_r x + b_r\right) \]</div>
+  <p>其中 $W_r$ 是路由器参数，$E_i$ 通常是一个与稠密 FFN 同结构的 MLP（常见 SwiGLU/GeLU FFN）。为了保证稀疏性和可训练性，实践中有：</p>
+  <ul>
+    <li><strong>Noisy gating：</strong>在 logits 上加可训练噪声，帮助探索；</li>
+    <li><strong>Top-K 硬选择：</strong>只保留分数最高的 K 个专家，其余置 0；</li>
+    <li><strong>Expert capacity：</strong>每个专家在一个 batch 内最多处理 $C = \mathrm{capacity\_factor} \times \mathrm{tokens\_per\_batch} \times K / N$ 个 token（训练期机制，推理默认不设，详见 2.6 第 5 层）；</li>
+    <li><strong>Token drop：</strong>超出 capacity 的 token 被丢弃或仅走残差连接。</li>
+  </ul>
+</div>
+
+<h3>2.2 路由范式</h3>
+<table>
+  <thead>
+    <tr><th>范式</th><th>做法</th><th>优点</th><th>代价</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>Token-choice Top-K</td><td>token 选分数最高的 K 个专家</td><td>实现简单，工业界最主流</td><td>容易负载不均，需要辅助损失/容量</td></tr>
+    <tr><td>Expert-choice</td><td>专家从候选 token 中选 top-k</td><td>专家容量天然固定</td><td>某些 token 可能被漏掉；实现更复杂</td></tr>
+    <tr><td>Hash / BASE</td><td>确定性哈希或均衡排列</td><td>无路由参数、均衡性好</td><td>失去语义路由能力</td></tr>
+    <tr><td>Sequence-level / global routing</td><td>整序列或整个 global-batch 共享路由统计</td><td>放宽单 token/序列约束，利于专业化</td><td>增加通信/同步</td></tr>
+    <tr><td>动态 K / threshold</td><td>按 token 难度动态决定激活专家数</td><td>计算分配更灵活</td><td>硬件调度难</td></tr>
+    <tr><td>结构/原型/特征对齐路由</td><td>基于聚类原型、eigenbasis、输入域概率模型</td><td>路由更稳定、可解释</td><td>模型结构更复杂</td></tr>
+  </tbody>
+</table>
+
+<h3>2.3 经典负载均衡损失</h3>
+
+<div class="panel">
+  <h4 style="margin-top:0">第 1 步：它要防什么——路由坍缩的正反馈</h4>
+  <p>训练初期路由器接近随机，某个专家可能分数略占优势，随后进入“富者愈富”的循环：分到更多 token → 训练更充分、拟合更好 → 主损失更倾向把 token 路由给它 → 分数更高 → 分到更多 token。不干预的话，$N$ 个专家会退化成一两个专家干活：参数大量闲置、过载专家触发 token drop。Switch Transformer 的辅助负载损失就是在主损失之外加一个“均衡惩罚”，把这个正反馈掰成负反馈。</p>
+  <pre class="mermaid">
+flowchart TB
+  subgraph S1["不加均衡：正反馈（坍缩）"]
+    direction LR
+    A["专家 i 路由分数略高"] --> B["分到更多 token"]
+    B --> C["训练更充分<br/>拟合更好"]
+    C --> D["主损失更偏好它<br/>logit 进一步升高"]
+    D --> A
+  end
+  subgraph S2["加上 L_aux 后：负反馈（纠偏）"]
+    direction LR
+    E["热专家 f_i 偏大"] --> F["∂L/∂P_i = αNf_i 变大<br/>压低其路由概率"]
+    F --> G["softmax 归一化下<br/>冷专家概率被动抬升"]
+    G --> H["部分 token 翻转到冷专家<br/>下一步 f 更均匀"]
+    H --> I["梯度惩罚减弱<br/>在均匀分布附近稳定"]
+  end
+  </pre>
+</div>
+
+<div class="panel">
+  <h4 style="margin-top:0">第 2 步：两个统计量——$f_i$ 是传感器，$P_i$ 是执行器</h4>
+  <p>设一个 batch 内有 $T$ 个 token，路由器对每个 token 输出全部 $N$ 个专家的 softmax 概率 $p(t,i)$：</p>
+  <div class="formula">\[ f_i = \frac{1}{T}\sum_{t=1}^{T} \mathbf{1}\!\left[\arg\max_j\, p(t,j) = i\right], \qquad P_i = \frac{1}{T}\sum_{t=1}^{T} p(t,i) \]</div>
+  <ul>
+    <li><strong>$f_i$（被选中频率）＝“实际发生了什么”：</strong>统计专家 $i$ 真正收到多大比例的 token。它本质是数数，<strong>不可导</strong>，只能当传感器用；</li>
+    <li><strong>$P_i$（平均路由概率）＝“路由器的软偏好”：</strong>全部 token 给专家 $i$ 的概率均值，<strong>可导</strong>，梯度能顺着 softmax 传回路由器权重，是执行器。</li>
+  </ul>
+  <p>Switch Transformer 的辅助损失把两者乘起来（$\alpha$ 为权重，论文取 $10^{-2}$）：</p>
+  <div class="formula">\[ L_{\mathrm{aux}} = \alpha \cdot N \cdot \sum_{i=1}^{N} f_i \cdot P_i \]</div>
+</div>
+
+<div class="panel">
+  <h4 style="margin-top:0">第 3 步：为什么是乘积 $f_i \cdot P_i$</h4>
+  <p>单用哪一个都不行。<strong>只用 $f_i$</strong>：它是离散计数，梯度为零，无法训练。<strong>只用 $P_i$</strong>：概率均衡 ≠ 负载均衡——例如 8 个 token 各以 0.5 的概率给专家 A（总权重 4、负载 8），4 个 token 各以 1.0 给专家 B（总权重 4、负载 4），两个专家在概率面上完全均衡，实际负载却差一倍。这正是 Shazeer 2017 只约束 importance 的损失留下的坑，Switch 用 $f$ 来补。</p>
+  <p>乘起来之后，对 $P_i$ 的梯度为：</p>
+  <div class="formula">\[ \frac{\partial L_{\mathrm{aux}}}{\partial P_i} = \alpha \cdot N \cdot f_i \]</div>
+  <p>读法是：<strong>“把专家 $i$ 的概率再推高一点要罚多少，取决于它实际被挤爆的程度。”</strong>热专家 $f_i$ 大 → 梯度大而正 → 路由器被强力压低它的 logit；冷专家 $f_i \approx 0$ → 梯度几乎为零 → <strong>完全不惩罚它涨概率</strong>。再叠加 softmax 归一化（每个 token 的概率和为 1）：热专家 logit 被压下去的瞬间，同 token 上冷专家的概率自动抬升 → 部分 token 的 Top-1 翻转到冷专家 → 下一个 batch 的 $f$ 更均匀 → 梯度惩罚随之减弱，直到接近均匀时稳定。$f$ 提供真实负载信息，$P$ 提供可导把手，构成完整的负反馈回路（见上图）。</p>
+</div>
+
+<div class="panel">
+  <h4 style="margin-top:0">第 4 步：为什么乘 $N$——归一化</h4>
+  <p>完美均匀时 $f_i = P_i = 1/N$，代入得 $\alpha \cdot N \cdot N \cdot \frac{1}{N^2} = \alpha$：无论专家数是 8 还是 256，均匀时的损失恒为 $\alpha$，取值范围固定为 $[\alpha,\ \alpha N]$（全坍缩到单个专家时取最大 $\alpha N$），因此权重 $\alpha$ 不必随模型规模重调。</p>
+  <p>另一视角：路由器“果断”时 $f \approx P$，此时 $N\sum_i f_i P_i \approx N\sum_i f_i^2$，即 $N$ 倍的“两个随机 token 撞进同一专家”的概率——最小化它就是在最小化负载集中度（与 2.5 节的 Gini 系数同族），最小值在均匀分布处取得。</p>
+</div>
+
+<div class="panel">
+  <h4 style="margin-top:0">第 5 步：数值例子（$N=4$，Top-1）</h4>
+  <table>
+    <thead><tr><th>场景</th><th>$f$</th><th>$P$</th><th>$L_{\mathrm{aux}}/\alpha$</th></tr></thead>
+    <tbody>
+      <tr><td>全坍缩</td><td>$(1, 0, 0, 0)$</td><td>$(1, 0, 0, 0)$</td><td>$4 \times 1 = 4$（最差）</td></tr>
+      <tr><td>偏斜</td><td>$(0.5, 0.25, 0.125, 0.125)$</td><td>$(0.4, 0.25, 0.175, 0.175)$</td><td>$4 \times 0.306 \approx 1.22$</td></tr>
+      <tr><td>均匀</td><td>$(0.25, 0.25, 0.25, 0.25)$</td><td>$(0.25, 0.25, 0.25, 0.25)$</td><td>$4 \times 0.25 = 1$（最优）</td></tr>
+    </tbody>
+  </table>
+  <p>偏斜场景里专家 1 的梯度权重是 $\alpha N f_1 = 2\alpha$，专家 3、4 只有 $0.5\alpha$、$0.25\alpha$——修谁的账一目了然。</p>
+</div>
+
+<div class="panel">
+  <h4 style="margin-top:0">第 6 步：实践细节与两个缺陷（引出后续演进）</h4>
+  <ul>
+    <li>每个 MoE 层各有一个路由器、各算一份，总损失 = 交叉熵 $+\ \alpha \sum_l L_{\mathrm{aux}}^{(l)}$；</li>
+    <li>$f$、$P$ 按<strong>当前 micro-batch</strong> 统计（这一点是后续被改进的把柄）；</li>
+    <li>Top-2 场景公式照用，只是每个 token 贡献 2 次选择，$\sum_i f_i = K$，最小值变为 $\alpha K$，仅影响刻度不影响机制。</li>
+  </ul>
+  <p><strong>缺陷一：梯度干扰。</strong>aux 损失与语言建模损失共享路由器参数，为均衡可能强行把 token 推给不擅长它的专家，伤主任务质量 → 引出 DeepSeek Loss-Free Bias（5.2 方案 B）：不动损失，直接在 Top-K 前给过载专家的路由分数加偏置。</p>
+  <p><strong>缺陷二：统计粒度太细。</strong>micro-batch 内强制均匀过于苛刻——一个全是代码的 batch 也会被要求把 token 摊给“医学专家”，压制专业化 → 引出 global-batch LBL（5.2 方案 A）与 DeepSeek 三层均衡目标：只在全局批次尺度要求总量均匀，允许局部批次偏科。</p>
+  <p>DeepSeek 系列进一步拆成三层目标：</p>
+  <ul>
+    <li><strong>Expert-level balance：</strong>专家间 token/概率均衡；</li>
+    <li><strong>Device-level balance：</strong>同一设备内专家负载均衡；</li>
+    <li><strong>Communication balance：</strong>设备间 token 通信量均衡。</li>
+  </ul>
+</div>
+
+<h3>2.4 并行与系统基础</h3>
+<div class="panel">
+  <ul>
+    <li><strong>Expert Parallelism（EP）：</strong>不同专家分布在不同 GPU，路由器选出专家后进行 all-to-all dispatch/combine；</li>
+    <li><strong>Tensor Parallelism：</strong>专家内部按矩阵切分；</li>
+    <li><strong>Capacity factor：</strong>控制每专家最大 token 数，是训练吞吐和掉 token 率之间的旋钮；</li>
+    <li><strong>Inference 阶段：</strong>prefill 大 batch 下路由偏移更显著；decode 阶段专家权重访问、KV cache、内存带宽成为瓶颈。</li>
+  </ul>
+</div>
+
+<h3>2.5 常用评估指标</h3>
+
+<div class="panel">
+  <h4 style="margin-top:0">总览：两个家族 + 一个统一算例</h4>
+  <p>负载均衡的评估指标分两个家族：<strong>分布均衡度指标</strong>（Gini、min-max ratio、utilization、imbalance ratio、CV——从经济学与运筹学借来的统计量，"家族通用、细节各家自定义"）与<strong>系统侧指标</strong>（throughput、makespan、p99、峰值显存——来自调度理论与服务运维，跨行业无歧义）。前者衡量"专家/设备间分得多匀"，后者衡量"最终快不快、省不省"。</p>
+  <p>本节统一用一个算例：$N = 4$ 个专家，某统计窗口内的 token 负载 $L = (40, 30, 20, 10)$，总量 100，份额 $s = (0.4, 0.3, 0.2, 0.1)$。另外注意"负载"本身的计量口径：按 token 数、按门控权重还是按实际计算毫秒计，不同论文可能不同。</p>
+</div>
+
+<div class="panel">
+  <h4 style="margin-top:0">Gini coefficient（基尼系数）</h4>
+  <p><strong>出身：</strong>经济学里衡量收入不平等的标准量（1912 年），MoE 论文借来量"专家间 token 分配的不平等度"。</p>
+  <div class="formula">\[ G = \frac{\sum_{i=1}^{N} (2i - N - 1)\, x_{(i)}}{N \sum_i x_i}, \qquad x_{(1)} \le \cdots \le x_{(N)} \text{ 为升序负载} \]</div>
+  <p>几何意义：负载累积曲线（Lorenz 曲线）与完美均匀对角线之间的面积占比。取值 0 为完全均匀，越大越集中；注意有限 $N$ 时全坍缩（单专家拿走全部）的 Gini 上限是 $\frac{N-1}{N}$ 而非 1，$N$ 越大才越接近 1。</p>
+  <p><strong>算例：</strong>升序 $(10, 20, 30, 40)$，分子 $= (-3)(10) + (-1)(20) + (1)(30) + (3)(40) = 100$，分母 $= 4 \times 100 = 400$，$G = 0.25$。对照：均匀 $(25,25,25,25) \to 0$；全坍缩 $(100,0,0,0) \to 0.75$。4.1 节 LPR 的"Gini 从 0.70 降至 0.035"，即从高度偏斜调到近乎完美均匀。</p>
+</div>
+
+<div class="panel">
+  <h4 style="margin-top:0">min-max load ratio（最轻/最重比）</h4>
+  <div class="formula">\[ \text{min-max ratio} = \frac{\min_i L_i}{\max_i L_i} \in (0, 1], \qquad \text{或其倒数形式} \ \frac{\max_i L_i}{\min_i L_i} \ge 1 \]</div>
+  <p><strong>算例：</strong>$10 / 40 = 0.25$（倒数形式 $4.0$）。</p>
+  <p><strong>最大的坑是方向不统一。</strong>本报告 4.1 节 LPR 的"min-max load ratio 提升至 0.70"是 $\le 1$ 形式（越大越好），4.2 节 UltraEP 的"imbalance 从 1.30–4.01 降至 1.01–1.04"是 $\ge 1$ 形式（越小越好）——两处口径互为倒数、优劣方向相反，对比任何两个方案的数字前必须先确认方向。</p>
+  <p><strong>特点：</strong>直观，但只看两个极端点，中间 $N-2$ 个专家被忽略；某专家偶然收到 0 个 token 时比值直接归零，对噪声敏感。可视为 Gini 的"廉价替代"。</p>
+</div>
+
+<div class="panel">
+  <h4 style="margin-top:0">expert utilization（专家利用率）——最不标准化的一个</h4>
+  <p>没有统一定义，常见三种口径：</p>
+  <ul>
+    <li><strong>阈值法：</strong>负载超过公平份额 $1/N$ 的某个百分比（如 50%）的专家数 / $N$；</li>
+    <li><strong>非零法：</strong>收到过 token 的专家数 / $N$（最宽松）；</li>
+    <li><strong>熵法：</strong>把份额 $s_i$ 当概率分布，用 $\exp(H(s)) / N$ 作利用率，其中 $H(s) = -\sum_i s_i \ln s_i$，含义是"有效专家个数"占名义专家数的比例。</li>
+  </ul>
+  <p><strong>算例：</strong>阈值法（阈值取 $1/N$ 的一半即 12.5%）：$4/4 = 100\%$；熵法：$H \approx 1.28$，$\exp(H) \approx 3.6$ 个有效专家，利用率 $\approx 90\%$。同一负载两种口径给出不同数字——论文里看到 utilization 必须查它的定义。</p>
+</div>
+
+<div class="panel">
+  <h4 style="margin-top:0">imbalance ratio（不均衡比）——概念通用，公式半标准化</h4>
+  <p>名字在 HPC/并行计算里用了几十年，见到即懂，但至少三种口径并存：</p>
+  <table>
+    <thead><tr><th>口径</th><th>公式</th><th>取值</th><th>出处习惯</th></tr></thead>
+    <tbody>
+      <tr><td>max / mean</td><td>$L_{\max} / \bar{L}$</td><td>$\ge 1$，1 为完美</td><td>HPC 最经典，具理论含义</td></tr>
+      <tr><td>max / min</td><td>$L_{\max} / L_{\min}$</td><td>$\ge 1$，1 为完美</td><td>MoE 系统论文常用</td></tr>
+      <tr><td>归一化损失</td><td>$1 - \bar{L} / L_{\max}$</td><td>$[0, 1)$，0 为完美</td><td>HPC，表示浪费掉的并行效率比例</td></tr>
+    </tbody>
+  </table>
+  <p><strong>max/mean 的理论含义：</strong>并行调度中 makespan 由最重设备决定，理想情况每台设备分到 $\bar{L}$，因此并行效率的上界就是 $\bar{L} / L_{\max} = 1/\lambda$。$\lambda = 1.5$ 不只是"偏斜"——它直接说明这一层最多只能用到 $2/3$ 算力，其余 $1/3$ 在空等 straggler。按此读 UltraEP 的"从 1.30–4.01 降到 1.01–1.04"：从"浪费 23%–75% 算力"修到"浪费 1%–4%"。</p>
+  <p><strong>算例：</strong>$\bar{L} = 25$，max/mean $= 40/25 = 1.6$（并行效率上界 62.5%）；max/min $= 4.0$；归一化损失 $= 0.375$——同一集群状态三个数，看起来像三个结论。</p>
+  <p><strong>与 Gini/CV 的分工：</strong>imbalance ratio 只盯最重的那个点，对"中间分布长什么样"无感；Gini/CV 看全局形状但对单个 straggler 不够尖锐。系统论文常两个一起报：一个讲效率上界，一个讲分布健康度。</p>
+</div>
+
+<div class="panel">
+  <h4 style="margin-top:0">系统侧指标：throughput / makespan / p99 / peak memory</h4>
+  <ul>
+    <li><strong>throughput（吞吐）：</strong>单位时间处理量。训练期通常 tokens/s（或 tokens/s/GPU、MFU）；推理期 requests/s 或输出 tokens/s；取稳态测量；</li>
+    <li><strong>makespan（完工时间）：</strong>调度理论的经典目标 $C_{\max}$——所有设备中最后完成的时刻。EP 一层里就是"最重设备做完它的专家 GEMM"的时刻：均衡好则所有设备同时收工，makespan = 总工作量/总算力；偏斜时由 straggler 决定，其余设备空等；</li>
+    <li><strong>p99 latency：</strong>时间窗内所有请求延迟的第 99 百分位（SRE 标准实践）。均值会掩盖长尾，而负载偏斜制造的恰恰是长尾——撞上热专家的那部分请求特别慢；服务 SLA 通常写在 p99/p999 上；</li>
+    <li><strong>peak memory（峰值显存）：</strong>各设备显存占用的最大值。MoE 推理的特殊性在于热专家复制与副本缓存会撑爆显存（4.3 节 LLEP 的"4× 峰值内存下降"即此指标），所以单看吞吐不够。</li>
+  </ul>
+  <p>这组指标定义唯一、跨行业无歧义，属于完全通用的工程指标。</p>
+</div>
+
+<div class="panel">
+  <h4 style="margin-top:0">汇总与对比前的三个对齐点</h4>
+  <table>
+    <thead><tr><th>指标</th><th>算例值 (40,30,20,10)</th><th>均匀时</th><th>出身</th><th>标准化程度</th></tr></thead>
+    <tbody>
+      <tr><td>Gini</td><td>0.25</td><td>0</td><td>经济学</td><td>公式固定，家族通用</td></tr>
+      <tr><td>min-max ratio（或倒数）</td><td>0.25（或 4.0）</td><td>1</td><td>直观构造</td><td>流行，方向有两种</td></tr>
+      <tr><td>utilization（熵法）</td><td>≈ 90%</td><td>100%</td><td>各自构造</td><td>各家自定义</td></tr>
+      <tr><td>imbalance ratio（max/mean）</td><td>1.6</td><td>1</td><td>HPC</td><td>通用，注意口径</td></tr>
+      <tr><td>CV（变异系数，$\mathrm{std}/\mathrm{mean}$）</td><td>≈ 0.45</td><td>0</td><td>统计学</td><td>公式固定；Shazeer 2017 的负载损失用的就是 importance 的 CV²</td></tr>
+      <tr><td>throughput / makespan / p99 / peak memory</td><td>—</td><td>—</td><td>调度理论 / SRE / HPC</td><td>完全通用</td></tr>
+    </tbody>
+  </table>
+  <div class="callout">
+    <strong>对比两个方案的均衡度数字前，先对齐三点：</strong>① 负载按 token 数、门控权重还是实际计算毫秒计；② 统计窗口是 per micro-batch、per 层还是滑动平均；③ 比值类指标的方向（$\le 1$ 越大越好，还是 $\ge 1$ 越小越好）。自己写报告时应写出公式而非只写指标名——"名字通用、公式自负"是这一族指标的通用礼仪。
+  </div>
+</div>
+
+<h3 id="deepdive">2.6 从浅入深：MoE 架构内部原理</h3>
+
+<div class="panel">
+  <h4 style="margin-top:0">第 1 层：为什么需要 MoE</h4>
+  <p>稠密 Transformer 的所有层、所有 token 都使用同一套 FFN。要提升容量，通常需要同步增加宽度和深度，计算量也随之线性/超线性增长。MoE 的思路是“把容量和计算解耦”：准备很多专家，但每个 token 只使用其中少数几个，因此总参数很大、单 token 计算基本可控。</p>
+</div>
+
+<div class="panel">
+  <h4>第 2 层：MoE 层的基本数学形式</h4>
+  <p>假设一个 Transformer 层原本有 FFN，MoE 版本把 FFN 替换为 $N$ 个专家和一个路由器。对输入 token 的隐藏向量 $x$：</p>
+  <div class="formula">\[ h = x + \operatorname{MoE}\left(\operatorname{RMSNorm}(x)\right), \qquad \operatorname{MoE}(z) = \sum_i g_i(z) \cdot E_i(z) \]</div>
+  <p>其中 $E_i$ 是第 $i$ 个专家，$g_i$ 是路由权重。稀疏 MoE 的关键是只对少量专家求和：</p>
+  <div class="formula">\[ g = \operatorname{softmax}\left(\operatorname{TopK}\left(W_r z\right)\right), \qquad \text{非 } \mathrm{TopK} \text{ 的 } g_i \text{ 被置为 } 0 \]</div>
+  <p>常见设置：$N=8, K=2$（Mixtral），$N=256, K=8$（DeepSeek-V3）。$K/N$ 越小，稀疏度越高，参数规模放大能力越强，但路由质量要求也越高。</p>
+</div>
+
+<div class="panel">
+  <h4>第 3 层：专家内部长什么样</h4>
+  <p>绝大多数 LLM MoE 的“专家”就是一个小型 FFN，而不是一个完整 Transformer 层。以 SwiGLU 为例，专家可写为：</p>
+  <div class="formula">\[ E_i(z) = W_{\mathrm{down},i}\left( \operatorname{Swish}\left(W_{\mathrm{gate},i} z\right) \odot \left(W_{\mathrm{up},i} z\right) \right) \]</div>
+  <p>其参数量约为 $3 \times d \times d_{\mathrm{ff}}$。这解释了为什么 MoE 能轻松把总参数做大：每个专家都拥有独立的三块矩阵，而每 token 只激活少数专家。</p>
+</div>
+
+<div class="panel">
+  <h4>第 4 层：路由器与 Top-K 的细节</h4>
+  <ul>
+    <li><strong>路由 logits：</strong>通常由一层无 bias 的线性映射 $W_r z$ 产生；</li>
+    <li><strong>Top-K：</strong>保留分数最高的 K 个专家，其余直接截断；</li>
+    <li><strong>Softmax 归一化：</strong>对保留的 K 个分数做 softmax，得到可导的融合权重；</li>
+    <li><strong>Noisy gating：</strong>训练初期可加入可学习噪声，帮助路由探索不同专家；</li>
+    <li><strong>Expert bias / Loss-Free bias：</strong>在 Top-K 前给每个专家加偏置，用以在线调节负载。</li>
+  </ul>
+  <p>为什么稀疏路由训练困难？因为 Top-K 是一个离散操作，普通反向传播只能把梯度传回被选中的专家；同时路由器和专家互相依赖，容易出现“一开始强的专家越来越强”的坍塌。</p>
+</div>
+
+<div class="panel">
+  <h4>第 5 层：Capacity、Token Drop 与负载均衡</h4>
+  <p>为了在 GPU 上做定长批量计算，通常给每个专家设置最大 token 容量：</p>
+  <div class="formula">\[ \mathrm{expert\_capacity} = \mathrm{capacity\_factor} \times \frac{\mathrm{batch\_tokens} \times K}{N} \]</div>
+  <p>当某专家收到的 token 超过容量时，多余 token 被丢弃或只走残差连接。容量太小会掉 token，容量太大则会浪费算力。为了减少偏斜，通常还要加负载均衡损失：</p>
+  <div class="formula">\[ L_{\mathrm{aux}} = \alpha \cdot N \cdot \sum_i f_i \cdot P_i \]</div>
+  <p>$f_i$ 是实际路由频率，$P_i$ 是平均路由概率。它推动二者都接近均匀。后来的 Loss-Free 方法则不把它放入损失，而是通过 bias 直接改变 Top-K 结果。</p>
+  <p><strong>容量是训练期机制，推理默认不设。</strong>EP 训练需要预分配定长的 dispatch/combine 缓冲和规整的分组 GEMM，超容量的 token 被丢掉走残差，是预训练阶段可接受的“吞吐换质量”取舍；主流推理引擎默认 <strong>dropless</strong>——不设容量阈值，每个 token 的 Top-K 专家必然执行，因为推理掉 token 会直接损伤生成质量，且 decode 阶段每步 token 很少、天然不挤（prefill 大 batch 下才可能出现偏斜）。容量感知丢弃在推理期只是少数引擎与研究系统（见 4.3 节 Capacity-Aware Inference）的可选加速旋钮；EP 推理遇到过载更常用重路由与专家复制（LLEP、R&amp;Q）而非丢弃。</p>
+</div>
+
+<div class="panel">
+  <h4>第 6 层：从 GShard 到 DeepSeekMoE 的架构演进</h4>
+  <p><strong>GShard / Switch：</strong>把原 FFN 换成 $N$ 个等大小专家，Top-1/2 路由。优点是简单，缺点是专家之间冗余较大、专业化和均衡互相拉扯。</p>
+  <p><strong>Mixtral：</strong>8 个专家、Top-2，总参数 46.7B，激活参数约 12.9B。它是开源生态中非常重要的工业参考。</p>
+  <p><strong>DeepSeekMoE：</strong>两个关键改造：</p>
+  <div class="formula">\[ \text{细粒度切分：} N \rightarrow mN \text{ 个更小专家，每 token 激活 } mK \text{ 个} \]</div>
+  <div class="formula">\[ \text{共享专家：额外保留 } K_s \text{ 个所有 token 都经过的共享专家} \]</div>
+  <p>细粒度专家提高组合灵活性，共享专家吸收公共知识、减少 routed experts 的冗余。DeepSeekMoE 还引入 expert-level、device-level、communication-level 三层均衡目标。</p>
+  <p><strong>DeepSeek-V3：</strong>每层 256 个 routed experts + 1 个 shared expert，每 token 激活 8 个 routed + 1 个 shared；路由采用 sigmoid affinity，再归一化，并用 Loss-Free bias 做负载均衡。总参数 671B，激活参数 37B。</p>
+</div>
+
+<div class="panel">
+  <h4>第 7 层：训练时的并行数据流</h4>
+  <p>训练大 MoE 通常同时使用数据并行、张量并行、专家并行、流水线并行。专家并行的一条 token 路径大致是：</p>
+  <ol>
+    <li>每个设备计算注意力输出；</li>
+    <li>路由器产生每个 token 的目标专家；</li>
+    <li>执行 <strong>dispatch all-to-all</strong>，把 token 发送到对应专家所在设备；</li>
+    <li>各设备对本地专家做 grouped GEMM；</li>
+    <li>执行 <strong>combine all-to-all</strong>，把专家输出送回原 token；</li>
+    <li>残差相加，继续后续层。</li>
+  </ol>
+  <p>负载不均衡时，某些设备的 dispatch 队列更长、专家 GEMM 更重，从而形成 straggler。因此训练期负载均衡既是模型质量问题，也是系统吞吐问题。</p>
+</div>
+
+<div class="panel">
+  <h4>第 8 层：推理时的差异</h4>
+  <ul>
+    <li><strong>Prefill：</strong>大批量并行处理 prompt，路由偏移和多模态 token 偏斜会被放大；</li>
+    <li><strong>Decode：</strong>每步 token 较少，但所有专家权重都可能被访问，热专家/冷专家带来的显存和带宽不均衡明显；</li>
+    <li><strong>部署侧：</strong>常采用专家 offloading、专家复制、容量感知丢弃/重路由、动态精度、专家 re-layout 等方式。</li>
+  </ul>
+</div>
+
+<h2 id="s3">3. MoE 会遇到的问题</h2>
+
+<h3>3.1 路由与表示层面</h3>
+<table>
+  <thead><tr><th>问题</th><th>现象</th><th>主要成因</th><th>典型解法方向</th></tr></thead>
+  <tbody>
+    <tr><td>Routing collapse</td><td>少数专家接收绝大多数 token，其余专家几乎不被训练</td><td>“富者愈富”的路由动力学</td><td>aux loss、loss-free bias、BIP/LP 均衡分配</td></tr>
+    <tr><td>Expert underutilization</td><td>大量专家参数闲置，容量浪费</td><td>路由偏斜、初始化、任务分布</td><td>细粒度专家、shared experts、聚类路由</td></tr>
+    <tr><td>Router fluctuation</td><td>同一 token 在不同 step 被送到不同专家</td><td>路由与专家联合训练不稳定</td><td>StableMoE 蒸馏冻结、ERMoE 结构对齐</td></tr>
+    <tr><td>Expert redundancy</td><td>多个专家学到相似知识</td><td>过强的均匀约束或过弱的专业化约束</td><td>similarity-preserving loss、shared expert 隔离</td></tr>
+    <tr><td>Specialization vs. balance 冲突</td><td>强行均衡会削弱领域专业化</td><td>micro-batch LBL 约束过严</td><td>global-batch LBL、prototype/domain-aware routing</td></tr>
+  </tbody>
+</table>
+
+<h3>3.2 训练动态与优化层面</h3>
+<table>
+  <thead><tr><th>问题</th><th>现象</th><th>原因与影响</th><th>解法</th></tr></thead>
+  <tbody>
+    <tr><td>Auxiliary loss 干扰梯度</td><td>负载好但模型质量下降</td><td>aux loss 引入与主任务不一致的梯度</td><td>loss-free bias、φ-balancing、ERMoE</td></tr>
+    <tr><td>Micro-batch LBL 过强</td><td>专家无法领域特化</td><td>单序列内强制均匀分布</td><td>global-batch LBL</td></tr>
+    <tr><td>Loss spike / 训练不稳定</td><td>训练中途 loss 突然上升</td><td>路由突变、专家过载、数值问题</td><td>router z-loss、稳定路由、capacity、precision 控制</td></tr>
+    <tr><td>Token dropping</td><td>过载 token 被丢弃，信息丢失</td><td>capacity 固定但路由偏斜</td><td>更大 capacity、expanded drop、动态容量</td></tr>
+    <tr><td>收敛慢</td><td>同样 tokens 下效果差</td><td>专家更新稀疏、路由不稳</td><td>相似性保持损失、梯度稀疏估计</td></tr>
+  </tbody>
+</table>
+
+<h3>3.3 系统、并行与推理层面</h3>
+<table>
+  <thead><tr><th>问题</th><th>现象</th><th>原因与影响</th><th>解法</th></tr></thead>
+  <tbody>
+    <tr><td>All-to-all 通信开销</td><td>GPU 利用率低，通信占比高</td><td>动态 token-expert 分派</td><td>通信均衡损失、系统调度、NVLink/DeepEP 优化</td></tr>
+    <tr><td>Straggler effect</td><td>最重专家拖慢整层</td><td>EP 下负载不均</td><td>capacity-aware drop/reroute、动态精度</td></tr>
+    <tr><td>EP 假设被破坏</td><td>post-training/inference 时显存、计算打爆</td><td>实际路由显著偏离训练期均衡</td><td>LLEP、UltraEP、TEMPO、LAER-MoE</td></tr>
+    <tr><td>非平稳负载</td><td>历史负载统计失效</td><td>生产流量、流式输入、多模态输入变化</td><td>实时调度、预测式预取、R&amp;Q</td></tr>
+    <tr><td>多模态负载偏斜</td><td>视觉 token 主导 prefill，某些 rank 过载</td><td>不同模态 token 路由偏好差异</td><td>ReaLB 动态精度、模态感知路由</td></tr>
+    <tr><td>内存峰值</td><td>热专家权重被多个 rank 复制，显存膨胀</td><td>热专家复制/重排</td><td>复制+量化、专家 re-layout</td></tr>
+  </tbody>
+</table>
+
+<h2 id="s4">4. 负载均衡前沿论文</h2>
+
+<p>这里按“训练期路由与优化 / 训练期系统调度 / 推理期负载均衡 / 理论分析”四类整理。链接均已指向 arXiv 原文页。</p>
+
+<h3>4.1 训练期：路由与优化</h3>
+<table>
+  <thead><tr><th>方法</th><th>年份</th><th>核心技术</th><th>关键结果/特点</th><th>链接</th></tr></thead>
+  <tbody>
+    <tr>
+      <td>Demons in the Detail: global-batch LBL</td>
+      <td>2025</td>
+      <td>把负载损失从 micro-batch 改为 global-batch 统计</td>
+      <td>放宽序列级均衡约束，显著提升专家专业化；Qwen3-MoE 采用</td>
+      <td><a href="https://arxiv.org/abs/2501.11873" target="_blank">arXiv:2501.11873</a></td>
+    </tr>
+    <tr>
+      <td>BIP-Based Balancing</td>
+      <td>2025</td>
+      <td>用 binary integer programming 修正 Top-K 排序</td>
+      <td>从第 1 步到最后 1 步保持每层专家均衡，节省预训练时间</td>
+      <td><a href="https://arxiv.org/abs/2502.15451" target="_blank">arXiv:2502.15451</a></td>
+    </tr>
+    <tr>
+      <td>Similarity Preserving Routers</td>
+      <td>2025</td>
+      <td>负载损失中保留 token 相似关系，让相似输入走同一专家</td>
+      <td>36% 更快收敛，降低专家冗余</td>
+      <td><a href="https://arxiv.org/abs/2506.14038" target="_blank">arXiv:2506.14038</a></td>
+    </tr>
+    <tr>
+      <td>Latent Prototype Routing（LPR）</td>
+      <td>2025</td>
+      <td>把路由视为聚类，用 latent prototypes 决定专家分配</td>
+      <td>Gini 从 0.70 降至 0.035，min-max load ratio 提升至 0.70，近乎完美均衡</td>
+      <td><a href="https://arxiv.org/abs/2506.21328" target="_blank">arXiv:2506.21328</a></td>
+    </tr>
+    <tr>
+      <td>Input Domain Aware MoE</td>
+      <td>2025</td>
+      <td>概率混合模型划分输入空间，路由与任务优化解耦</td>
+      <td>专业化边界更清晰，视觉语言任务更稳定</td>
+      <td><a href="https://arxiv.org/abs/2510.16448" target="_blank">arXiv:2510.16448</a></td>
+    </tr>
+    <tr>
+      <td>ERMoE</td>
+      <td>2025</td>
+      <td>专家权重在正交 eigenbasis 下重参数化，路由用特征-基对齐分数</td>
+      <td>去除显式 balance loss，路由稳定、可解释；CVPR 2026</td>
+      <td><a href="https://arxiv.org/abs/2511.10971" target="_blank">arXiv:2511.10971</a></td>
+    </tr>
+    <tr>
+      <td>φ-Balancing</td>
+      <td>2026</td>
+      <td>对总体路由分布最小化严格凸/对称/可微势函数，凸对偶 + mirror descent</td>
+      <td>直接优化 population-level 均衡，优于 Switch-style 与 loss-free 基线</td>
+      <td><a href="https://arxiv.org/abs/2605.15403" target="_blank">arXiv:2605.15403</a></td>
+    </tr>
+    <tr>
+      <td>GRIN</td>
+      <td>2024</td>
+      <td>对离散专家路由做稀疏梯度估计，避免 token dropping</td>
+      <td>6.6B 激活参数模型匹配 14B dense 模型</td>
+      <td><a href="https://arxiv.org/abs/2409.12136" target="_blank">arXiv:2409.12136</a></td>
+    </tr>
+  </tbody>
+</table>
+
+<h3>4.2 训练期：系统级负载均衡</h3>
+<table>
+  <thead><tr><th>方法</th><th>年份</th><th>核心技术</th><th>关键结果/特点</th><th>链接</th></tr></thead>
+  <tbody>
+    <tr>
+      <td>FineMoE / LPLB（Linear Programming）</td>
+      <td>2025</td>
+      <td>每个 micro-batch 内用线性规划做 token 调度，实现 GPU 间细粒度均衡</td>
+      <td>端到端训练吞吐最高提升 47.6%</td>
+      <td><a href="https://arxiv.org/abs/2511.16947" target="_blank">arXiv:2511.16947</a></td>
+    </tr>
+    <tr>
+      <td>LAER-MoE</td>
+      <td>2026</td>
+      <td>根据动态路由分布自适应专家 re-layout</td>
+      <td>降低重排代价，提升训练效率</td>
+      <td><a href="https://arxiv.org/abs/2602.11686" target="_blank">arXiv:2602.11686</a></td>
+    </tr>
+    <tr>
+      <td>UltraEP</td>
+      <td>2026</td>
+      <td>rack-scale node 上每个 microbatch/layer 实时精确重平衡；quota-driven planner + expert replication</td>
+      <td>多 RSN、256 GPU，接近理想吞吐 94.3%，imbalance 从 1.30–4.01 降至 1.01–1.04</td>
+      <td><a href="https://arxiv.org/abs/2606.04101" target="_blank">arXiv:2606.04101</a></td>
+    </tr>
+    <tr>
+      <td>TEMPO</td>
+      <td>2026</td>
+      <td>max-affine 模型刻画 HBM weight streaming 与 grouped GEMM 两种 regime，做 makespan-aware dispatch</td>
+      <td>Qwen3-235B 吞吐 +4–6%，p99 延迟下降约 15.6%</td>
+      <td><a href="https://arxiv.org/abs/2608.13057" target="_blank">arXiv:2608.13057</a></td>
+    </tr>
+  </tbody>
+</table>
+
+<h3>4.3 推理期与后训练负载均衡</h3>
+<table>
+  <thead><tr><th>方法</th><th>年份</th><th>核心技术</th><th>关键结果/特点</th><th>链接</th></tr></thead>
+  <tbody>
+    <tr>
+      <td>Capacity-Aware Inference</td>
+      <td>2025</td>
+      <td>Capacity-Aware Token Drop + Expanded Drop</td>
+      <td>OLMoE 上 30% 加速、仅 0.9% 掉点；Mixtral 8×7B 1.85× 加速且 +0.2%</td>
+      <td><a href="https://arxiv.org/abs/2503.05066" target="_blank">arXiv:2503.05066</a></td>
+    </tr>
+    <tr>
+      <td>Least-Loaded Expert Parallelism（LLEP）</td>
+      <td>2026</td>
+      <td>检测不平衡后，把过载 rank 的 token 与专家参数动态重路由到欠载 rank</td>
+      <td>最高 5× 加速、4× 峰值内存下降；gpt-oss-120b 约 1.9× 加速</td>
+      <td><a href="https://arxiv.org/abs/2601.17111" target="_blank">arXiv:2601.17111</a></td>
+    </tr>
+    <tr>
+      <td>Replicate-and-Quantize（R&amp;Q）</td>
+      <td>2026</td>
+      <td>训练免费：复制热专家提升并行度，对冷专家/副本量化以保持内存预算</td>
+      <td>不平衡最多下降 1.4×，精度波动 ±0.6% 内</td>
+      <td><a href="https://arxiv.org/abs/2602.19938" target="_blank">arXiv:2602.19938</a></td>
+    </tr>
+    <tr>
+      <td>ReaLB</td>
+      <td>2026</td>
+      <td>按 EP rank 动态调整专家计算精度，利用 FP4 Tensor Core</td>
+      <td>多模态 MoE 1.10×–1.32× 加速，平均精度下降 &lt;1%</td>
+      <td><a href="https://arxiv.org/abs/2604.19503" target="_blank">arXiv:2604.19503</a></td>
+    </tr>
+  </tbody>
+</table>
+
+<h3>4.4 理论分析</h3>
+<table>
+  <thead><tr><th>方法</th><th>年份</th><th>核心技术</th><th>关键结论</th><th>链接</th></tr></thead>
+  <tbody>
+    <tr>
+      <td>A Theoretical Framework for ALF-LB</td>
+      <td>2025</td>
+      <td>把 DeepSeek Loss-Free 视为 single-shot primal-dual assignment</td>
+      <td>单调改进条件、过载→欠载迁移偏好、近似均衡保证、online 对数 regret</td>
+      <td><a href="https://arxiv.org/abs/2512.03915" target="_blank">arXiv:2512.03915</a></td>
+    </tr>
+    <tr>
+      <td>MoE 综合综述</td>
+      <td>2025</td>
+      <td>算法、理论、应用的系统化综述</td>
+      <td>提供路由、训练、系统设计全局地图</td>
+      <td><a href="https://arxiv.org/abs/2503.07137" target="_blank">arXiv:2503.07137</a></td>
+    </tr>
+  </tbody>
+</table>
+
+<h2 id="s5">5. 关键技术方案总结</h2>
+
+<div class="panel">
+  <h3 style="margin-top:0">5.1 负载均衡的四个层次</h3>
+  <ol>
+    <li><strong>算法层：</strong>改损失或路由决策，让专家分布更均匀，同时保留专业化。</li>
+    <li><strong>架构层：</strong>细粒度专家、共享专家、特征对齐/原型/eigenbasis 路由。</li>
+    <li><strong>训练系统层：</strong>token 调度、专家 re-layout、设备间重平衡，降低真实 GPU 负载差异。</li>
+    <li><strong>推理系统层：</strong>容量感知丢弃/重路由、专家复制与量化、动态精度，降低 straggler 与内存峰值。</li>
+  </ol>
+</div>
+
+<div class="panel">
+  <h3>5.2 代表性技术方案拆解</h3>
+
+  <h4>方案 A：全局批次负载损失（工程基线）</h4>
+  <p>把 $f_i$ 从 micro-batch 改为 global-batch 同步统计。优点是保留传统 Switch LBL 的稳定性，又避免“每条序列都强制均匀”伤害专业化。适合作为新 MoE 项目的默认起点。</p>
+  <div class="formula">\[ L_{\mathrm{aux}} = \alpha \cdot N \cdot \sum_i f_i^{\mathrm{global}} \cdot P_i^{\mathrm{global}} \]</div>
+
+  <h4>方案 B：DeepSeek Loss-Free Bias（性能优先）</h4>
+  <p>不给主损失增加辅助项，而是在 Top-K 前对每个专家的路由分数加一个 bias，并依据近期负载指数移动平均在线更新。它不产生干扰梯度，兼顾质量与均衡。</p>
+  <div class="formula">\[ s_i \leftarrow s_i + b_i, \qquad b_i \leftarrow b_i - \gamma \cdot \left(\mathrm{load}_i - \mathrm{target}_i\right) \]</div>
+
+  <h4>方案 C：组合优化/凸对偶（精确均衡）</h4>
+  <p>BIP 用小规模 0-1 整数规划修正 Top-K；LPLB 用线性规划做 micro-batch token 调度；φ-balancing 则对全局路由分布最小化凸势函数，用 mirror descent 得到 EMA 形式的在线更新。适合对均衡度有硬指标要求的场景。</p>
+
+  <h4>方案 D：结构稳定路由（可解释、免损失）</h4>
+  <p>StableMoE 用两阶段蒸馏冻结路由；ERMoE 用正交 eigenbasis 重参数化专家，并以特征-基对齐分数替代自由 logits；LPR 用 latent prototypes 聚类路由。共同点是把“路由稳定性”从训练正则项升级为结构性质。</p>
+
+  <h4>方案 E：系统级动态重平衡（训练与推理通用）</h4>
+  <p>LLEP 动态把过载 rank 的 token/专家参数搬到欠载 rank；UltraEP 在 rack-scale 上每层实时重平衡；TEMPO 同时建模 HBM streaming 与 grouped GEMM，最小化 makespan。它们不改变模型权重，适合推理、后训练以及非平稳负载。</p>
+
+  <h4>方案 F：推理期容量与资源重分配</h4>
+  <p>Capacity-Aware Inference 用 token drop / expanded drop 处理过载专家；R&amp;Q 复制热专家并对冷专家量化；ReaLB 按 rank 动态调整 FP4/FP8 精度。三者都能在不重训模型的前提下显著降低推理延迟。</p>
+</div>
+
+<div class="panel">
+  <h3>5.3 落地选择建议</h3>
+  <table>
+    <thead><tr><th>场景</th><th>推荐方案</th><th>理由</th></tr></thead>
+    <tbody>
+      <tr><td>新 MoE 预训练，追求稳健</td><td>global-batch LBL + sequence/device/communication balance</td><td>工程成熟，专业化与均衡兼顾</td></tr>
+      <tr><td>大规模预训练，追求性能上限</td><td>Loss-Free bias 或 φ-balancing</td><td>减少 aux loss 干扰，提升质量</td></tr>
+      <tr><td>需要极强负载均衡保证</td><td>BIP / LPLB / LPR</td><td>每 micro-batch 或每层可近精确均衡</td></tr>
+      <tr><td>路由不稳定、可解释性要求高</td><td>StableMoE / ERMoE / prototype routing</td><td>结构级稳定，避免反复抖动</td></tr>
+      <tr><td>已有 MoE 训练吞吐低</td><td>FineMoE/LPLB、UltraEP、LAER-MoE</td><td>系统调度直接降低 GPU 空闲与通信等待</td></tr>
+      <tr><td>已有 MoE 推理慢、显存高</td><td>Capacity-Aware Inference、LLEP、R&amp;Q、ReaLB</td><td>无需重训，直接处理实际路由偏斜</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<div class="callout warn">
+  <strong>落地提醒：</strong>论文里的 2026 年条目多为新预印本，部分尚未大规模同行评审，实际部署前建议复现小规模实验；负载均衡指标改善不等于端到端收益，最终要以 perplexity/downstream、throughput、latency、显存、通信成本共同判断。
+</div>
+
+<h2 id="s6">6. 参考链接汇总</h2>
+
+<div class="panel">
+  <h3 style="margin-top:0">综述</h3>
+  <ul>
+    <li><a href="https://arxiv.org/abs/2407.06204" target="_blank">A Survey on Mixture of Experts in Large Language Models — arXiv:2407.06204</a></li>
+    <li><a href="https://arxiv.org/abs/2503.07137" target="_blank">A Comprehensive Survey of Mixture-of-Experts: Algorithms, Theory, and Applications — arXiv:2503.07137</a></li>
+  </ul>
+
+  <h3>基础与演进</h3>
+  <ul>
+    <li><a href="https://arxiv.org/abs/1701.06538" target="_blank">Sparsely-Gated MoE — arXiv:1701.06538</a></li>
+    <li><a href="https://arxiv.org/abs/2006.16668" target="_blank">GShard — arXiv:2006.16668</a></li>
+    <li><a href="https://arxiv.org/abs/2101.03961" target="_blank">Switch Transformers — arXiv:2101.03961</a></li>
+    <li><a href="https://arxiv.org/abs/2112.06905" target="_blank">GLaM — arXiv:2112.06905</a></li>
+    <li><a href="https://arxiv.org/abs/2103.16716" target="_blank">BASE Layers — arXiv:2103.16716</a></li>
+    <li><a href="https://arxiv.org/abs/2106.04426" target="_blank">Hash Layers — arXiv:2106.04426</a></li>
+    <li><a href="https://arxiv.org/abs/2202.09368" target="_blank">Expert Choice Routing — arXiv:2202.09368</a></li>
+    <li><a href="https://arxiv.org/abs/2204.08396" target="_blank">StableMoE — arXiv:2204.08396</a></li>
+    <li><a href="https://arxiv.org/abs/2401.04088" target="_blank">Mixtral of Experts — arXiv:2401.04088</a></li>
+    <li><a href="https://arxiv.org/abs/2401.06066" target="_blank">DeepSeekMoE — arXiv:2401.06066</a></li>
+    <li><a href="https://arxiv.org/abs/2408.15664" target="_blank">Auxiliary-Loss-Free Load Balancing — arXiv:2408.15664</a></li>
+    <li><a href="https://arxiv.org/abs/2412.19437" target="_blank">DeepSeek-V3 Technical Report — arXiv:2412.19437</a></li>
+    <li><a href="https://arxiv.org/abs/2505.09388" target="_blank">Qwen3 Technical Report — arXiv:2505.09388</a></li>
+  </ul>
+
+  <h3>前沿负载均衡论文</h3>
+  <ul>
+    <li><a href="https://arxiv.org/abs/2501.11873" target="_blank">Demons in the Detail: global-batch LBL — arXiv:2501.11873</a></li>
+    <li><a href="https://arxiv.org/abs/2502.15451" target="_blank">BIP-Based Balancing — arXiv:2502.15451</a></li>
+    <li><a href="https://arxiv.org/abs/2503.05066" target="_blank">Capacity-Aware Inference — arXiv:2503.05066</a></li>
+    <li><a href="https://arxiv.org/abs/2506.14038" target="_blank">Similarity Preserving Routers — arXiv:2506.14038</a></li>
+    <li><a href="https://arxiv.org/abs/2506.21328" target="_blank">Latent Prototype Routing — arXiv:2506.21328</a></li>
+    <li><a href="https://arxiv.org/abs/2409.12136" target="_blank">GRIN — arXiv:2409.12136</a></li>
+    <li><a href="https://arxiv.org/abs/2510.16448" target="_blank">Input Domain Aware MoE — arXiv:2510.16448</a></li>
+    <li><a href="https://arxiv.org/abs/2511.16947" target="_blank">FineMoE / LPLB — arXiv:2511.16947</a></li>
+    <li><a href="https://arxiv.org/abs/2511.10971" target="_blank">ERMoE — arXiv:2511.10971</a></li>
+    <li><a href="https://arxiv.org/abs/2512.03915" target="_blank">Theoretical Framework for ALF-LB — arXiv:2512.03915</a></li>
+    <li><a href="https://arxiv.org/abs/2601.17111" target="_blank">LLEP — arXiv:2601.17111</a></li>
+    <li><a href="https://arxiv.org/abs/2602.19938" target="_blank">Replicate-and-Quantize — arXiv:2602.19938</a></li>
+    <li><a href="https://arxiv.org/abs/2602.11686" target="_blank">LAER-MoE — arXiv:2602.11686</a></li>
+    <li><a href="https://arxiv.org/abs/2604.19503" target="_blank">ReaLB — arXiv:2604.19503</a></li>
+    <li><a href="https://arxiv.org/abs/2605.15403" target="_blank">φ-Balancing — arXiv:2605.15403</a></li>
+    <li><a href="https://arxiv.org/abs/2606.04101" target="_blank">UltraEP — arXiv:2606.04101</a></li>
+    <li><a href="https://arxiv.org/abs/2608.13057" target="_blank">TEMPO — arXiv:2608.13057</a></li>
+  </ul>
+</div>
+
+<footer>
+  本文件由 Codex 根据公开论文与网页信息整理，仅供研究参考。部分最新论文为预印本，结论请以正式发表版本和复现实验为准。
+</footer>
+
+</div>
+</body>
+</html>
