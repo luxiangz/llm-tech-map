@@ -637,17 +637,60 @@ flowchart TB
 </table>
 
 <h3>3.3 系统、并行与推理层面</h3>
+
+<p>系统层的问题按栈分层：通信、计算、内存、控制面、硬件拓扑。每一层都有各自的失衡放大机制，且相互耦合——通信目的地集中会加重 straggler，副本复制会挤占显存，控制面的迁移开销又会落回关键路径。下表按层展开，并把解法对应到具体论文（含 2026 年预印本）。</p>
+
+<h4>3.3.1 通信层（All-to-all 与互联）</h4>
 <table>
-  <thead><tr><th>问题</th><th>现象</th><th>原因与影响</th><th>解法</th></tr></thead>
+  <thead><tr><th>问题</th><th>现象</th><th>根因</th><th>影响</th><th>解法方向</th><th>代表工作</th></tr></thead>
   <tbody>
-    <tr><td>All-to-all 通信开销</td><td>GPU 利用率低，通信占比高</td><td>动态 token-expert 分派</td><td>通信均衡损失、系统调度、NVLink/DeepEP 优化</td></tr>
-    <tr><td>Straggler effect</td><td>最重专家拖慢整层</td><td>EP 下负载不均</td><td>capacity-aware drop/reroute、动态精度</td></tr>
-    <tr><td>EP 假设被破坏</td><td>post-training/inference 时显存、计算打爆</td><td>实际路由显著偏离训练期均衡</td><td>LLEP、UltraEP、TEMPO、LAER-MoE</td></tr>
-    <tr><td>非平稳负载</td><td>历史负载统计失效</td><td>生产流量、流式输入、多模态输入变化</td><td>实时调度、预测式预取、R&amp;Q</td></tr>
-    <tr><td>多模态负载偏斜</td><td>视觉 token 主导 prefill，某些 rank 过载</td><td>不同模态 token 路由偏好差异</td><td>ReaLB 动态精度、模态感知路由</td></tr>
-    <tr><td>内存峰值</td><td>热专家权重被多个 rank 复制，显存膨胀</td><td>热专家复制/重排</td><td>复制+量化、专家 re-layout</td></tr>
+    <tr><td>All-to-all 通信开销</td><td>通信占前向一半以上</td><td>每层两次动态 token-expert 分派</td><td>GPU 空转等通信</td><td>通信均衡损失、分层聚合、拓扑感知</td><td>GShard comm loss、OHIO、rail-only</td></tr>
+    <tr><td>通信目的地集中（hot column）</td><td>所有源 rank 都发往同几个热目的 rank</td><td>热专家路由集中</td><td>A2A 完成时间由最大列和决定</td><td>co-activation 同卡放置、通信感知剪枝</td><td><a href="https://arxiv.org/abs/2605.20982" target="_blank">DODOCO</a>、<a href="https://arxiv.org/abs/2607.05116" target="_blank">CAP</a></td></tr>
+    <tr><td>跨节点带宽不对称</td><td>跨节点迁移慢一个数量级</td><td>scale-up（NVLink）与 scale-out（RDMA）带宽差</td><td>热路径专家迁移贵到不可行</td><td>把 EP 组放进 scale-up 域、分层 A2A</td><td><a href="https://arxiv.org/abs/2606.04101" target="_blank">UltraEP（RSN）</a>、DeepEP</td></tr>
+    <tr><td>通信与计算不重叠</td><td>通信时算力闲置</td><td>dispatch / GEMM / combine 串行</td><td>设备利用率低</td><td>细粒度流水化、chunk 重叠</td><td>FasterMoE、Lina、MegaBlocks</td></tr>
   </tbody>
 </table>
+
+<h4>3.3.2 计算层（专家 GEMM 与 makespan）</h4>
+<table>
+  <thead><tr><th>问题</th><th>现象</th><th>根因</th><th>影响</th><th>解法方向</th><th>代表工作</th></tr></thead>
+  <tbody>
+    <tr><td>Straggler / makespan</td><td>最重 rank 决定整层耗时</td><td>EP 同步 + 负载 skew</td><td>其余 rank 空转，吞吐被最慢卡锁死</td><td>实时精确负载均衡（placement / dispatch / 精度）</td><td><a href="https://arxiv.org/abs/2606.04101" target="_blank">UltraEP</a>、<a href="https://arxiv.org/abs/2608.13057" target="_blank">TEMPO</a>、EPLB</td></tr>
+    <tr><td>小 batch grouped GEMM 低效</td><td>专家 token 少时算力利用率低</td><td>权重流式（memory-bound 地板）+ 128-token M-tile padding</td><td>按 token 拆分专家反而制造额外 padding</td><td>makespan-aware dispatch（按真实耗时而非 token 数）</td><td><a href="https://arxiv.org/abs/2608.13057" target="_blank">TEMPO</a></td></tr>
+    <tr><td>副本计算冗余</td><td>复制专家增加额外计算</td><td>冗余副本作为物理实例</td><td>控制面开销抵消均衡收益</td><td>只在有用时物化副本（quota-driven）</td><td><a href="https://arxiv.org/abs/2606.04101" target="_blank">UltraEP</a>、<a href="https://arxiv.org/abs/2603.28768" target="_blank">CRAFT</a></td></tr>
+  </tbody>
+</table>
+
+<h4>3.3.3 内存层（显存与 offload）</h4>
+<table>
+  <thead><tr><th>问题</th><th>现象</th><th>根因</th><th>影响</th><th>解法方向</th><th>代表工作</th></tr></thead>
+  <tbody>
+    <tr><td>权重副本膨胀显存</td><td>热专家被复制到多个 rank</td><td>复制热专家提升并行度</td><td>挤占 KV cache 与激活空间</td><td>复制 + 量化、内存预算下的容量规划</td><td><a href="https://arxiv.org/abs/2602.19938" target="_blank">R&amp;Q</a>、<a href="https://arxiv.org/abs/2603.28768" target="_blank">CRAFT</a>、<a href="https://arxiv.org/abs/2607.08782" target="_blank">Director</a></td></tr>
+    <tr><td>激活峰值</td><td>过载 rank 的激活缓冲爆掉</td><td>负载 skew 的接收端热点</td><td>OOM 风险，训练被迫开 activation checkpoint</td><td>摊平接收端热点</td><td><a href="https://arxiv.org/abs/2606.04101" target="_blank">UltraEP</a></td></tr>
+  </tbody>
+</table>
+
+<h4>3.3.4 控制面与调度</h4>
+<table>
+  <thead><tr><th>问题</th><th>现象</th><th>根因</th><th>影响</th><th>解法方向</th><th>代表工作</th></tr></thead>
+  <tbody>
+    <tr><td>放置 / 求解开销</td><td>每次 rebalance 要解优化问题</td><td>专家放置是 NP-hard / LP</td><td>求解落在关键路径</td><td>快启发式、离关键路径求解</td><td><a href="https://arxiv.org/abs/2608.13057" target="_blank">TEMPO</a>（~2ms）、<a href="https://arxiv.org/abs/2606.04101" target="_blank">UltraEP</a>（&lt;100µs）、<a href="https://arxiv.org/abs/2607.08782" target="_blank">Director</a>（(1+ε)）</td></tr>
+    <tr><td>迁移开销在关键路径</td><td>搬专家权重拖慢本层</td><td>routing 之后才知道真实负载</td><td>迁移与 all-to-all 争带宽</td><td>预测预路由、迁移与 attention / compute 重叠</td><td><a href="https://arxiv.org/abs/2608.14205" target="_blank">FreeBalance</a>、<a href="https://arxiv.org/abs/2607.08782" target="_blank">Director</a></td></tr>
+    <tr><td>负载预测滞后</td><td>历史统计跟不上流量变化</td><td>非平稳负载（多任务、流式、多模态）</td><td>放置失准甚至负优化</td><td>门控后精确负载、残差流预测</td><td><a href="https://arxiv.org/abs/2606.04101" target="_blank">UltraEP</a>、<a href="https://arxiv.org/abs/2608.14205" target="_blank">FreeBalance</a>、EPLB</td></tr>
+    <tr><td>评估口径失真</td><td>mock token 高估失衡最多 2.35×</td><td>合成 token 不是真实路由</td><td>系统按错误负载画像设计</td><td>真实数据校准、mock / real 双报告</td><td><a href="https://arxiv.org/abs/2605.20982" target="_blank">DODOCO</a></td></tr>
+  </tbody>
+</table>
+
+<h4>3.3.5 硬件拓扑与异构部署</h4>
+<table>
+  <thead><tr><th>问题</th><th>现象</th><th>根因</th><th>影响</th><th>解法方向</th><th>代表工作</th></tr></thead>
+  <tbody>
+    <tr><td>scale-up 域限制</td><td>EP 组放不进单机 NVLink 域</td><td>专家多而单机卡少</td><td>均衡下限大于 1，跨节点迁移昂贵</td><td>rack-scale node（RSN）扩展 scale-up 域</td><td><a href="https://arxiv.org/abs/2606.04101" target="_blank">UltraEP</a></td></tr>
+    <tr><td>异构硬件</td><td>不同 GPU 代际行为不同</td><td>硬件代差、微架构差异</td><td>单一策略不通用，收益边界移动</td><td>黑盒标定 cost model、phase diagram</td><td><a href="https://arxiv.org/abs/2608.13057" target="_blank">TEMPO</a></td></tr>
+  </tbody>
+</table>
+
+<p>上表的完整论文链接见第 6 节。需要强调三点：第一，straggler 是跨层的共同结果，不是单一原因——通信集中、计算偏斜、内存热点会互相放大；第二，2026 年方案的共同风格是“先给 cost model / phase diagram，判断能不能赢再动手”，而非无条件宣称均衡更好；第三，这些论文多为预印本，进入生产前需复现。</p>
 
 <h2 id="s4">4. 负载均衡前沿论文</h2>
 
@@ -777,11 +820,46 @@ flowchart TB
       <td><a href="https://arxiv.org/abs/2602.19938" target="_blank">arXiv:2602.19938</a></td>
     </tr>
     <tr>
+      <td>Cost-Aware Expert Replication（CRAFT）</td>
+      <td>2026</td>
+      <td>逐层估算每个 replica 的均衡收益，做分层 multiple-choice knapsack；容量感知放置</td>
+      <td>相对 EPLB 用最多 7.25× 更少 replicas 达到同等均衡，吞吐平均 1.14×、最高 1.2×</td>
+      <td><a href="https://arxiv.org/abs/2603.28768" target="_blank">arXiv:2603.28768</a></td>
+    </tr>
+    <tr>
       <td>ReaLB</td>
       <td>2026</td>
       <td>按 EP rank 动态调整专家计算精度，利用 FP4 Tensor Core</td>
       <td>多模态 MoE 1.10×–1.32× 加速，平均精度下降 &lt;1%</td>
       <td><a href="https://arxiv.org/abs/2604.19503" target="_blank">arXiv:2604.19503</a></td>
+    </tr>
+    <tr>
+      <td>DODOCO</td>
+      <td>2026</td>
+      <td>跨架构诊断 AlltoAll dispatch 与负载 skew，验证 mock token 与 EP scaling 两个假设</td>
+      <td>mock token 高估失衡最多 2.35×；扩大 EP 度不改变 per-expert 负载集中度</td>
+      <td><a href="https://arxiv.org/abs/2605.20982" target="_blank">arXiv:2605.20982</a></td>
+    </tr>
+    <tr>
+      <td>DIRECTOR</td>
+      <td>2026</td>
+      <td>预测 incoming request 的专家激活，在线迁移，迁移安排在 compute-bound 阶段</td>
+      <td>端到端延迟下降 11–55%；容量约束下 (1+ε) 近似</td>
+      <td><a href="https://arxiv.org/abs/2607.08782" target="_blank">arXiv:2607.08782</a></td>
+    </tr>
+    <tr>
+      <td>CAP（Communication-Aware Placement &amp; Pruning）</td>
+      <td>2026</td>
+      <td>co-activation 同卡放置减少 all-to-all 目的地数，联合通信感知剪枝</td>
+      <td>吞吐 1.23–1.86×，给出 compute / communication 帕累托谱</td>
+      <td><a href="https://arxiv.org/abs/2607.05116" target="_blank">arXiv:2607.05116</a></td>
+    </tr>
+    <tr>
+      <td>FreeBalance</td>
+      <td>2026</td>
+      <td>用前一层残差流预测下一层路由，按 attention 时长预算做 pairwise expert swap</td>
+      <td>max/mean rank load 降 32.8%，prefill latency 降 13.1%；迁移与 attention 重叠</td>
+      <td><a href="https://arxiv.org/abs/2608.14205" target="_blank">arXiv:2608.14205</a></td>
     </tr>
   </tbody>
 </table>
@@ -907,6 +985,11 @@ flowchart TB
     <li><a href="https://arxiv.org/abs/2605.15403" target="_blank">φ-Balancing — arXiv:2605.15403</a></li>
     <li><a href="https://arxiv.org/abs/2606.04101" target="_blank">UltraEP — arXiv:2606.04101</a></li>
     <li><a href="https://arxiv.org/abs/2608.13057" target="_blank">TEMPO — arXiv:2608.13057</a></li>
+    <li><a href="https://arxiv.org/abs/2603.28768" target="_blank">CRAFT: Cost-Aware Expert Replication — arXiv:2603.28768</a></li>
+    <li><a href="https://arxiv.org/abs/2605.20982" target="_blank">DODOCO: Diagnosing Overhead in Dispatch Operations — arXiv:2605.20982</a></li>
+    <li><a href="https://arxiv.org/abs/2607.08782" target="_blank">DIRECTOR: Online Proactive Expert Placement — arXiv:2607.08782</a></li>
+    <li><a href="https://arxiv.org/abs/2607.05116" target="_blank">CAP: Communication-Aware Placement &amp; Pruning — arXiv:2607.05116</a></li>
+    <li><a href="https://arxiv.org/abs/2608.14205" target="_blank">FreeBalance: Residual Workload Prediction — arXiv:2608.14205</a></li>
   </ul>
 </div>
 
