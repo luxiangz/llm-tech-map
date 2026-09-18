@@ -36,7 +36,7 @@ description: 面向大模型方向的完整技术知识目录，覆盖从数学�
 - [MoE 基础、演进、问题与负载均衡前沿综述 —— 经典 aux loss 六步拆解 × 均衡度指标口径分析](docs/moe-ep/moe-load-balancing-report.html)
 
 ### 交互式工具
-- [LLM-Viewer —— LLM 网络结构可视化 × Roofline 性能分析（纯浏览器端，无需后端）](analyzer/llmviewer/)
+- [LLM-Viewer —— LLM 网络结构可视化 × Roofline 性能分析（纯浏览器端，无需后端；24 个模型：DeepSeek-V2/V3/R1 的 MLA+MoE、GLM-4/4.5/4.6、Llama-2、OPT 等）](analyzer/llmviewer/)
 
 ## 学习路径建议
 
