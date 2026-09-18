@@ -41,6 +41,7 @@
 - [方案深度解析](https://luxiangz.github.io/llm-tech-map/docs/moe-ep/moe-ep-overview.html)
 - [源码级对比分析](https://luxiangz.github.io/llm-tech-map/docs/moe-ep/moe-ep-code-analysis.html)
 - [UltraEP 深度阅读笔记](https://luxiangz.github.io/llm-tech-map/docs/moe-ep/ultraep-deep-reading.html)
+- [MoE 基础、演进、问题与负载均衡前沿](https://luxiangz.github.io/llm-tech-map/docs/moe-ep/moe-load-balancing-report.html)
 - [TEMPO 深度阅读笔记](https://luxiangz.github.io/llm-tech-map/docs/moe-ep/tempo-deep-reading.html)
 
 ## 仓库结构
