@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>METRO 深度阅读笔记 —— memory-bound decode 下均衡激活专家而非 token</title>
+<!-- 霞鹜文楷：开源可商用的中文楷体风格字体；加载失败时自动回退到微软雅黑 -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/lxgw-wenkai-webfont@1.7.0/style.css">
+<style>
+body { font-family: "LXGW WenKai", "Microsoft YaHei", "PingFang SC", "Segoe UI", sans-serif; font-size: 17.5px; line-height: 1.85; letter-spacing: 0.01em; max-width: 1080px; margin: 40px auto; padding: 0 28px; color: #1f2328; background: #fff; }
+h1, h2, h3, h4, .kicker { font-family: "Microsoft YaHei", "PingFang SC", sans-serif; }
+h1 { font-size: 2.0em; border-bottom: 2px solid #e5e7eb; padding-bottom: .35em; }
+h2 { font-size: 1.45em; border-bottom: 1px solid #e5e7eb; padding-bottom: .2em; margin-top: 2em; }
+h3, h4, h5, h6 { margin-top: 1.6em; }
+a { color: #0969da; text-decoration: none; }
+a:hover { text-decoration: underline; }
+code { background: #f6f8fa; padding: .12em .35em; border-radius: 4px; font-family: "Cascadia Code", Consolas, "Microsoft YaHei", monospace; font-size: .92em; }
+pre { background: #f6f8fa; padding: 16px; border-radius: 8px; overflow: auto; line-height: 1.45; }
+pre code { background: none; padding: 0; }
+table { border-collapse: collapse; width: 100%; margin: 1.2em 0; display: block; overflow-x: auto; }
+th, td { border: 1px solid #d0d7de; padding: 8px 10px; text-align: left; vertical-align: top; }
+th { background: #f6f8fa; font-family: "Microsoft YaHei", "PingFang SC", sans-serif; }
+blockquote { margin: 1em 0; padding: .6em 1em; border-left: 4px solid #d0d7de; color: #57606a; background: #f6f8fa; }
+hr { border: none; border-top: 1px solid #d8dee4; margin: 2em 0; }
+.formula { background: #f6f8fa; padding: 12px 16px; border-radius: 8px; overflow-x: auto; margin: 1em 0; }
+ul, ol { padding-left: 1.8em; }
+.ev { display: inline-block; font-size: .78em; font-weight: 700; border-radius: 4px; padding: 0 .45em; margin-left: .3em; vertical-align: 1px; font-family: "Microsoft YaHei", sans-serif; }
+.ev-v { background: #dafbe1; color: #116329; }
+.ev-r { background: #fff8c5; color: #7d4e00; }
+.ev-u { background: #ffebe9; color: #82071e; }
+.mermaid { text-align: center; margin: 1.4em 0; }
+.figcaption { margin: .4em 0 1.2em; color: #57606a; font-size: .92em; text-align: center; }
+.qa { border: 1px solid #e5e7eb; border-radius: 10px; padding: 4px 20px 12px; margin: 1.6em 0; background: #fcfdfe; }
+.qa > h3 { border-bottom: 1px dashed #d8dee4; padding-bottom: .3em; margin-top: 1.2em; }
+.kicker { display: block; color: #57606a; font-size: .95em; margin-bottom: .4em; }
+</style>
+<script>
+window.MathJax = {
+  tex: {
+    inlineMath: [['$', '$']],
+    displayMath: [['$$', '$$'], ['\\[', '\\]']],
+    processEscapes: false
+  },
+  svg: { fontCache: 'global' }
+};
+</script>
+<script>
+(function () {
+  var sources = [
+    "../../assets/lib/mathjax-tex-svg.js",
+    "https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js",
+    "https://cdn.bootcdn.net/ajax/libs/mathjax/3.2.2/es5/tex-svg.js",
+    "https://cdn.staticfile.org/mathjax/3.2.2/es5/tex-svg.js",
+    "https://unpkg.com/mathjax@3/es5/tex-svg.js"
+  ];
+  function load(i) {
+    if (i >= sources.length) {
+      var node = document.getElementById("mathjax-load-fail");
+      if (node) node.style.display = "block";
+      return;
+    }
+    var s = document.createElement("script");
+    s.src = sources[i];
+    s.onerror = function () { load(i + 1); };
+    document.head.appendChild(s);
+  }
+  load(0);
+})();
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+<script>mermaid.initialize({ startOnLoad: true, theme: "neutral", fontFamily: '"Microsoft YaHei", "PingFang SC", sans-serif' });</script>
+</head>
+<body>
+<a href="https://luxiangz.github.io/llm-tech-map/" style="position:fixed;top:12px;right:14px;z-index:99;background:#f6f7f9;border:1px solid #e2e5ea;border-radius:999px;padding:4px 12px;font-size:14px;color:#2c5fa8;text-decoration:none;box-shadow:0 1px 4px rgba(0,0,0,.08)">← 技术地图首页</a>
+<div id="mathjax-load-fail" style="display:none;position:fixed;top:12px;left:14px;z-index:99;background:#fff4e5;border:1px solid #e8b04b;color:#8a5300;border-radius:8px;padding:8px 12px;font-size:13px">公式渲染组件未能加载，当前显示的是 LaTeX 源码。</div>
+
+<span class="kicker">MoE EP 负载均衡系列 · 深度阅读之五（METRO）· 2026-09-23</span>
+<h1>METRO 深度阅读笔记 —— memory-bound decode 下「均衡激活专家，而非 token」</h1>
+
+<p><strong>阅读对象：</strong><a href="https://arxiv.org/abs/2512.09277" target="_blank">METRO（Minimum Expert Token ROuting）</a>，论文《Efficient MoE Serving in the Memory-Bound Regime: Balance Activated Experts, Not Tokens》（Yale × Princeton × CMU × NVIDIA，2025-12，arXiv:2512.09277）。一句话：decode 是访存受限的，每步耗时由「这张卡加载几份专家权重」决定——那么路由该均衡的是<strong>激活专家数</strong>，不是 token 数；METRO 让每个专家的 token 全部走<strong>单一副本</strong>，贪心最小化每 GPU 激活副本数，固定 SLO 下 decode 吞吐最高达 EPLB 的 <strong>4.11×</strong>。</p>
+<p><strong>证据标注：</strong><span class="ev ev-v">V</span> = 一手核对（论文原文，2026-09-23 抓取 arXiv HTML 版）；<span class="ev ev-r">R</span> = 合理推断。注意：2025 年末预印本，尚待同行评审，结论以正式版与复现为准。</p>
+<p><strong>系列定位：</strong>与 <a href="eplb-deep-reading.html">EPLB</a>（放置/复制）、<a href="tempo-deep-reading.html">TEMPO</a>（makespan 感知调度）同谱系；METRO 被 TEMPO 引用为「memory-bound 方向的互补工作」。</p>
+
+<h2>1. 一页结论</h2>
+<ul>
+<li><strong>洞察：</strong>MoE decode 的操作强度比 H100/B200 的算力/带宽比低最多两个数量级——运行时由<strong>专家权重的加载量</strong>决定。即使 batch 达 11K token，激活值的内存流量也不到专家权重流量的 0.6%。所以一张卡上 MoE 层的耗时 ≈ 该卡<strong>被激活的专家副本数</strong> × 单份加载时间，token 数几乎不影响。<span class="ev ev-v">V</span></li>
+<li><strong>EPLB 在 decode 上的反作用：</strong>token 均衡把每个热专家的 token 均摊到所有副本 → 每张卡都被迫激活副本。实测 1.5× 复制下 EPLB 使每 batch 激活专家数 +30%、decode 延迟 +14%、吞吐 −10%；复制率越高越糟。<span class="ev ev-v">V</span></li>
+<li><strong>方案：</strong>min-exp-routing——为每个有 token 的专家选<strong>一个</strong>副本（Lemma 1 证明整路由不劣），使每 GPU 激活副本数最小化。贪心实现（锁 + 选计数最小的卡）在单 SM 上微秒级完成，比最优解（二分 + 二部图匹配，116–290 µs，太贵）最多差 10.9%，但比 EPLB 路由最多低 42.3%。<span class="ev ev-v">V</span></li>
+<li><strong>工程闭环：</strong>top-k 前用 all-gather 替代 all-to-all 让每卡看到全局 token（NVLink 上 2MB ≈ 3 µs，可忽略）→ 全量 top-k → 贪心选副本 → dispatch。集成进 vLLM 的 decode CUDA Graph，零额外 kernel launch；不改 top-k、不改放置/复制、不改权重、无需重训。<span class="ev ev-v">V</span></li>
+<li><strong>效果：</strong>真实 vLLM 8×A100：decode 延迟 −1.9%～−21.8%、吞吐 +0.7%～+21%；固定 SLO 下（batch 可放大至 4×）吞吐 1.98×–4.11× EPLB；PD 分离下仍比无复制好 4.3–5.0%。<span class="ev ev-v">V</span></li>
+<li><strong>边界：</strong>只对 decode 换路由（prefill 仍走 EPLB 均分）；batch ≤ 64 的极低延迟场景网络延迟主导、全 TP 反而最优，EP 均衡失去意义。<span class="ev ev-v">V</span></li>
+</ul>
+
+<h2>2. 背景：decode 为什么是 memory-bound，以及这意味着什么</h2>
+<p>论文的证据链（全部一手核对）：<span class="ev ev-v">V</span></p>
+<ol>
+<li>batch &lt; 64 时 MoE decode 的可达操作强度比 H100/B200 的机器平衡点低<strong>两个数量级</strong>；batch 1024 时仍低 47%～3 倍。三个趋势叠加：MoE 稀疏化让权重跨 token 复用变少、长上下文压缩 batch、新 GPU 算力/带宽比继续上升。</li>
+<li>解析模型：decode batch 即使 11K token，激活值流量 &lt; 专家权重流量的 0.6%——「计算多少 token」几乎免费，「加载多少份权重」才是时间主体。</li>
+<li>推论：$\text{耗时}(\text{GPU}_g) \approx \sum_{i \in \text{激活}} \text{加载时间}(E_i)$，均衡目标应是激活副本数 $\lambda_g = \sum_i y_{i,g}$，而非 token 数。</li>
+</ol>
+
+<h2>3. 核心洞察：token 均衡在 decode 下是「负优化」</h2>
+
+<div class="mxgraph" style="max-width:100%;border:1px solid #e5e7eb;border-radius:10px;background:#fff" data-mxgraph='{&quot;xml&quot;: &quot;&lt;mxfile host=\&quot;app.diagrams.net\&quot; pages=\&quot;1\&quot;&gt;&lt;diagram id=\&quot;metro_example\&quot; name=\&quot;玩具例子：EPLB vs METRO\&quot;&gt;&lt;mxGraphModel dx=\&quot;1600\&quot; dy=\&quot;900\&quot; grid=\&quot;1\&quot; gridSize=\&quot;10\&quot; guides=\&quot;1\&quot; tooltips=\&quot;1\&quot; connect=\&quot;1\&quot; arrows=\&quot;1\&quot; fold=\&quot;1\&quot; page=\&quot;1\&quot; pageScale=\&quot;1\&quot; pageWidth=\&quot;1500\&quot; pageHeight=\&quot;900\&quot; math=\&quot;1\&quot; shadow=\&quot;0\&quot;&gt;\n      &lt;root&gt;\n        &lt;mxCell id=\&quot;0\&quot; /&gt;\n        &lt;mxCell id=\&quot;1\&quot; parent=\&quot;0\&quot; /&gt;\n        &lt;mxCell id=\&quot;t1\&quot; value=\&quot;玩具例子：2 GPU × 4 槽位，专家 E2 有 2 副本（GPU0、GPU1 各一份），6 个 token 要去 E2\&quot; style=\&quot;text;html=1;fontSize=18;fontStyle=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;\&quot; vertex=\&quot;1\&quot; parent=\&quot;1\&quot;&gt;&lt;mxGeometry x=\&quot;150\&quot; y=\&quot;16\&quot; width=\&quot;1200\&quot; height=\&quot;32\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;gA\&quot; value=\&quot;EPLB 路由：token 均分到所有副本（token 均衡目标）\&quot; style=\&quot;rounded=1;whiteSpace=wrap;html=1;verticalAlign=top;fontStyle=1;fillColor=#f5f5f5;strokeColor=#666666;\&quot; vertex=\&quot;1\&quot; parent=\&quot;1\&quot;&gt;&lt;mxGeometry x=\&quot;80\&quot; y=\&quot;80\&quot; width=\&quot;620\&quot; height=\&quot;330\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;gA0\&quot; value=\&quot;GPU 0\&quot; style=\&quot;rounded=1;whiteSpace=wrap;html=1;verticalAlign=top;fontStyle=1;fillColor=#dae8fc;strokeColor=#6c8ebf;\&quot; vertex=\&quot;1\&quot; parent=\&quot;1\&quot;&gt;&lt;mxGeometry x=\&quot;110\&quot; y=\&quot;130\&quot; width=\&quot;260\&quot; height=\&quot;132\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;gA0e1\&quot; value=\&quot;E1（闲）\&quot; style=\&quot;rounded=0;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#999999;fontSize=11;\&quot; vertex=\&quot;1\&quot; parent=\&quot;1\&quot;&gt;&lt;mxGeometry x=\&quot;126\&quot; y=\&quot;170\&quot; width=\&quot;105\&quot; height=\&quot;42\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;gA0e2\&quot; value=\&quot;E2 副本&amp;lt;br&amp;gt;收 3 token\&quot; style=\&quot;rounded=0;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=11;\&quot; vertex=\&quot;1\&quot; parent=\&quot;1\&quot;&gt;&lt;mxGeometry x=\&quot;241\&quot; y=\&quot;170\&quot; width=\&quot;105\&quot; height=\&quot;42\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;gA0e3\&quot; value=\&quot;E3（闲）\&quot; style=\&quot;rounded=0;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#999999;fontSize=11;\&quot; vertex=\&quot;1\&quot; parent=\&quot;1\&quot;&gt;&lt;mxGeometry x=\&quot;126\&quot; y=\&quot;220\&quot; width=\&quot;105\&quot; height=\&quot;36\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;gA0e4\&quot; value=\&quot;E4（闲）\&quot; style=\&quot;rounded=0;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#999999;fontSize=11;\&quot; vertex=\&quot;1\&quot; parent=\&quot;1\&quot;&gt;&lt;mxGeometry x=\&quot;241\&quot; y=\&quot;220\&quot; width=\&quot;105\&quot; height=\&quot;36\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;gA1\&quot; value=\&quot;GPU 1\&quot; style=\&quot;rounded=1;whiteSpace=wrap;html=1;verticalAlign=top;fontStyle=1;fillColor=#dae8fc;strokeColor=#6c8ebf;\&quot; vertex=\&quot;1\&quot; parent=\&quot;1\&quot;&gt;&lt;mxGeometry x=\&quot;410\&quot; y=\&quot;130\&quot; width=\&quot;260\&quot; height=\&quot;132\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;gA1e1\&quot; value=\&quot;E5（闲）\&quot; style=\&quot;rounded=0;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#999999;fontSize=11;\&quot; vertex=\&quot;1\&quot; parent=\&quot;1\&quot;&gt;&lt;mxGeometry x=\&quot;426\&quot; y=\&quot;170\&quot; width=\&quot;105\&quot; height=\&quot;42\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;gA1e2\&quot; value=\&quot;E2 副本&amp;lt;br&amp;gt;收 3 token\&quot; style=\&quot;rounded=0;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=11;\&quot; vertex=\&quot;1\&quot; parent=\&quot;1\&quot;&gt;&lt;mxGeometry x=\&quot;541\&quot; y=\&quot;170\&quot; width=\&quot;105\&quot; height=\&quot;42\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;gA1e3\&quot; value=\&quot;E7（闲）\&quot; style=\&quot;rounded=0;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#999999;fontSize=11;\&quot; vertex=\&quot;1\&quot; parent=\&quot;1\&quot;&gt;&lt;mxGeometry x=\&quot;426\&quot; y=\&quot;220\&quot; width=\&quot;105\&quot; height=\&quot;36\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;gA1e4\&quot; value=\&quot;E8（闲）\&quot; style=\&quot;rounded=0;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#999999;fontSize=11;\&quot; vertex=\&quot;1\&quot; parent=\&quot;1\&quot;&gt;&lt;mxGeometry x=\&quot;541\&quot; y=\&quot;220\&quot; width=\&quot;105\&quot; height=\&quot;36\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;gAres\&quot; value=\&quot;结果：token 完美均衡（每卡 3）——但&amp;lt;b&amp;gt;两张卡都被迫激活 E2 副本&amp;lt;br&amp;gt;= 每卡多加载一份完整专家权重&amp;lt;/b&amp;gt;&amp;lt;br&amp;gt;复制率越高膨胀越重：1.5× 复制下 EPLB 激活数 +30% → decode 延迟 +14% → 吞吐 -10%\&quot; style=\&quot;rounded=1;whiteSpace=wrap;html=1;align=left;spacing=10;fillColor=#fff2cc;strokeColor=#d6b656;\&quot; vertex=\&quot;1\&quot; parent=\&quot;1\&quot;&gt;&lt;mxGeometry x=\&quot;110\&quot; y=\&quot;290\&quot; width=\&quot;560\&quot; height=\&quot;100\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;gB\&quot; value=\&quot;METRO 路由：全部 token 走单一副本（激活专家数目标）\&quot; style=\&quot;rounded=1;whiteSpace=wrap;html=1;verticalAlign=top;fontStyle=1;fillColor=#f5f5f5;strokeColor=#666666;\&quot; vertex=\&quot;1\&quot; parent=\&quot;1\&quot;&gt;&lt;mxGeometry x=\&quot;790\&quot; y=\&quot;80\&quot; width=\&quot;620\&quot; height=\&quot;330\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;gB0\&quot; value=\&quot;GPU 0\&quot; style=\&quot;rounded=1;whiteSpace=wrap;html=1;verticalAlign=top;fontStyle=1;fillColor=#dae8fc;strokeColor=#6c8ebf;\&quot; vertex=\&quot;1\&quot; parent=\&quot;1\&quot;&gt;&lt;mxGeometry x=\&quot;820\&quot; y=\&quot;130\&quot; width=\&quot;260\&quot; height=\&quot;132\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;gB0e1\&quot; value=\&quot;E1（闲）\&quot; style=\&quot;rounded=0;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#999999;fontSize=11;\&quot; vertex=\&quot;1\&quot; parent=\&quot;1\&quot;&gt;&lt;mxGeometry x=\&quot;836\&quot; y=\&quot;170\&quot; width=\&quot;105\&quot; height=\&quot;42\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;gB0e2\&quot; value=\&quot;E2 副本&amp;lt;br&amp;gt;收 6 token\&quot; style=\&quot;rounded=0;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=11;fontStyle=1;\&quot; vertex=\&quot;1\&quot; parent=\&quot;1\&quot;&gt;&lt;mxGeometry x=\&quot;951\&quot; y=\&quot;170\&quot; width=\&quot;105\&quot; height=\&quot;42\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;gB0e3\&quot; value=\&quot;E3（闲）\&quot; style=\&quot;rounded=0;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#999999;fontSize=11;\&quot; vertex=\&quot;1\&quot; parent=\&quot;1\&quot;&gt;&lt;mxGeometry x=\&quot;836\&quot; y=\&quot;220\&quot; width=\&quot;105\&quot; height=\&quot;36\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;gB0e4\&quot; value=\&quot;E4（闲）\&quot; style=\&quot;rounded=0;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#999999;fontSize=11;\&quot; vertex=\&quot;1\&quot; parent=\&quot;1\&quot;&gt;&lt;mxGeometry x=\&quot;951\&quot; y=\&quot;220\&quot; width=\&quot;105\&quot; height=\&quot;36\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;gB1\&quot; value=\&quot;GPU 1\&quot; style=\&quot;rounded=1;whiteSpace=wrap;html=1;verticalAlign=top;fontStyle=1;fillColor=#dae8fc;strokeColor=#6c8ebf;\&quot; vertex=\&quot;1\&quot; parent=\&quot;1\&quot;&gt;&lt;mxGeometry x=\&quot;1120\&quot; y=\&quot;130\&quot; width=\&quot;260\&quot; height=\&quot;132\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;gB1e1\&quot; value=\&quot;E5（闲）\&quot; style=\&quot;rounded=0;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#999999;fontSize=11;\&quot; vertex=\&quot;1\&quot; parent=\&quot;1\&quot;&gt;&lt;mxGeometry x=\&quot;1136\&quot; y=\&quot;170\&quot; width=\&quot;105\&quot; height=\&quot;42\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;gB1e2\&quot; value=\&quot;E2 副本&amp;lt;b&amp;gt;不激活&amp;lt;/b&amp;gt;&amp;lt;br&amp;gt;权重不加载\&quot; style=\&quot;rounded=0;whiteSpace=wrap;html=1;fillColor=#e8e8e8;strokeColor=#999999;fontColor=#999999;fontSize=11;\&quot; vertex=\&quot;1\&quot; parent=\&quot;1\&quot;&gt;&lt;mxGeometry x=\&quot;1251\&quot; y=\&quot;170\&quot; width=\&quot;105\&quot; height=\&quot;42\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;gB1e3\&quot; value=\&quot;E7（闲）\&quot; style=\&quot;rounded=0;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#999999;fontSize=11;\&quot; vertex=\&quot;1\&quot; parent=\&quot;1\&quot;&gt;&lt;mxGeometry x=\&quot;1136\&quot; y=\&quot;220\&quot; width=\&quot;105\&quot; height=\&quot;36\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;gB1e4\&quot; value=\&quot;E8（闲）\&quot; style=\&quot;rounded=0;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#999999;fontSize=11;\&quot; vertex=\&quot;1\&quot; parent=\&quot;1\&quot;&gt;&lt;mxGeometry x=\&quot;1251\&quot; y=\&quot;220\&quot; width=\&quot;105\&quot; height=\&quot;36\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;gBres\&quot; value=\&quot;结果：token 数不均衡（6 vs 0）——但&amp;lt;b&amp;gt;只有一张卡激活 E2&amp;lt;/b&amp;gt;&amp;lt;br&amp;gt;memory-bound 下运行时 ∝ 激活专家数：GPU1 完全不加载该权重&amp;lt;br&amp;gt;真实系统：decode 延迟 -1.9%～-21.8%，吞吐 +0.7%～+21%；固定 SLO 下吞吐 1.98×–4.11× EPLB\&quot; style=\&quot;rounded=1;whiteSpace=wrap;html=1;align=left;spacing=10;fillColor=#fff2cc;strokeColor=#d6b656;\&quot; vertex=\&quot;1\&quot; parent=\&quot;1\&quot;&gt;&lt;mxGeometry x=\&quot;820\&quot; y=\&quot;290\&quot; width=\&quot;560\&quot; height=\&quot;100\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;why\&quot; value=\&quot;为什么 token 不均衡反而更快：decode 是 memory-bound——每步耗时由「加载多少份专家权重」决定，与多几个 token 几乎无关（激活值流量 &amp;lt; 专家权重的 0.6%，即使 batch 11K）&amp;lt;br&amp;gt;EPLB 的 token 均衡假设在 compute-bound 下成立；在 memory-bound 的 decode 下恰好把「激活副本数」翻倍\&quot; style=\&quot;rounded=1;whiteSpace=wrap;html=1;align=left;spacing=10;fillColor=#f5f5f5;strokeColor=#666666;\&quot; vertex=\&quot;1\&quot; parent=\&quot;1\&quot;&gt;&lt;mxGeometry x=\&quot;80\&quot; y=\&quot;460\&quot; width=\&quot;1330\&quot; height=\&quot;90\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n      &lt;/root&gt;\n    &lt;/mxGraphModel&gt;&lt;/diagram&gt;\n&lt;/mxfile&gt;&quot;}'></div>
+<p class="figcaption">图 2 · 玩具例子：6 个 token 去有 2 副本的 E2。EPLB 均分（3+3）token 完美均衡但两卡都激活 E2；METRO 全走一份（6+0）token 不均衡但只有一卡加载权重——memory-bound 下后者更快。drawio 源文件：<a href="assets/metro-deep-reading.drawio">assets/metro-deep-reading.drawio</a>。</p>
+
+<h2>4. 形式化：min-exp-routing 与 Lemma 1</h2>
+<div class="formula">\[ \min\ \lambda \quad \text{s.t.}\ \ \sum_i y_{i,g} \le \lambda\ \forall g;\quad \sum_g x_{i,g} = T[i]\ \forall i;\quad A_{i,g}=0 \Rightarrow x_{i,g} = y_{i,g} = 0;\quad x_{i,g} \le T[i]\, y_{i,g} \]</div>
+<p>$A \in \{0,1\}^{N \times G}$ 是放置矩阵（EPLB 决定，METRO 不改），$x_{i,g}$ 是专家 $i$ 发到卡 $g$ 的 token 数，$y_{i,g}$ 指示是否激活。<strong>Lemma 1</strong>：任何可行解都能转成「每专家 token 全走单一副本」且 $\lambda$ 不增——所以整数问题安全地退化为「每专家选一个副本」。这正好是 LPLB 那个 LP 的 0/1 端点解：LPLB 允许比例分流（训练期 token 数就是目标），METRO 证明在 memory-bound 下端点解才是对的。<span class="ev ev-r">R</span></p>
+<p><strong>最优算法为什么不用：</strong>归约为带资格约束的 identical-machine 调度后，可二分 $\lambda$ + 二部图匹配求精确解。实测 CPU Dinic 116–129 µs（相对单层 FFN 时间 31–43%）、GPU push-relabel 290 µs（86–104%，问题太小喂不饱 GPU）——每层每 batch 一次的频率下完全不可接受。<span class="ev ev-v">V</span></p>
+
+<h2>5. Algorithm 1：锁保护的并行贪心</h2>
+<pre><code>初始化：每 GPU 计数器 L[g] = 0，锁 ℓ_g；y[i,g] = 0
+for 每个有 token 的专家 i（并行）:
+    G_i = { g : A[i,g] = 1 }              // i 的候选卡（放置矩阵决定）
+    按全序获取 G_i 中所有锁                // 保证原子性、避免死锁
+    g* = argmin_{g ∈ G_i} L[g]            // 贪心：去激活数最少的卡
+    y[i,g*] = 1；L[g*] += 1
+    释放所有锁</code></pre>
+<ul>
+<li>复杂度 $O(|A|)$，计数器与锁全在 shared memory（test-and-set）；并行度 = 专家数（Qwen 128、V3 256），单 SM 一个线程块足够；</li>
+<li>质量：激活数 ≤ 最优 × 1.109，且 ≤ EPLB 路由 −42.3%（上界刻画见论文 §4.4）；</li>
+<li>与 LPLB 的对称性很有意思：<strong>LPLB 求比例、精确、100 µs（训练）；METRO 求整数、近似、微秒（decode）</strong>——两个预算约束下的两种答案。</li>
+</ul>
+
+<h3>5.1 通信改造：all-gather 替代 all-to-all</h3>
+<p>贪心需要<strong>全局</strong> $T[1..N]$，而传统 EP 在 top-k 后 all-to-all、各卡只见本地 token。METRO 把顺序换成：先 all-gather 全量隐状态（decode batch 小：32 token/GPU × fp16 也才 2MB，600 GB/s NVLink 上 ~3 µs，远低于 NCCL 集合通信几十到上百 µs 的固定开销），每卡对全量 token 跑 top-k（冗余计算 &lt;1%），本地即可执行 Algorithm 1，再按结果 dispatch。<span class="ev ev-v">V</span></p>
+
+<div class="mxgraph" style="max-width:100%;border:1px solid #e5e7eb;border-radius:10px;background:#fff" data-mxgraph='{&quot;xml&quot;: &quot;&lt;mxfile host=\&quot;app.diagrams.net\&quot; pages=\&quot;1\&quot;&gt;&lt;diagram id=\&quot;metro_pipeline\&quot; name=\&quot;METRO 端到端流程\&quot;&gt;\n    &lt;mxGraphModel dx=\&quot;1600\&quot; dy=\&quot;900\&quot; grid=\&quot;1\&quot; gridSize=\&quot;10\&quot; guides=\&quot;1\&quot; tooltips=\&quot;1\&quot; connect=\&quot;1\&quot; arrows=\&quot;1\&quot; fold=\&quot;1\&quot; page=\&quot;1\&quot; pageScale=\&quot;1\&quot; pageWidth=\&quot;1540\&quot; pageHeight=\&quot;1040\&quot; math=\&quot;1\&quot; shadow=\&quot;0\&quot;&gt;\n      &lt;root&gt;\n        &lt;mxCell id=\&quot;0\&quot; /&gt;\n        &lt;mxCell id=\&quot;1\&quot; parent=\&quot;0\&quot; /&gt;\n        &lt;mxCell id=\&quot;t1\&quot; value=\&quot;METRO（decode 路径）：均衡「激活专家数」而不是 token 数 —— 每个 token 选定唯一副本，最小化每 GPU 激活副本数\&quot; style=\&quot;text;html=1;fontSize=19;fontStyle=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;\&quot; vertex=\&quot;1\&quot; parent=\&quot;1\&quot;&gt;&lt;mxGeometry x=\&quot;120\&quot; y=\&quot;16\&quot; width=\&quot;1300\&quot; height=\&quot;34\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;ph1\&quot; value=\&quot;① 通信改造：all-gather 替代 all-to-all（top-k 之前）\&quot; style=\&quot;text;html=1;fontSize=15;fontStyle=1;fontColor=#666666;strokeColor=none;fillColor=none;\&quot; vertex=\&quot;1\&quot; parent=\&quot;1\&quot;&gt;&lt;mxGeometry x=\&quot;40\&quot; y=\&quot;70\&quot; width=\&quot;460\&quot; height=\&quot;26\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;ph2\&quot; value=\&quot;② 全局信息 → 逐专家决策\&quot; style=\&quot;text;html=1;fontSize=15;fontStyle=1;fontColor=#666666;strokeColor=none;fillColor=none;\&quot; vertex=\&quot;1\&quot; parent=\&quot;1\&quot;&gt;&lt;mxGeometry x=\&quot;40\&quot; y=\&quot;360\&quot; width=\&quot;360\&quot; height=\&quot;26\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;ph3\&quot; value=\&quot;③ 按 METRO 选择的结果 dispatch\&quot; style=\&quot;text;html=1;fontSize=15;fontStyle=1;fontColor=#666666;strokeColor=none;fillColor=none;\&quot; vertex=\&quot;1\&quot; parent=\&quot;1\&quot;&gt;&lt;mxGeometry x=\&quot;40\&quot; y=\&quot;700\&quot; width=\&quot;360\&quot; height=\&quot;26\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;a1\&quot; value=\&quot;decode 隐状态（每 GPU 本地 batch ≤ 32）&amp;lt;br&amp;gt;传统：top-k 后 all-to-all dispatch，他卡 token 不可见\&quot; style=\&quot;rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;\&quot; vertex=\&quot;1\&quot; parent=\&quot;1\&quot;&gt;&lt;mxGeometry x=\&quot;60\&quot; y=\&quot;110\&quot; width=\&quot;330\&quot; height=\&quot;76\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;a2\&quot; value=\&quot;all-gather 全量隐状态&amp;lt;br&amp;gt;（NVLink 上 2MB ≈ 3 µs，&amp;lt;br&amp;gt;远低于 NCCL 集合通信固定开销）\&quot; style=\&quot;rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;\&quot; vertex=\&quot;1\&quot; parent=\&quot;1\&quot;&gt;&lt;mxGeometry x=\&quot;460\&quot; y=\&quot;110\&quot; width=\&quot;300\&quot; height=\&quot;76\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;a3\&quot; value=\&quot;每 GPU 对全量 token 跑 top-k&amp;lt;br&amp;gt;（冗余计算 &amp;lt; 1%）&amp;lt;br&amp;gt;→ 得到全局负载 T[1..N]\&quot; style=\&quot;rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;\&quot; vertex=\&quot;1\&quot; parent=\&quot;1\&quot;&gt;&lt;mxGeometry x=\&quot;830\&quot; y=\&quot;110\&quot; width=\&quot;300\&quot; height=\&quot;76\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;a4\&quot; value=\&quot;Algorithm 1（单 SM CUDA kernel，集成于 vLLM CUDA Graph，零额外 launch）&amp;lt;br&amp;gt;每个有 token 的专家 i 并行：&amp;lt;br&amp;gt;按全序锁住候选 GPU 集 {g : A[i,g]=1}&amp;lt;br&amp;gt;选 g* = argmin L[g]（激活数最少的卡）→ y[i,g*]=1, L[g*]+=1&amp;lt;br&amp;gt;复杂度 O(|A|)，计数器/锁在 shared memory\&quot; style=\&quot;rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;align=left;spacing=10;\&quot; vertex=\&quot;1\&quot; parent=\&quot;1\&quot;&gt;&lt;mxGeometry x=\&quot;500\&quot; y=\&quot;400\&quot; width=\&quot;640\&quot; height=\&quot;150\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;a5\&quot; value=\&quot;每个 token 的目标专家&amp;lt;br&amp;gt;路由到唯一选中的副本槽\&quot; style=\&quot;rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;\&quot; vertex=\&quot;1\&quot; parent=\&quot;1\&quot;&gt;&lt;mxGeometry x=\&quot;1210\&quot; y=\&quot;420\&quot; width=\&quot;250\&quot; height=\&quot;80\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;a6\&quot; value=\&quot;dispatch（all-to-all）&amp;lt;br&amp;gt;每 GPU 只激活必要副本 → 权重加载量最小\&quot; style=\&quot;rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;\&quot; vertex=\&quot;1\&quot; parent=\&quot;1\&quot;&gt;&lt;mxGeometry x=\&quot;700\&quot; y=\&quot;740\&quot; width=\&quot;360\&quot; height=\&quot;70\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;n1\&quot; value=\&quot;形式化 min-exp-routing：min λ s.t. 每 GPU 激活专家数 ≤ λ、Σ_g x[i,g]=T[i]（不丢 token）、遵守放置矩阵 A、x ≤ T·y&amp;lt;br&amp;gt;Lemma 1：最优解必是「每专家全部 token 走单一副本」→ 问题归约为选副本&amp;lt;br&amp;gt;最优算法（二分 λ + 二部图匹配）太贵：CPU Dinic 116–129 µs（占单层 FFN 31–43%）；GPU push-relabel 290 µs（86–104%）\&quot; style=\&quot;rounded=1;whiteSpace=wrap;html=1;dashed=1;fillColor=#fff2cc;strokeColor=#d6b656;align=left;spacing=10;\&quot; vertex=\&quot;1\&quot; parent=\&quot;1\&quot;&gt;&lt;mxGeometry x=\&quot;60\&quot; y=\&quot;400\&quot; width=\&quot;400\&quot; height=\&quot;190\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;n2\&quot; value=\&quot;贪心质量：激活数最多比最优高 10.9%，比 EPLB 路由低最多 42.3%\&quot; style=\&quot;text;html=1;fontSize=13;align=center;strokeColor=none;fillColor=#f2f4f8;rounded=1;\&quot; vertex=\&quot;1\&quot; parent=\&quot;1\&quot;&gt;&lt;mxGeometry x=\&quot;500\&quot; y=\&quot;570\&quot; width=\&quot;640\&quot; height=\&quot;40\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;n3\&quot; value=\&quot;prefill 路径不动：仍用 EPLB 均分路由（compute-bound，token 均衡是对的）；METRO 只换 decode\&quot; style=\&quot;rounded=1;whiteSpace=wrap;html=1;dashed=1;fillColor=#fff2cc;strokeColor=#d6b656;align=left;spacing=10;\&quot; vertex=\&quot;1\&quot; parent=\&quot;1\&quot;&gt;&lt;mxGeometry x=\&quot;1120\&quot; y=\&quot;740\&quot; width=\&quot;360\&quot; height=\&quot;70\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;ea12\&quot; style=\&quot;edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeWidth=2;strokeColor=#1c2430;\&quot; edge=\&quot;1\&quot; parent=\&quot;1\&quot; source=\&quot;a1\&quot; target=\&quot;a2\&quot;&gt;&lt;mxGeometry relative=\&quot;1\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;ea23\&quot; style=\&quot;edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeWidth=2;strokeColor=#1c2430;\&quot; edge=\&quot;1\&quot; parent=\&quot;1\&quot; source=\&quot;a2\&quot; target=\&quot;a3\&quot;&gt;&lt;mxGeometry relative=\&quot;1\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;ea34\&quot; style=\&quot;edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeWidth=2;strokeColor=#1c2430;exitX=0.5;exitY=1;entryX=0.5;entryY=0;\&quot; edge=\&quot;1\&quot; parent=\&quot;1\&quot; source=\&quot;a3\&quot; target=\&quot;a4\&quot;&gt;&lt;mxGeometry relative=\&quot;1\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;ea45\&quot; style=\&quot;edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeWidth=2;strokeColor=#1c2430;\&quot; edge=\&quot;1\&quot; parent=\&quot;1\&quot; source=\&quot;a4\&quot; target=\&quot;a5\&quot;&gt;&lt;mxGeometry relative=\&quot;1\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;ea56\&quot; style=\&quot;edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeWidth=2;strokeColor=#1c2430;exitX=0.5;exitY=1;entryX=1;entryY=0.5;\&quot; edge=\&quot;1\&quot; parent=\&quot;1\&quot; source=\&quot;a5\&quot; target=\&quot;a6\&quot;&gt;&lt;mxGeometry relative=\&quot;1\&quot; as=\&quot;geometry\&quot;&gt;&lt;Array as=\&quot;points\&quot;&gt;&lt;mxPoint x=\&quot;1335\&quot; y=\&quot;700\&quot; /&gt;&lt;mxPoint x=\&quot;1335\&quot; y=\&quot;690\&quot; /&gt;&lt;mxPoint x=\&quot;1060\&quot; y=\&quot;690\&quot; /&gt;&lt;/Array&gt;&lt;/mxGeometry&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;lg\&quot; value=\&quot;图例：蓝 = 数据；绿 = 计算/通信；红 = METRO 核心；黄 = 形式化与边界说明&amp;lt;br&amp;gt;不改 top-k、不改放置/复制（复用 EPLB）、不改权重、无需重训——纯 decode 路由层优化\&quot; style=\&quot;text;html=1;fontSize=12;fontColor=#666666;align=left;strokeColor=none;fillColor=#fafafa;rounded=1;\&quot; vertex=\&quot;1\&quot; parent=\&quot;1\&quot;&gt;&lt;mxGeometry x=\&quot;60\&quot; y=\&quot;850\&quot; width=\&quot;820\&quot; height=\&quot;56\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n      &lt;/root&gt;\n    &lt;/mxGraphModel&gt;\n  &lt;/diagram&gt;\n  &lt;/mxfile&gt;&quot;}'></div>
+<p class="figcaption">图 1 · METRO 端到端（decode 路径）：all-gather → 全局 top-k → 单 SM 贪心 → 单一副本路由；prefill 路径不动（仍 EPLB）。drawio 源文件：<a href="assets/metro-deep-reading.drawio">assets/metro-deep-reading.drawio</a>。</p>
+
+<h2>6. 与 EPLB 的组合方式</h2>
+<ul>
+<li>放置与复制<strong>完全复用 EPLB</strong>（含冗余专家机制），METRO 只替换 decode 阶段的「逻辑专家 → 物理副本」选择；</li>
+<li>prefill 是 compute-bound，token 均衡仍是对的——prefill 保留 EPLB 路由；PD 分离部署天然让两边各用各的路由；</li>
+<li>复制率越高，EPLB 的激活膨胀越重、METRO 相对收益越大；METRO 下激活数随复制率持平甚至下降——复制从「decode 负担」变回「纯红利」。<span class="ev ev-v">V</span></li>
+</ul>
+
+<h2>7. 实验数据</h2>
+<table>
+<thead><tr><th>设置</th><th>配置</th><th>关键结果</th></tr></thead>
+<tbody>
+<tr><td>真实系统（vLLM）</td><td>8 × A100-40GB（NVLink 600 GB/s）；Qwen3-30B-A3B；InstructCoder / NuminaMath；decode ≤32 token/GPU、上下文 8K</td><td>decode 延迟 −1.9%～−21.8%；吞吐 +0.7%～+21%（复制 1.125×–1.5×）；decode 密集流量 +21%、prefill 密集 +4.2%；算法开销 ≤26 µs，被 FFN 减少至 81 µs 完全吸收</td></tr>
+<tr><td>模拟器</td><td>8/16 × B200；Qwen3-235B、DeepSeek-V3；全局 decode batch 1K；HumanEval / GSM8K</td><td>与真实系统趋势一致（论文图表）；激活专家数：EPLB 随复制率上升，METRO 持平/下降</td></tr>
+<tr><td>SLO-Pareto</td><td>固定 TPOT 扫 batch</td><td>METRO 允许 batch 放大至 4× 仍满足 SLO → decode 吞吐 <strong>1.98×–4.11× EPLB</strong></td></tr>
+<tr><td>PD 分离</td><td>—</td><td>METRO 仍比「无复制」好 4.3–5.0%</td></tr>
+</tbody>
+</table>
+
+<h2>8. 边界与局限</h2>
+<ul>
+<li><strong>极低延迟 SLO（batch ≤ 64）：</strong>网络延迟主导、不再 memory-bound，全 TP（而非 EP）最优——EP 负载均衡整个问题消失；论文也未观察到 Pareto 最优的流水线并行配置；<span class="ev ev-v">V</span></li>
+<li><strong>贪心非最优：</strong>激活数最多超最优 10.9%（论文给出刻画）；上界仍随复制率非降；<span class="ev ev-v">V</span></li>
+<li><strong>非均衡耗时尚未建模：</strong>不同专家 GEMM 时间不同（与 LPLB 的局限同源），TEMPO（2026）用 max-affine 时间模型继续推进这一方向——见 <a href="tempo-deep-reading.html">TEMPO 深读</a>；<span class="ev ev-v">V</span></li>
+<li><strong>预印本警示：</strong>2025-12 提交、未见正式发表与第三方复现，数字采信需谨慎。</li>
+</ul>
+
+<h2>9. 全家福：四个均衡器的位置图</h2>
+<table>
+<thead><tr><th>方案</th><th>阶段</th><th>均衡什么</th><th>怎么均衡</th><th>文档</th></tr></thead>
+<tbody>
+<tr><td>EPLB</td><td>放置（分钟级）</td><td>token 期望负载</td><td>复制 + 贪心装箱（搬权重）</td><td><a href="eplb-deep-reading.html">深读</a></td></tr>
+<tr><td>LPLB</td><td>训练逐 batch</td><td>组内 max token 负载</td><td>冗余边上的 LP 分流比（单 SM 内点法）</td><td><a href="lplb-deep-reading.html">深读</a></td></tr>
+<tr><td>METRO</td><td>decode 逐 batch</td><td>每 GPU <strong>激活专家数</strong></td><td>单一副本贪心选择（锁 + argmin）</td><td>本文</td></tr>
+<tr><td>TEMPO</td><td>训练/服务调度</td><td>makespan（真实时间）</td><td>max-affine 时间模型 + 感知 dispatch</td><td><a href="tempo-deep-reading.html">深读</a></td></tr>
+</tbody>
+</table>
+
+<h2>10. 快问快答</h2>
+<div class="qa">
+<h3>Q1：METRO 会改变模型输出吗？</h3>
+<p>不会。top-k 选哪些专家、专家权重都不动；变的只是同一逻辑专家的多副本里 token 走哪份——副本数学等价。无重训、无精度影响。<span class="ev ev-v">V</span></p>
+<h3>Q2：token 不均衡了，compute-bound 的场合怎么办？</h3>
+<p>所以 METRO 只换 decode 路由，prefill 保留 EPLB 均分——两个 regime 各用各的正确目标。这也是「PD 分离」不只是资源隔离、更是<strong>路由策略分离</strong>的论据。<span class="ev ev-r">R</span></p>
+<h3>Q3：为什么不像 LPLB 那样按比例分流？</h3>
+<p>比例分流会同时激活两份权重（0.6 那份也要加载整个专家）——在 memory-bound 下比例就是浪费。Lemma 1 证明了端点解（全走一份）不会更差，这是 LPLB 与 METRO 最深的分歧点：token 数目标 → 内点最优在比例；权重加载目标 → 最优在端点。<span class="ev ev-v">V</span></p>
+<h3>Q4：贪心的锁会不会成为瓶颈？</h3>
+<p>锁只在同候选卡集的专家之间竞争，粒度是卡级计数器；专家数（128–256）远小于 token 数，单 SM 足够。论文未报告锁争用成为瓶颈。<span class="ev ev-r">R</span></p>
+<h3>Q5：与 TEMPO 什么关系？</h3>
+<p>正交互补：METRO 均衡「激活专家个数」（每份耗时同质假设）；TEMPO 建模「每份耗时不齐」（HBM streaming vs grouped GEMM 两种 regime）做 makespan 感知调度，并在论文中把 METRO 作为相关正交工作引用。<span class="ev ev-v">V</span></p>
+</div>
+
+<h2>11. 参考链接</h2>
+<ul>
+<li>论文：<a href="https://arxiv.org/abs/2512.09277" target="_blank">Efficient MoE Serving in the Memory-Bound Regime: Balance Activated Experts, Not Tokens</a>（arXiv:2512.09277，Yanpeng Yu 等，Yale/Princeton/CMU/NVIDIA）</li>
+<li>系列：<a href="eplb-deep-reading.html">EPLB 深读</a> · <a href="lplb-deep-reading.html">LPLB 深读</a> · <a href="tempo-deep-reading.html">TEMPO 深读</a> · <a href="moe-load-balancing-report.html">负载均衡综述</a></li>
+</ul>
+
+<hr>
+<p style="color:#57606a;font-size:.9em">本文由 ZCode 整理（2026-09-23），内容逐节核对自 arXiv HTML 版原文；玩具例子图与端到端图为本文绘制（drawio 源文件 <a href="assets/metro-deep-reading.drawio">assets/metro-deep-reading.drawio</a>）。论文为 2025-12 预印本，未经同行评审，部署决策请以复现实验为准。</p>
+
+<script src="https://viewer.diagrams.net/js/viewer-static.min.js" onload="setTimeout(function(){ if (window.GraphViewer) GraphViewer.processElements(); }, 0)"></script>
+</body>
+</html>
