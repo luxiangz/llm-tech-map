@@ -34,6 +34,7 @@ description: 面向大模型方向的完整技术知识目录，覆盖从数学�
 - [UltraEP 深度阅读笔记 —— 论文 × 源码精读 × 问题详解](docs/moe-ep/ultraep-deep-reading.html)
 - [TEMPO 深度阅读笔记 —— 相图、Makespan 调度与「代理失配」](docs/moe-ep/tempo-deep-reading.html)
 - [EPLB 深度阅读笔记 —— 冗余专家 · 三步放置算法逐位推演 · vLLM/SGLang 集成](docs/moe-ep/eplb-deep-reading.html)
+- [LPLB 深度阅读笔记 —— 冗余边上的线性规划与单 SM 内点法（DeepSeek）](docs/moe-ep/lplb-deep-reading.html)
 - [MoE 基础、演进、问题与负载均衡前沿](docs/moe-ep/moe-load-balancing-report.html)
 
 ### 交互式工具

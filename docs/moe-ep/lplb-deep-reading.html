@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LPLB 深度阅读笔记 —— 冗余边上的线性规划与单 SM 内点法</title>
+<!-- 霞鹜文楷：开源可商用的中文楷体风格字体；加载失败时自动回退到微软雅黑 -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/lxgw-wenkai-webfont@1.7.0/style.css">
+<style>
+body { font-family: "LXGW WenKai", "Microsoft YaHei", "PingFang SC", "Segoe UI", sans-serif; font-size: 17.5px; line-height: 1.85; letter-spacing: 0.01em; max-width: 1080px; margin: 40px auto; padding: 0 28px; color: #1f2328; background: #fff; }
+h1, h2, h3, h4, .kicker { font-family: "Microsoft YaHei", "PingFang SC", sans-serif; }
+h1 { font-size: 2.0em; border-bottom: 2px solid #e5e7eb; padding-bottom: .35em; }
+h2 { font-size: 1.45em; border-bottom: 1px solid #e5e7eb; padding-bottom: .2em; margin-top: 2em; }
+h3, h4, h5, h6 { margin-top: 1.6em; }
+a { color: #0969da; text-decoration: none; }
+a:hover { text-decoration: underline; }
+code { background: #f6f8fa; padding: .12em .35em; border-radius: 4px; font-family: "Cascadia Code", Consolas, "Microsoft YaHei", monospace; font-size: .92em; }
+pre { background: #f6f8fa; padding: 16px; border-radius: 8px; overflow: auto; line-height: 1.45; }
+pre code { background: none; padding: 0; }
+table { border-collapse: collapse; width: 100%; margin: 1.2em 0; display: block; overflow-x: auto; }
+th, td { border: 1px solid #d0d7de; padding: 8px 10px; text-align: left; vertical-align: top; }
+th { background: #f6f8fa; font-family: "Microsoft YaHei", "PingFang SC", sans-serif; }
+blockquote { margin: 1em 0; padding: .6em 1em; border-left: 4px solid #d0d7de; color: #57606a; background: #f6f8fa; }
+hr { border: none; border-top: 1px solid #d8dee4; margin: 2em 0; }
+.formula { background: #f6f8fa; padding: 12px 16px; border-radius: 8px; overflow-x: auto; margin: 1em 0; }
+ul, ol { padding-left: 1.8em; }
+.ev { display: inline-block; font-size: .78em; font-weight: 700; border-radius: 4px; padding: 0 .45em; margin-left: .3em; vertical-align: 1px; font-family: "Microsoft YaHei", sans-serif; }
+.ev-v { background: #dafbe1; color: #116329; }
+.ev-r { background: #fff8c5; color: #7d4e00; }
+.ev-u { background: #ffebe9; color: #82071e; }
+.mermaid { text-align: center; margin: 1.4em 0; }
+.figcaption { margin: .4em 0 1.2em; color: #57606a; font-size: .92em; text-align: center; }
+.qa { border: 1px solid #e5e7eb; border-radius: 10px; padding: 4px 20px 12px; margin: 1.6em 0; background: #fcfdfe; }
+.qa > h3 { border-bottom: 1px dashed #d8dee4; padding-bottom: .3em; margin-top: 1.2em; }
+.kicker { display: block; color: #57606a; font-size: .95em; margin-bottom: .4em; }
+</style>
+<script>
+window.MathJax = {
+  tex: {
+    inlineMath: [['$', '$']],
+    displayMath: [['$$', '$$'], ['\\[', '\\]']],
+    processEscapes: false
+  },
+  svg: { fontCache: 'global' }
+};
+</script>
+<script>
+(function () {
+  var sources = [
+    "../../assets/lib/mathjax-tex-svg.js",
+    "https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js",
+    "https://cdn.bootcdn.net/ajax/libs/mathjax/3.2.2/es5/tex-svg.js",
+    "https://cdn.staticfile.org/mathjax/3.2.2/es5/tex-svg.js",
+    "https://unpkg.com/mathjax@3/es5/tex-svg.js"
+  ];
+  function load(i) {
+    if (i >= sources.length) {
+      var node = document.getElementById("mathjax-load-fail");
+      if (node) node.style.display = "block";
+      return;
+    }
+    var s = document.createElement("script");
+    s.src = sources[i];
+    s.onerror = function () { load(i + 1); };
+    document.head.appendChild(s);
+  }
+  load(0);
+})();
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+<script>mermaid.initialize({ startOnLoad: true, theme: "neutral", fontFamily: '"Microsoft YaHei", "PingFang SC", sans-serif' });</script>
+</head>
+<body>
+<a href="https://luxiangz.github.io/llm-tech-map/" style="position:fixed;top:12px;right:14px;z-index:99;background:#f6f7f9;border:1px solid #e2e5ea;border-radius:999px;padding:4px 12px;font-size:14px;color:#2c5fa8;text-decoration:none;box-shadow:0 1px 4px rgba(0,0,0,.08)">← 技术地图首页</a>
+<div id="mathjax-load-fail" style="display:none;position:fixed;top:12px;left:14px;z-index:99;background:#fff4e5;border:1px solid #e8b04b;color:#8a5300;border-radius:8px;padding:8px 12px;font-size:13px">公式渲染组件未能加载，当前显示的是 LaTeX 源码。</div>
+
+<span class="kicker">MoE EP 负载均衡系列 · 深度阅读之四（LPLB）· 2026-09-23</span>
+<h1>LPLB 深度阅读笔记 —— 冗余边上的线性规划与单 SM 内点法</h1>
+
+<p><strong>阅读对象：</strong>DeepSeek 开源的 <a href="https://github.com/deepseek-ai/LPLB" target="_blank">LPLB（Linear-Programming-Based Load Balancer）</a>——面向 <strong>MoE 训练期</strong>的逐 micro-batch 负载均衡器：在冗余专家构成的图上解一个小型线性规划，把每个热专家的 token 按最优比例分流到两个副本，求解器是一个跑在<strong>单个 SM</strong> 上的 5 次迭代内点法（~100 µs）。</p>
+<p><strong>证据标注：</strong><span class="ev ev-v">V</span> = 一手核对（2026-09-23 抓取的仓库源码/README：初始提交 2025-11-19，仅此一 commit）；<span class="ev ev-r">R</span> = 合理推断；<span class="ev ev-u">U</span> = 待核实。</p>
+<p><strong>系列定位：</strong>与 <a href="eplb-deep-reading.html">EPLB 深读</a>（推理期静态放置）、<a href="metro-deep-reading.html">METRO 深读</a>（decode 激活专家均衡）构成三部曲；LPLB 官方自述 "early research stage"，性能仍在评估，本文以源码一手核对为主。</p>
+
+<h2>1. 一页结论</h2>
+<ul>
+<li><strong>LPLB 是什么：</strong>训练期（也可用于推理）的<strong>动态</strong>负载均衡器。EPLB 用历史统计做低频静态重排，对付「持续偏热」；LPLB 在<strong>每个 micro-batch</strong> 上解一个 LP，对付「小批次随机波动」——两层互补，且 LPLB 内部直接 import EPLB 算法打底。<span class="ev ev-v">V</span></li>
+<li><strong>建模：</strong>把冗余专家看成图的<strong>边</strong>（每条边恰好连接 2 个 GPU：原件所在卡 + 副本所在卡）。LP 的自由度只有一件事：每条边上的<strong>分流比</strong> $o_{k,d} + r_{k,d} = 1$（该专家的 token 两端各承担多少）；目标是最小化 8 卡组内的<strong>最大负载</strong> $\min t$。变量数仅 $2GD + G + 2$（$G=8, D=2$ 时 36 个）。<span class="ev ev-v">V</span></li>
+<li><strong>求解器：</strong>不用 CPU/GPU 通用求解器，而是在<strong>单个 SM</strong> 上手写原始仿射尺度内点法（Dikin 类乘性更新，固定 5 次迭代），线性代数用 cuBLASDx 矩阵乘 + cusolverdx 块高斯消元在共享内存里完成；不可行则回退 0.5/0.5 均分。<span class="ev ev-v">V</span></li>
+<li><strong>本文独立验证：</strong>用 numpy 复刻其 LP 构造与 5 次迭代求解（<a href="assets/lplb_lp_verify.py">assets/lplb_lp_verify.py</a>），两种合成实例把组内 imbalance 从 1.18 / 1.22 压到 <strong>1.002</strong>，距理论下界 $\max(\text{组均值}, \text{最大固定负载})$ 不到 0.004——5 次迭代即实质最优。<span class="ev ev-v">V</span></li>
+<li><strong>边界：</strong>只均衡 token 数（不建模 grouped GEMM 的非线性耗时）；节点内求解 ~100 µs、每层每 batch 都要解，小 batch 下开销占比不可忽略；极端全局不均时可能比 EPLB 更差（每专家最多 1 个副本，分流自由度有限）。官方明确 early research stage。<span class="ev ev-v">V</span></li>
+</ul>
+
+<h2>2. 问题背景：EPLB 管不到的那部分不均</h2>
+<p>EPLB 的输入是<strong>统计窗口内的平均负载</strong>，重排周期以分钟计（V3 ≈ 10 min）。但 MoE 训练的单个 micro-batch 里，专家热度是<strong>随机涨落</strong>的：某个 batch 恰好集中一堆代码 token，第 37 层的 e112 瞬间被挤爆，下个 batch 又换别人。这类波动有两个特点：<strong>周期太短</strong>（来不及搬权重）、<strong>幅度可控</strong>（涨落围绕均值）。LPLB 的解法：权重不动，让<strong>已经放在两处的副本</strong>按需分流——「重排太贵，那就只调路由比例」。<span class="ev ev-r">R</span></p>
+<p>注意分工：训练期主损失里的 aux-loss-free bias 保证<strong>长期期望</strong>均匀（防坍缩），EPLB 保证<strong>静态放置</strong>均衡，LPLB 兜住<strong>逐 batch 涨落</strong>——三层各管一个时间尺度。<span class="ev ev-v">V</span></p>
+
+<h2>3. 核心思想：冗余专家 = 图上的边</h2>
+<p>LPLB 的冗余结构由矩阵 $\mathrm{r2o} \in \mathbb{Z}^{G \times D}$ 描述（$G$ = 组内 rank 数，$D$ = 每 rank 冗余槽数）：<strong>rank $k$ 的第 $d$ 个冗余槽，是 rank $\mathrm{r2o}[k][d]$ 的第 $d$ 个专家的副本</strong>。planner 的 docstring 强调约束：每个冗余专家恰好被 2 个 rank 共享（原件方 + 副本方）。<span class="ev ev-v">V</span></p>
+<p>把 rank 当节点、每个冗余专家当一条边，就得到一张「token 可以沿边流动」的图。README 给出三种拓扑：<span class="ev ev-v">V</span></p>
+<table>
+<thead><tr><th>拓扑</th><th>规模</th><th>边结构</th><th>特点</th></tr></thead>
+<tbody>
+<tr><td>Cube</td><td>8 GPU/组，$D=2$</td><td>立方体 + 对角边</td><td>节点内 NVLink 高效</td></tr>
+<tr><td>Hypercube</td><td>16 GPU，$D=2$</td><td>无对角边</td><td>更大组</td></tr>
+<tr><td>Torus</td><td>任意 $m \times n$</td><td>节点内邻居 + 跨节点邻居</td><td>全局均衡好，跨节点流量高</td></tr>
+</tbody>
+</table>
+<p>关键限制：<strong>每个逻辑专家最多 2 份</strong>（planner 断言 <code>max_logcnt == 2</code>）——分流自由度被有意控制在「二选一按比例」上，这是 LP 能做小的前提，也是它在极端不均下不如 EPLB 自由（可多副本）的原因。<span class="ev ev-v">V</span></p>
+
+<h2>4. LP 建模：最小化组内最大负载</h2>
+<p>对每个 8 卡组、每层独立解一个小 LP。决策变量：每条冗余边两端的承担比例 $o_{k,d}$（原件方留存）与 $r_{k,d}$（副本方接收）：</p>
+<div class="formula">\[ \min\ t \qquad \text{s.t.}\quad b_g + \sum_d w_{g,d}\, o_{g,d} + \sum_{(k,d):\, \mathrm{r2o}[k,d]=g} w_{k,d}\, r_{k,d} \le t \ \ \forall g, \qquad o_{k,d} + r_{k,d} = 1, \quad o, r \in [0,1] \]</div>
+<p>其中 $b_g$ 是 rank $g$ 的<strong>固定负载</strong>（未被复制专家的 token），$w_{k,d}$ 是第 $(k,d)$ 条边（被复制专家）本 batch 的 token 数——即 README 说的「边容量 = 该冗余专家当前 batch 的 token 数」。变量布局（minilp.cu 的 <code>kernel_build</code> 逐行核对）：<span class="ev ev-v">V</span></p>
+<table>
+<thead><tr><th>变量段</th><th>数量</th><th>含义</th></tr></thead>
+<tbody>
+<tr><td>$o[g,d]$</td><td>$GD$ = 16</td><td>边 $(g,d)$ 的负载留存在原件方的比例</td></tr>
+<tr><td>$r[g,d]$</td><td>$GD$ = 16</td><td>流向副本方（$\mathrm{r2o}[g][d]$ 那张卡）的比例</td></tr>
+<tr><td>$s[g]$</td><td>$G$ = 8</td><td>负载行松弛（$\mathrm{load}_g \le t$ 化为等式）</td></tr>
+<tr><td>$t$</td><td>1</td><td>组内最大负载（目标函数唯一系数 1）</td></tr>
+<tr><td>Big-M 列</td><td>1</td><td>人工列（目标系数 1000），让 $\mathbf{1}$ 向量初始可行</td></tr>
+</tbody>
+</table>
+<p>约束 $NC = G + GD = 24$ 行：8 条负载行（$b_g$ 为右端）+ 16 条比例行（$o + r = 1$）。<strong>理论下界</strong>：任何分流比都有 $\max_g \mathrm{load}_g \ge \max(\text{组均值},\ \max_g b_g)$——固定负载是搬不走的，LP 的全部本事就是把「可流动的部分」抹平到这条线。<span class="ev ev-r">R</span></p>
+
+<div class="mxgraph" style="max-width:100%;border:1px solid #e5e7eb;border-radius:10px;background:#fff" data-mxgraph='{&quot;xml&quot;: &quot;&lt;mxfile host=\&quot;app.diagrams.net\&quot; pages=\&quot;1\&quot;&gt;&lt;diagram id=\&quot;lplb_lp\&quot; name=\&quot;LP 模型与 CUBE 拓扑\&quot;&gt;&lt;mxGraphModel dx=\&quot;1600\&quot; dy=\&quot;900\&quot; grid=\&quot;1\&quot; gridSize=\&quot;10\&quot; guides=\&quot;1\&quot; tooltips=\&quot;1\&quot; connect=\&quot;1\&quot; arrows=\&quot;1\&quot; fold=\&quot;1\&quot; page=\&quot;1\&quot; pageScale=\&quot;1\&quot; pageWidth=\&quot;1500\&quot; pageHeight=\&quot;1000\&quot; math=\&quot;1\&quot; shadow=\&quot;0\&quot;&gt;\n      &lt;root&gt;\n        &lt;mxCell id=\&quot;0\&quot; /&gt;\n        &lt;mxCell id=\&quot;1\&quot; parent=\&quot;0\&quot; /&gt;\n        &lt;mxCell id=\&quot;t1\&quot; value=\&quot;LP 模型（每 8 卡组）：最小化组内最大负载，自由度 = 每条冗余边的分流比\&quot; style=\&quot;text;html=1;fontSize=18;fontStyle=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;\&quot; vertex=\&quot;1\&quot; parent=\&quot;1\&quot;&gt;&lt;mxGeometry x=\&quot;150\&quot; y=\&quot;16\&quot; width=\&quot;1200\&quot; height=\&quot;32\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;f1\&quot; value=\&quot;$$\\min\\ \\ t \\quad \\text{s.t.}\\quad \\underbrace{\\mathrm{load}_g(t) = b_g + \\sum_d w_{g,d}\\, o_{g,d} + \\sum_{(k,d):\\, r2o[k,d]=g} w_{k,d}\\, r_{k,d} \\le t}_{\\text{8 条负载行（} b_g = \\text{固定负载}）}\\ ,\\quad \\underbrace{o_{k,d} + r_{k,d} = 1}_{\\text{16 条比例行}}\\ ,\\ \\ o, r \\in [0,1]$$\&quot; style=\&quot;text;html=1;fontSize=15;align=center;verticalAlign=middle;strokeColor=none;fillColor=#f2f4f8;rounded=1;\&quot; vertex=\&quot;1\&quot; parent=\&quot;1\&quot;&gt;&lt;mxGeometry x=\&quot;120\&quot; y=\&quot;66\&quot; width=\&quot;1260\&quot; height=\&quot;86\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;vt\&quot; value=\&quot;变量布局 NV = 2GD + G + 2（G=8, D=2 → 36）\&quot; style=\&quot;rounded=1;whiteSpace=wrap;html=1;verticalAlign=top;fontStyle=1;fillColor=#f5f5f5;strokeColor=#666666;\&quot; vertex=\&quot;1\&quot; parent=\&quot;1\&quot;&gt;&lt;mxGeometry x=\&quot;120\&quot; y=\&quot;180\&quot; width=\&quot;620\&quot; height=\&quot;150\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;v1\&quot; value=\&quot;o[g,d]：本 rank 留存比例&amp;lt;br&amp;gt;（16 个）\&quot; style=\&quot;rounded=0;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;\&quot; vertex=\&quot;1\&quot; parent=\&quot;1\&quot;&gt;&lt;mxGeometry x=\&quot;140\&quot; y=\&quot;222\&quot; width=\&quot;180\&quot; height=\&quot;52\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;v2\&quot; value=\&quot;r[g,d]：副本 rank 接收比例&amp;lt;br&amp;gt;（16 个）\&quot; style=\&quot;rounded=0;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;\&quot; vertex=\&quot;1\&quot; parent=\&quot;1\&quot;&gt;&lt;mxGeometry x=\&quot;332\&quot; y=\&quot;222\&quot; width=\&quot;180\&quot; height=\&quot;52\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;v3\&quot; value=\&quot;slack s[g]（8）\&quot; style=\&quot;rounded=0;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=12;\&quot; vertex=\&quot;1\&quot; parent=\&quot;1\&quot;&gt;&lt;mxGeometry x=\&quot;524\&quot; y=\&quot;222\&quot; width=\&quot;100\&quot; height=\&quot;52\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;v4\&quot; value=\&quot;t：组内最大负载（目标）\&quot; style=\&quot;rounded=0;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=12;\&quot; vertex=\&quot;1\&quot; parent=\&quot;1\&quot;&gt;&lt;mxGeometry x=\&quot;140\&quot; y=\&quot;284\&quot; width=\&quot;180\&quot; height=\&quot;36\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;v5\&quot; value=\&quot;Big-M 人工列（c=1000，保证 x=1 初始可行）\&quot; style=\&quot;rounded=0;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=12;\&quot; vertex=\&quot;1\&quot; parent=\&quot;1\&quot;&gt;&lt;mxGeometry x=\&quot;332\&quot; y=\&quot;284\&quot; width=\&quot;292\&quot; height=\&quot;36\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;ipm\&quot; value=\&quot;求解：原始仿射尺度内点法（Dikin），固定 5 次迭代&amp;lt;br&amp;gt;每轮：y ← (A X² Aᵀ)⁻¹ A X² c（cusolverdx 块高斯消元，cuBLASDx 做矩阵积）&amp;lt;br&amp;gt;d ← x ⊙ (c − Aᵀy)；α ← 0.999 / max(d)；x ← x ⊙ (1 − α d)&amp;lt;br&amp;gt;归一化负载（max=1）保证数值；单 SM 单线程块内完成（共享内存）\&quot; style=\&quot;rounded=1;whiteSpace=wrap;html=1;align=left;spacing=10;fillColor=#f8cecc;strokeColor=#b85450;\&quot; vertex=\&quot;1\&quot; parent=\&quot;1\&quot;&gt;&lt;mxGeometry x=\&quot;120\&quot; y=\&quot;356\&quot; width=\&quot;620\&quot; height=\&quot;130\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;gn0\&quot; value=\&quot;rank 0\&quot; style=\&quot;ellipse;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=13;fontStyle=1;\&quot; vertex=\&quot;1\&quot; parent=\&quot;1\&quot;&gt;&lt;mxGeometry x=\&quot;940\&quot; y=\&quot;170\&quot; width=\&quot;90\&quot; height=\&quot;46\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;gn1\&quot; value=\&quot;rank 1\&quot; style=\&quot;ellipse;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=13;fontStyle=1;\&quot; vertex=\&quot;1\&quot; parent=\&quot;1\&quot;&gt;&lt;mxGeometry x=\&quot;1170\&quot; y=\&quot;170\&quot; width=\&quot;90\&quot; height=\&quot;46\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;gn2\&quot; value=\&quot;rank 2\&quot; style=\&quot;ellipse;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=13;fontStyle=1;\&quot; vertex=\&quot;1\&quot; parent=\&quot;1\&quot;&gt;&lt;mxGeometry x=\&quot;1350\&quot; y=\&quot;360\&quot; width=\&quot;90\&quot; height=\&quot;46\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;gn3\&quot; value=\&quot;rank 3\&quot; style=\&quot;ellipse;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=13;fontStyle=1;\&quot; vertex=\&quot;1\&quot; parent=\&quot;1\&quot;&gt;&lt;mxGeometry x=\&quot;1170\&quot; y=\&quot;550\&quot; width=\&quot;90\&quot; height=\&quot;46\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;gn4\&quot; value=\&quot;rank 4\&quot; style=\&quot;ellipse;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=13;fontStyle=1;\&quot; vertex=\&quot;1\&quot; parent=\&quot;1\&quot;&gt;&lt;mxGeometry x=\&quot;1400\&quot; y=\&quot;550\&quot; width=\&quot;90\&quot; height=\&quot;46\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;gn5\&quot; value=\&quot;rank 5\&quot; style=\&quot;ellipse;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=13;fontStyle=1;\&quot; vertex=\&quot;1\&quot; parent=\&quot;1\&quot;&gt;&lt;mxGeometry x=\&quot;940\&quot; y=\&quot;550\&quot; width=\&quot;90\&quot; height=\&quot;46\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;gn6\&quot; value=\&quot;rank 6\&quot; style=\&quot;ellipse;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=13;fontStyle=1;\&quot; vertex=\&quot;1\&quot; parent=\&quot;1\&quot;&gt;&lt;mxGeometry x=\&quot;760\&quot; y=\&quot;360\&quot; width=\&quot;90\&quot; height=\&quot;46\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;gn7\&quot; value=\&quot;rank 7\&quot; style=\&quot;ellipse;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=13;fontStyle=1;\&quot; vertex=\&quot;1\&quot; parent=\&quot;1\&quot;&gt;&lt;mxGeometry x=\&quot;940\&quot; y=\&quot;360\&quot; width=\&quot;90\&quot; height=\&quot;46\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;tcap\&quot; value=\&quot;冗余拓扑（README 示例 r2o，cube+对角线型；tests/utils.py 的 CUBE_8P2E_R2O 是另一组同构边）：16 条有向边 = 16 个 LP 比例变量。边 k → r2o[k,d] 表示「k 的第 d 个冗余槽复制边终点 rank 的第 d 个专家」，token 沿边按比例 o/r 分给两端\&quot; style=\&quot;text;html=1;fontSize=13;align=center;strokeColor=none;fillColor=#fff2cc;rounded=1;spacing=6;\&quot; vertex=\&quot;1\&quot; parent=\&quot;1\&quot;&gt;&lt;mxGeometry x=\&quot;820\&quot; y=\&quot;664\&quot; width=\&quot;640\&quot; height=\&quot;62\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;e03\&quot; style=\&quot;endArrow=block;html=1;rounded=1;strokeColor=#82b366;strokeWidth=1;\&quot; edge=\&quot;1\&quot; parent=\&quot;1\&quot; source=\&quot;gn0\&quot; target=\&quot;gn3\&quot;&gt;&lt;mxGeometry relative=\&quot;1\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;e30\&quot; style=\&quot;endArrow=block;html=1;rounded=1;strokeColor=#82b366;strokeWidth=1;\&quot; edge=\&quot;1\&quot; parent=\&quot;1\&quot; source=\&quot;gn3\&quot; target=\&quot;gn2\&quot;&gt;&lt;mxGeometry relative=\&quot;1\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;e21\&quot; style=\&quot;endArrow=block;html=1;rounded=1;strokeColor=#82b366;strokeWidth=1;\&quot; edge=\&quot;1\&quot; parent=\&quot;1\&quot; source=\&quot;gn2\&quot; target=\&quot;gn1\&quot;&gt;&lt;mxGeometry relative=\&quot;1\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;e10\&quot; style=\&quot;endArrow=block;html=1;rounded=1;strokeColor=#82b366;strokeWidth=1;\&quot; edge=\&quot;1\&quot; parent=\&quot;1\&quot; source=\&quot;gn1\&quot; target=\&quot;gn0\&quot;&gt;&lt;mxGeometry relative=\&quot;1\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;e47\&quot; style=\&quot;endArrow=block;html=1;rounded=1;strokeColor=#82b366;strokeWidth=1;\&quot; edge=\&quot;1\&quot; parent=\&quot;1\&quot; source=\&quot;gn4\&quot; target=\&quot;gn7\&quot;&gt;&lt;mxGeometry relative=\&quot;1\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;e76\&quot; style=\&quot;endArrow=block;html=1;rounded=1;strokeColor=#82b366;strokeWidth=1;\&quot; edge=\&quot;1\&quot; parent=\&quot;1\&quot; source=\&quot;gn7\&quot; target=\&quot;gn6\&quot;&gt;&lt;mxGeometry relative=\&quot;1\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;e65\&quot; style=\&quot;endArrow=block;html=1;rounded=1;strokeColor=#82b366;strokeWidth=1;\&quot; edge=\&quot;1\&quot; parent=\&quot;1\&quot; source=\&quot;gn6\&quot; target=\&quot;gn5\&quot;&gt;&lt;mxGeometry relative=\&quot;1\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;e54\&quot; style=\&quot;endArrow=block;html=1;rounded=1;strokeColor=#82b366;strokeWidth=1;\&quot; edge=\&quot;1\&quot; parent=\&quot;1\&quot; source=\&quot;gn5\&quot; target=\&quot;gn4\&quot;&gt;&lt;mxGeometry relative=\&quot;1\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;e06\&quot; style=\&quot;endArrow=block;html=1;rounded=1;strokeColor=#b85450;strokeWidth=1;dashed=1;\&quot; edge=\&quot;1\&quot; parent=\&quot;1\&quot; source=\&quot;gn0\&quot; target=\&quot;gn6\&quot;&gt;&lt;mxGeometry relative=\&quot;1\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;e17\&quot; style=\&quot;endArrow=block;html=1;rounded=1;strokeColor=#b85450;strokeWidth=1;dashed=1;\&quot; edge=\&quot;1\&quot; parent=\&quot;1\&quot; source=\&quot;gn1\&quot; target=\&quot;gn7\&quot;&gt;&lt;mxGeometry relative=\&quot;1\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;e24\&quot; style=\&quot;endArrow=block;html=1;rounded=1;strokeColor=#b85450;strokeWidth=1;dashed=1;\&quot; edge=\&quot;1\&quot; parent=\&quot;1\&quot; source=\&quot;gn2\&quot; target=\&quot;gn4\&quot;&gt;&lt;mxGeometry relative=\&quot;1\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;e35\&quot; style=\&quot;endArrow=block;html=1;rounded=1;strokeColor=#b85450;strokeWidth=1;dashed=1;\&quot; edge=\&quot;1\&quot; parent=\&quot;1\&quot; source=\&quot;gn3\&quot; target=\&quot;gn5\&quot;&gt;&lt;mxGeometry relative=\&quot;1\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;e40\&quot; style=\&quot;endArrow=block;html=1;rounded=1;strokeColor=#b85450;strokeWidth=1;dashed=1;\&quot; edge=\&quot;1\&quot; parent=\&quot;1\&quot; source=\&quot;gn4\&quot; target=\&quot;gn0\&quot;&gt;&lt;mxGeometry relative=\&quot;1\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;e51\&quot; style=\&quot;endArrow=block;html=1;rounded=1;strokeColor=#b85450;strokeWidth=1;dashed=1;\&quot; edge=\&quot;1\&quot; parent=\&quot;1\&quot; source=\&quot;gn5\&quot; target=\&quot;gn1\&quot;&gt;&lt;mxGeometry relative=\&quot;1\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;e62\&quot; style=\&quot;endArrow=block;html=1;rounded=1;strokeColor=#b85450;strokeWidth=1;dashed=1;\&quot; edge=\&quot;1\&quot; parent=\&quot;1\&quot; source=\&quot;gn6\&quot; target=\&quot;gn2\&quot;&gt;&lt;mxGeometry relative=\&quot;1\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;e73\&quot; style=\&quot;endArrow=block;html=1;rounded=1;strokeColor=#b85450;strokeWidth=1;dashed=1;\&quot; edge=\&quot;1\&quot; parent=\&quot;1\&quot; source=\&quot;gn7\&quot; target=\&quot;gn3\&quot;&gt;&lt;mxGeometry relative=\&quot;1\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;tl\&quot; value=\&quot;实线绿边 = 第 0 列 r2o（0→3→2→1→0 与 4→7→6→5→4 两个环）；虚线红边 = 第 1 列（跨环对角线）\&quot; style=\&quot;text;html=1;fontSize=12;fontColor=#666666;align=center;strokeColor=none;fillColor=none;\&quot; vertex=\&quot;1\&quot; parent=\&quot;1\&quot;&gt;&lt;mxGeometry x=\&quot;820\&quot; y=\&quot;630\&quot; width=\&quot;640\&quot; height=\&quot;26\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;lb\&quot; value=\&quot;下界与验证：任何分流比都满足 max ≥ max(组均值, 最大固定负载)。本文 numpy 复刻 5 次迭代内点法（脚本 assets/lplb_lp_verify.py）：两种合成实例 imbalance 从 1.18/1.22 → 1.002，距下界 &amp;lt; 0.004\&quot; style=\&quot;rounded=1;whiteSpace=wrap;html=1;align=left;spacing=10;fillColor=#f5f5f5;strokeColor=#666666;\&quot; vertex=\&quot;1\&quot; parent=\&quot;1\&quot;&gt;&lt;mxGeometry x=\&quot;120\&quot; y=\&quot;520\&quot; width=\&quot;620\&quot; height=\&quot;100\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n      &lt;/root&gt;\n    &lt;/mxGraphModel&gt;&lt;/diagram&gt;\n&lt;/mxfile&gt;&quot;}'></div>
+<p class="figcaption">图 2 · LP 模型结构（左）与 README 示例 r2o 的 16 条冗余边（右）。绿实边 = 第 0 列（两个四元环），红虚边 = 第 1 列（对角）。drawio 源文件：<a href="assets/lplb-deep-reading.drawio">assets/lplb-deep-reading.drawio</a>（LP 模型与 CUBE 拓扑 sheet）。</p>
+
+<h2>5. 求解器：单 SM 上的 5 次迭代内点法</h2>
+<p>为什么不用现成求解器：这个 LP 每个 micro-batch、每层、每个 8 卡组都要解一次，延迟预算是<strong>微秒级</strong>；CPU 上的 SciPy/HiGHS 来回搬运就要数百 µs 起，GPU 通用路径则 launch 开销都盖过求解本身。DeepSeek 的答案：把整个 LP 装进<strong>一个线程块</strong>（单 SM），矩阵小（$24 \times 36$）到共享内存里放得下。<span class="ev ev-v">V</span></p>
+<p>算法是<strong>原始仿射尺度内点法</strong>（Dikin，与 EPLB 的两步贪心形成有趣对照——同一个问题的两种「预算化求解」）。固定 5 次迭代，每次：<span class="ev ev-v">V</span></p>
+<div class="mermaid">
+flowchart TB
+  A["x ← 1（Big-M 列保证可行）"] --> B["M = A X² Aᵀ<br/>y ← M⁻¹ (A X² c)<br/>cusolverdx 块高斯消元"]
+  B --> C["对偶梯度 r ← yᵀA<br/>方向 d ← x ⊙ (c − r)"]
+  C --> D["步长 α ← 0.999 / max(d)<br/>x ← x ⊙ (1 − α·d)（乘性更新）"]
+  D --> E{"迭代满 5 次？"}
+  E -- 否 --> B
+  E -- 是 --> F["读出 o/r 比例 + t<br/>可行性三查：d_max<0.1、人工列≈0、残差<0.05"]
+  F --> G{"可行？"}
+  G -- 否 --> H["回退 0.5/0.5 均分<br/>avail_counter 记录"]
+  G -- 是 --> I["输出分流比 o_weight"]
+</div>
+<p class="figcaption">minilp.cu <code>kernel_solve</code> 的迭代逻辑（负载预先归一化到 max=1 保证数值稳定）。</p>
+<p>工程细节：cuBLASDx 做块内矩阵乘、cusolverdx 做块高斯消元（CUDA ≥ 12.6.3 + MathDx 组件）；跨节点组走 NVSHMEM（IBRC putmem_signal 做 allgather 求和 + 节点内 combine），延迟比节点内长。<span class="ev ev-v">V</span></p>
+
+<h2>6. 端到端流程：内环逐 batch，外环换布局</h2>
+
+<div class="mxgraph" style="max-width:100%;border:1px solid #e5e7eb;border-radius:10px;background:#fff" data-mxgraph='{&quot;xml&quot;: &quot;&lt;mxfile host=\&quot;app.diagrams.net\&quot; pages=\&quot;1\&quot;&gt;&lt;diagram id=\&quot;lplb_pipeline\&quot; name=\&quot;LPLB 端到端流程\&quot;&gt;\n    &lt;mxGraphModel dx=\&quot;1600\&quot; dy=\&quot;900\&quot; grid=\&quot;1\&quot; gridSize=\&quot;10\&quot; guides=\&quot;1\&quot; tooltips=\&quot;1\&quot; connect=\&quot;1\&quot; arrows=\&quot;1\&quot; fold=\&quot;1\&quot; page=\&quot;1\&quot; pageScale=\&quot;1\&quot; pageWidth=\&quot;1540\&quot; pageHeight=\&quot;1080\&quot; math=\&quot;1\&quot; shadow=\&quot;0\&quot;&gt;\n      &lt;root&gt;\n        &lt;mxCell id=\&quot;0\&quot; /&gt;\n        &lt;mxCell id=\&quot;1\&quot; parent=\&quot;0\&quot; /&gt;\n        &lt;mxCell id=\&quot;t1\&quot; value=\&quot;LPLB 端到端：每个 micro-batch 的「计数 → LP 求解 → 加权分流」（GPU 上 ~100 µs 级），外环低频换冗余布局\&quot; style=\&quot;text;html=1;fontSize=19;fontStyle=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;\&quot; vertex=\&quot;1\&quot; parent=\&quot;1\&quot;&gt;&lt;mxGeometry x=\&quot;140\&quot; y=\&quot;16\&quot; width=\&quot;1260\&quot; height=\&quot;34\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;phA\&quot; value=\&quot;内环 · 每个 micro-batch、每层（dispatch 之前）\&quot; style=\&quot;text;html=1;fontSize=15;fontStyle=1;fontColor=#666666;strokeColor=none;fillColor=none;\&quot; vertex=\&quot;1\&quot; parent=\&quot;1\&quot;&gt;&lt;mxGeometry x=\&quot;40\&quot; y=\&quot;70\&quot; width=\&quot;380\&quot; height=\&quot;26\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;phB\&quot; value=\&quot;外环 · 低频（负载分布漂移时）\&quot; style=\&quot;text;html=1;fontSize=15;fontStyle=1;fontColor=#666666;strokeColor=none;fillColor=none;\&quot; vertex=\&quot;1\&quot; parent=\&quot;1\&quot;&gt;&lt;mxGeometry x=\&quot;40\&quot; y=\&quot;800\&quot; width=\&quot;320\&quot; height=\&quot;26\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;a1\&quot; value=\&quot;Router TopK indices&amp;lt;br&amp;gt;[T, K]（本 batch 每个 token 选中的逻辑专家）\&quot; style=\&quot;rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;\&quot; vertex=\&quot;1\&quot; parent=\&quot;1\&quot;&gt;&lt;mxGeometry x=\&quot;60\&quot; y=\&quot;120\&quot; width=\&quot;250\&quot; height=\&quot;66\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;a2\&quot; value=\&quot;kernel_count_idx（多 SM）&amp;lt;br&amp;gt;atomicAdd 直方图 + 每 SM 前缀和&amp;lt;br&amp;gt;→ workload[n_logical] · by_sm[]\&quot; style=\&quot;rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;\&quot; vertex=\&quot;1\&quot; parent=\&quot;1\&quot;&gt;&lt;mxGeometry x=\&quot;370\&quot; y=\&quot;120\&quot; width=\&quot;270\&quot; height=\&quot;66\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;a3\&quot; value=\&quot;组内聚合&amp;lt;br&amp;gt;view 成 [n_group, 8, n_local_logical]&amp;lt;br&amp;gt;all_reduce / DeepEP 通信子同步\&quot; style=\&quot;rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;\&quot; vertex=\&quot;1\&quot; parent=\&quot;1\&quot;&gt;&lt;mxGeometry x=\&quot;700\&quot; y=\&quot;120\&quot; width=\&quot;260\&quot; height=\&quot;66\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;a4\&quot; value=\&quot;minilp 求解（每 8 卡组一个实例）&amp;lt;br&amp;gt;单 SM 仿射尺度内点法 · 5 次迭代&amp;lt;br&amp;gt;cuBLASDx 矩阵乘 + cusolverdx 块高斯消元&amp;lt;br&amp;gt;→ o_weight[8, D] 分流比\&quot; style=\&quot;rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;\&quot; vertex=\&quot;1\&quot; parent=\&quot;1\&quot;&gt;&lt;mxGeometry x=\&quot;1010\&quot; y=\&quot;106\&quot; width=\&quot;320\&quot; height=\&quot;94\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;a5\&quot; value=\&quot;kernel_map_idx：逐 token 逻辑 → 物理槽&amp;lt;br&amp;gt;复制专家按 (count×499+41) % total 伪随机数&amp;lt;br&amp;gt;对照期望配额 o_weight × total 二分到原槽/副本槽\&quot; style=\&quot;rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;\&quot; vertex=\&quot;1\&quot; parent=\&quot;1\&quot;&gt;&lt;mxGeometry x=\&quot;1010\&quot; y=\&quot;250\&quot; width=\&quot;320\&quot; height=\&quot;86\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;a6\&quot; value=\&quot;redirected_indices&amp;lt;br&amp;gt;→ DeepEP dispatch（按物理专家收发）\&quot; style=\&quot;rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;\&quot; vertex=\&quot;1\&quot; parent=\&quot;1\&quot;&gt;&lt;mxGeometry x=\&quot;660\&quot; y=\&quot;262\&quot; width=\&quot;260\&quot; height=\&quot;62\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;a7\&quot; value=\&quot;grouped GEMM&amp;lt;br&amp;gt;各 rank 按分流比承担负载\&quot; style=\&quot;rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;\&quot; vertex=\&quot;1\&quot; parent=\&quot;1\&quot;&gt;&lt;mxGeometry x=\&quot;330\&quot; y=\&quot;262\&quot; width=\&quot;240\&quot; height=\&quot;62\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;fa\&quot; value=\&quot;可行性检查 avail_flag：d_max &amp;lt; 0.1 · 人工变量 ≈ 0 · 残差 &amp;lt; 0.05&amp;lt;br&amp;gt;不可行 → 回退 0.5/0.5 均分，avail_counter 记录可用组数\&quot; style=\&quot;rounded=1;whiteSpace=wrap;html=1;dashed=1;fillColor=#fff2cc;strokeColor=#d6b656;align=left;spacing=8;\&quot; vertex=\&quot;1\&quot; parent=\&quot;1\&quot;&gt;&lt;mxGeometry x=\&quot;60\&quot; y=\&quot;250\&quot; width=\&quot;230\&quot; height=\&quot;86\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;ea12\&quot; style=\&quot;edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeWidth=2;strokeColor=#1c2430;\&quot; edge=\&quot;1\&quot; parent=\&quot;1\&quot; source=\&quot;a1\&quot; target=\&quot;a2\&quot;&gt;&lt;mxGeometry relative=\&quot;1\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;ea23\&quot; style=\&quot;edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeWidth=2;strokeColor=#1c2430;\&quot; edge=\&quot;1\&quot; parent=\&quot;1\&quot; source=\&quot;a2\&quot; target=\&quot;a3\&quot;&gt;&lt;mxGeometry relative=\&quot;1\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;ea34\&quot; style=\&quot;edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeWidth=2;strokeColor=#1c2430;\&quot; edge=\&quot;1\&quot; parent=\&quot;1\&quot; source=\&quot;a3\&quot; target=\&quot;a4\&quot;&gt;&lt;mxGeometry relative=\&quot;1\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;ea45\&quot; style=\&quot;edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeWidth=2;strokeColor=#1c2430;exitX=0.5;exitY=1;entryX=0.5;entryY=0;\&quot; edge=\&quot;1\&quot; parent=\&quot;1\&quot; source=\&quot;a4\&quot; target=\&quot;a5\&quot;&gt;&lt;mxGeometry relative=\&quot;1\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;ea56\&quot; style=\&quot;edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeWidth=2;strokeColor=#1c2430;\&quot; edge=\&quot;1\&quot; parent=\&quot;1\&quot; source=\&quot;a5\&quot; target=\&quot;a6\&quot;&gt;&lt;mxGeometry relative=\&quot;1\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;ea67\&quot; style=\&quot;edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeWidth=2;strokeColor=#1c2430;\&quot; edge=\&quot;1\&quot; parent=\&quot;1\&quot; source=\&quot;a6\&quot; target=\&quot;a7\&quot;&gt;&lt;mxGeometry relative=\&quot;1\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;eaf\&quot; style=\&quot;edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;dashed=1;strokeColor=#d6b656;\&quot; edge=\&quot;1\&quot; parent=\&quot;1\&quot; source=\&quot;a4\&quot; target=\&quot;fa\&quot;&gt;&lt;mxGeometry relative=\&quot;1\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;b1\&quot; value=\&quot;① EPLB rebalance_experts（nored，无冗余版本）&amp;lt;br&amp;gt;按历史统计把逻辑专家均衡排到各 rank\&quot; style=\&quot;rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;\&quot; vertex=\&quot;1\&quot; parent=\&quot;1\&quot;&gt;&lt;mxGeometry x=\&quot;60\&quot; y=\&quot;850\&quot; width=\&quot;400\&quot; height=\&quot;76\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;b2\&quot; value=\&quot;② 每 rank 按历史负载降序排序本地专家&amp;lt;br&amp;gt;取 top (combined_redundant × D) 个作为待复制\&quot; style=\&quot;rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;\&quot; vertex=\&quot;1\&quot; parent=\&quot;1\&quot;&gt;&lt;mxGeometry x=\&quot;520\&quot; y=\&quot;850\&quot; width=\&quot;400\&quot; height=\&quot;76\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;b3\&quot; value=\&quot;③ 按 r2o 拓扑放副本（每条冗余边恰连 2 个 rank）&amp;lt;br&amp;gt;phy2log / log2phy / logcnt（max=2：每专家 ≤ 原件+1 副本）\&quot; style=\&quot;rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;\&quot; vertex=\&quot;1\&quot; parent=\&quot;1\&quot;&gt;&lt;mxGeometry x=\&quot;980\&quot; y=\&quot;850\&quot; width=\&quot;440\&quot; height=\&quot;76\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;eb12\&quot; style=\&quot;edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeWidth=2;strokeColor=#1c2430;\&quot; edge=\&quot;1\&quot; parent=\&quot;1\&quot; source=\&quot;b1\&quot; target=\&quot;b2\&quot;&gt;&lt;mxGeometry relative=\&quot;1\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;eb23\&quot; style=\&quot;edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeWidth=2;strokeColor=#1c2430;\&quot; edge=\&quot;1\&quot; parent=\&quot;1\&quot; source=\&quot;b2\&quot; target=\&quot;b3\&quot;&gt;&lt;mxGeometry relative=\&quot;1\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;eloop\&quot; value=\&quot;新冗余布局供内环使用\&quot; style=\&quot;edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;dashed=1;strokeColor=#666666;exitX=0.5;exitY=0;entryX=0.5;entryY=1;\&quot; edge=\&quot;1\&quot; parent=\&quot;1\&quot; source=\&quot;b3\&quot; target=\&quot;a3\&quot;&gt;&lt;mxGeometry relative=\&quot;1\&quot; as=\&quot;geometry\&quot;&gt;&lt;Array as=\&quot;points\&quot;&gt;&lt;mxPoint x=\&quot;1200\&quot; y=\&quot;640\&quot; /&gt;&lt;mxPoint x=\&quot;830\&quot; y=\&quot;640\&quot; /&gt;&lt;/Array&gt;&lt;/mxGeometry&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;lg\&quot; value=\&quot;图例：蓝 = 数据；绿 = 计算/通信；红 = LP 核心；橙 = 外环布局计算（复用 EPLB）；黄 = 容错机制&amp;lt;br&amp;gt;内环每 batch 每层跑一次（节点内 ~100 µs，跨组需 NVSHMEM 同步更久）；外环频率低得多（负载分布漂移时）\&quot; style=\&quot;text;html=1;fontSize=12;fontColor=#666666;align=left;strokeColor=none;fillColor=#fafafa;rounded=1;\&quot; vertex=\&quot;1\&quot; parent=\&quot;1\&quot;&gt;&lt;mxGeometry x=\&quot;60\&quot; y=\&quot;976\&quot; width=\&quot;900\&quot; height=\&quot;56\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n      &lt;/root&gt;\n    &lt;/mxGraphModel&gt;\n  &lt;/diagram&gt;\n  &lt;/mxfile&gt;&quot;}'></div>
+<p class="figcaption">图 1 · LPLB 端到端：内环（每 batch 每层）计数 → LP → 加权分流；外环（低频）用 EPLB 无冗余版打底 + 按 r2o 加冗余边。drawio 源文件：<a href="assets/lplb-deep-reading.drawio">assets/lplb-deep-reading.drawio</a>（LPLB 端到端流程 sheet）。</p>
+
+<h3>6.1 外环：update_redundancy_mapping</h3>
+<p>三步，全部在 planner.py 核对：<span class="ev ev-v">V</span></p>
+<ol>
+<li>调 EPLB 的 <code>rebalance_experts</code>（仓内 vendored 副本 <code>lplb/eplb.py</code>）但<strong>不带冗余</strong>（nored：物理数=逻辑数）——只做静态均衡重排；</li>
+<li>每个 rank 把本地专家按<strong>历史负载降序</strong>排序，取 top（combined_redundant × D）个标记为待复制；</li>
+<li>按 r2o 拓扑把这些专家复制到邻居的冗余槽 → 输出三件套 phy2log / log2phy / logcnt（max=2）。</li>
+</ol>
+<p>即「<strong>EPLB 管静态放置，LPLB 在其上叠一层拓扑化的冗余边</strong>」——两个项目的关系是复用而非替代。</p>
+
+<h3>6.2 内环：run(idx, avail_counter, n_sms)</h3>
+<ol>
+<li><strong>计数</strong>：<code>kernel_count_idx</code> 多 SM atomicAdd 统计本 batch 每个逻辑专家的 token 数（附带每 SM 前缀和，供加权映射用）；</li>
+<li><strong>求解</strong>：view 成 [组, 8, 本地专家数]，跨卡 all_reduce（或走 DeepEP buffer 通信子），每组建 LP 解出 <code>o_weight</code>；</li>
+<li><strong>映射</strong>：<code>kernel_map_idx</code> 把每个 token 的逻辑专家号翻译成物理槽位——对被复制专家，用确定性伪随机数 $(\text{count} \times 499 + 41) \bmod \text{total}$ 对照期望配额 $\mathrm{o\_weight} \times \text{total}$ 决定发原件还是副本，实现按比例分流且负载在 SM 间均匀。</li>
+</ol>
+<p>输出 <code>redirected_indices</code> 直接喂给 DeepEP dispatch。整个过程 GPU 上完成、不搬任何权重。<span class="ev ev-v">V</span></p>
+
+<h2>7. 代码走读</h2>
+<table>
+<thead><tr><th>文件</th><th>职责</th></tr></thead>
+<tbody>
+<tr><td><code>lplb/planner.py</code></td><td>Python 入口：<code>Planner(r2o, n_phy, n_log, group)</code>；<code>update_redundancy_mapping</code>（外环）、<code>count_workload / solve_probs / weighted_select_target</code>（内环三步）、<code>run</code> 串起来</td></tr>
+<tr><td><code>lplb/resources/csrc-tmpl/minilp.cu</code></td><td>三个 CUDA kernel：<code>kernel_count_idx</code>（直方图）、<code>kernel_solve</code>（单 SM IPM）、<code>kernel_map_idx</code>（加权映射）+ NVSHMEM 跨组同步路径</td></tr>
+<tr><td><code>lplb/eplb.py</code></td><td>EPLB 算法的 vendored 副本（与 deepseek-ai/EPLB main 同源），仅用其 nored 无冗余模式打底</td></tr>
+<tr><td><code>csrc/plugin.cpp</code></td><td>torch 扩展绑定 + DeepEP buffer 集成（<code>init_from_deep_ep</code>）</td></tr>
+<tr><td><code>tests/</code> + <code>scripts/run_ep16_cube8p2e.py</code></td><td>拓扑常量（CUBE_8P2E / HYPERCUBE_16P2E / RING_8P / torus）、2 节点 × 8 卡 demo（打印平衡系数 max/mean）</td></tr>
+</tbody>
+</table>
+<p>依赖：CUDA ≥ 12.6.3、MathDx（cuBLASDx/cusolverdx，脚本自动下载）；DeepEP 可选但「实际使用强烈推荐」。仓库仅一个初始 commit（2025-11-19），无配套论文——<strong>代码即一手资料</strong>。<span class="ev ev-v">V</span></p>
+
+<h2>8. 本文独立验证：numpy 复刻 5 次迭代内点法</h2>
+<p>复刻 <code>kernel_build</code> 的矩阵构造与 <code>kernel_solve</code> 的乘性迭代（脚本 <a href="assets/lplb_lp_verify.py">assets/lplb_lp_verify.py</a>，README 示例 r2o 拓扑，先验证拓扑不变量：每 rank 恰持有 2 副本、其专家恰被复制 2 次 ✓）。两组合成实例的结果：<span class="ev ev-v">V</span></p>
+<table>
+<thead><tr><th>实例</th><th>0.5/0.5 基线 imbalance</th><th>LP（5 次迭代）imbalance</th><th>距理论下界</th></tr></thead>
+<tbody>
+<tr><td>A · 固定负载主导</td><td>1.181</td><td><strong>1.002</strong>（改进 15.2%）</td><td>+0.003</td></tr>
+<tr><td>B · 复制边主导（目标场景）</td><td>1.217</td><td><strong>1.002</strong>（改进 17.6%）</td><td>+0.004</td></tr>
+</tbody>
+</table>
+<p>两种场景下 5 次迭代都把 8 个 rank 拉到几乎同一负载线，距下界 $\max(\text{组均值}, \max b_g)$ 不到千分之四——<strong>DeepSeek 的 5 次迭代预算在中小规模实例上就是实质最优</strong>。反例也有教育意义：若某个 rank 的固定负载远超组均值（LP 搬不动它），最优解就是撞在下界上一动不动——这种情况该找外环（EPLB 换放置）而不是内环硬解。</p>
+
+<h2>9. 横向对比与一个易混澄清</h2>
+<table>
+<thead><tr><th>维度</th><th>EPLB</th><th>LPLB</th><th>METRO</th></tr></thead>
+<tbody>
+<tr><td>阶段</td><td>推理/部署（也用于训练放置）</td><td><strong>训练（动态）</strong></td><td>推理 decode</td></tr>
+<tr><td>时间尺度</td><td>分钟级重排（搬权重）</td><td>逐 micro-batch（只调分流比）</td><td>逐 batch（只选副本）</td></tr>
+<tr><td>决策变量</td><td>放置 + 副本数（贪心两步）</td><td>每条冗余边的分流比（LP，最优）</td><td>每专家选哪个副本（贪心 min-exp）</td></tr>
+<tr><td>优化目标</td><td>token 负载均衡</td><td>组内 max 负载最小化</td><td>每 GPU 激活专家数最小化</td></tr>
+<tr><td>求解开销</td><td>毫秒级（CPU）</td><td>~100 µs（单 SM IPM）</td><td>微秒级（单 SM 贪心）</td></tr>
+<tr><td>与 EPLB 关系</td><td>—</td><td>import EPLB 打底放置</td><td>复用 EPLB 放置/复制</td></tr>
+</tbody>
+</table>
+<p><strong>易混澄清：</strong>arXiv:2511.16947《Fine-grained MoE Load Balancing with Linear Programming》（系统名 MicroMoE/FineMoE，学术团队，训练吞吐 +47.6%）是<strong>另一个独立工作</strong>，与 DeepSeek LPLB 同月出现、同用 LP，但作者、系统、机制均不同——引用时别混。<span class="ev ev-v">V</span></p>
+
+<h2>10. 局限与开放问题</h2>
+<ul>
+<li><strong>token-only 目标：</strong>不建模 grouped GEMM 的非线性耗时（冷热专家同 token 数不同时延），官方自认可能次优；<span class="ev ev-v">V</span></li>
+<li><strong>求解频率即开销：</strong>每层每 batch 一次 ~100 µs，小 batch 下占比不可忽略；跨节点组（NVSHMEM 同步）更贵；<span class="ev ev-v">V</span></li>
+<li><strong>极端不均退化：</strong>每专家 ≤ 1 副本（max_logcnt=2），全局严重倾斜时可调自由度不如 EPLB 的多副本——README 直言「极端全局不平衡时可能比 EPLB 更差」；<span class="ev ev-v">V</span></li>
+<li><strong>early research stage：</strong>单 commit、性能仍在评估、无论文背书，生产采用需自担验证。</li>
+</ul>
+
+<h2>11. 快问快答</h2>
+<div class="qa">
+<h3>Q1：LPLB 和 EPLB 是竞争关系吗？</h3>
+<p>不是，是叠层：外环直接 import EPLB 算法做无冗余静态放置，再叠 r2o 冗余边；内环 LP 只管逐 batch 分流。EPLB 管分钟级静态，LPLB 管 batch 级动态。<span class="ev ev-v">V</span></p>
+<h3>Q2：为什么限制每条边只连 2 个 rank？</h3>
+<p>把 LP 压到 24×36 的规模才能单 SM 微秒级求解；多副本会同时放大变量数和约束（且 README 说明 LPLB 有意不让同一专家多副本，留自由度给放置层）。代价见 Q4。<span class="ev ev-r">R</span></p>
+<h3>Q3：为什么选内点法而不是单纯形？</h3>
+<p>单纯形迭代次数不确定、分支多，不适合固定预算的 GPU kernel；仿射尺度内点法迭代次数固定、每轮同一组矩阵运算（matmul + GE），正好映射到 cuBLASDx/cusolverdx 两个块级原语。5 次迭代在实测规模下已到下界（§8）。<span class="ev ev-r">R</span></p>
+<h3>Q4：LP 解不可行时会怎样？</h3>
+<p>kernel 做三重检查（d_max、人工列、残差），不可行则该组回退 0.5/0.5 均分并把 avail_counter 减一——均衡降级但不阻塞训练。<span class="ev ev-v">V</span></p>
+<h3>Q5：分流比怎么落到每个 token？</h3>
+<p>kernel_map_idx 用确定性伪随机序列 $(c \times 499 + 41) \bmod \text{total}$ 把 token 按期望配额分到原件/副本两端——比例精确、分布打散、可复现。<span class="ev ev-v">V</span></p>
+<h3>Q6：推理能用吗？</h3>
+<p>机制上不排斥（SGLang 已把 lplb_solver 接为可选 dispatch 算法），但设计动机是训练期的 batch 涨落；推理侧的同类需求更多由 METRO（激活专家）等服务期方案承接。<span class="ev ev-r">R</span></p>
+</div>
+
+<h2>12. 参考链接</h2>
+<ul>
+<li>官方仓库（代码即一手资料）：<a href="https://github.com/deepseek-ai/LPLB" target="_blank">deepseek-ai/LPLB</a>（初始提交 2025-11-19；<a href="https://github.com/deepseek-ai/LPLB/blob/main/lplb/planner.py" target="_blank">planner.py</a> · <a href="https://github.com/deepseek-ai/LPLB/blob/main/lplb/resources/csrc-tmpl/minilp.cu" target="_blank">minilp.cu</a>）</li>
+<li>前置阅读：<a href="eplb-deep-reading.html">EPLB 深度阅读笔记</a>（本系列）；<a href="moe-ep-overview.html">MoE EP 方案总览</a></li>
+<li>易混工作：Fine-grained MoE Load Balancing with Linear Programming（MicroMoE）<a href="https://arxiv.org/abs/2511.16947" target="_blank">arXiv:2511.16947</a>——独立学术工作，非 DeepSeek LPLB</li>
+<li>相关：DeepEP <a href="https://github.com/deepseek-ai/DeepEP" target="_blank">github.com/deepseek-ai/DeepEP</a>（通信前置）；NVIDIA MathDx（cuBLASDx / cusolverdx）</li>
+</ul>
+
+<hr>
+<p style="color:#57606a;font-size:.9em">本文由 ZCode 整理（2026-09-23）：源码逐行核对自仓库唯一 commit；LP 求解器以 numpy 独立复刻并验证至理论下界（脚本 <a href="assets/lplb_lp_verify.py">assets/lplb_lp_verify.py</a>）。LPLB 处于早期研究阶段，结论以官方后续更新为准。图（drawio）源文件：<a href="assets/lplb-deep-reading.drawio">assets/lplb-deep-reading.drawio</a>。</p>
+
+<script src="https://viewer.diagrams.net/js/viewer-static.min.js" onload="setTimeout(function(){ if (window.GraphViewer) GraphViewer.processElements(); }, 0)"></script>
+</body>
+</html>

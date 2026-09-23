@@ -787,11 +787,18 @@ flowchart TB
   <thead><tr><th>方法</th><th>年份</th><th>核心技术</th><th>关键结果/特点</th><th>链接</th></tr></thead>
   <tbody>
     <tr>
-      <td>FineMoE / LPLB（Linear Programming）</td>
+      <td>FineMoE</td>
       <td>2025</td>
-      <td>每个 micro-batch 内用线性规划做 token 调度，实现 GPU 间细粒度均衡</td>
+      <td>细粒度专家切分 + 训练期系统调度</td>
       <td>端到端训练吞吐最高提升 47.6%</td>
       <td><a href="https://arxiv.org/abs/2511.16947" target="_blank">arXiv:2511.16947</a></td>
+    </tr>
+    <tr>
+      <td>LPLB（DeepSeek，Linear Programming Load Balance）</td>
+      <td>2025</td>
+      <td>把冗余专家建模成拓扑图上的边，每个 micro-batch 用单 SM 内点法解一个小型 LP 做 token 分流（注意：与 arXiv:2511.16947 的 FineMoE 是两回事）</td>
+      <td>训练期每 micro-batch 近精确均衡；详见<a href="lplb-deep-reading.html">深度阅读笔记</a></td>
+      <td><a href="https://github.com/deepseek-ai/LPLB" target="_blank">deepseek-ai/LPLB</a></td>
     </tr>
     <tr>
       <td>LAER-MoE</td>
@@ -953,7 +960,7 @@ flowchart TB
       <tr><td>大规模预训练，追求性能上限</td><td>Loss-Free bias 或 φ-balancing</td><td>减少 aux loss 干扰，提升质量</td></tr>
       <tr><td>需要极强负载均衡保证</td><td>BIP / LPLB / LPR</td><td>每 micro-batch 或每层可近精确均衡</td></tr>
       <tr><td>路由不稳定、可解释性要求高</td><td>StableMoE / ERMoE / prototype routing</td><td>结构级稳定，避免反复抖动</td></tr>
-      <tr><td>已有 MoE 训练吞吐低</td><td>FineMoE/LPLB、UltraEP、LAER-MoE</td><td>系统调度直接降低 GPU 空闲与通信等待</td></tr>
+      <tr><td>已有 MoE 训练吞吐低</td><td>FineMoE、LPLB、UltraEP、LAER-MoE</td><td>系统调度直接降低 GPU 空闲与通信等待</td></tr>
       <tr><td>已有 MoE 推理慢、显存高</td><td>Capacity-Aware Inference、LLEP、R&amp;Q、ReaLB</td><td>无需重训，直接处理实际路由偏斜</td></tr>
     </tbody>
   </table>
@@ -998,7 +1005,7 @@ flowchart TB
     <li><a href="https://arxiv.org/abs/2506.21328" target="_blank">Latent Prototype Routing — arXiv:2506.21328</a></li>
     <li><a href="https://arxiv.org/abs/2409.12136" target="_blank">GRIN — arXiv:2409.12136</a></li>
     <li><a href="https://arxiv.org/abs/2510.16448" target="_blank">Input Domain Aware MoE — arXiv:2510.16448</a></li>
-    <li><a href="https://arxiv.org/abs/2511.16947" target="_blank">FineMoE / LPLB — arXiv:2511.16947</a></li>
+    <li><a href="https://arxiv.org/abs/2511.16947" target="_blank">FineMoE — arXiv:2511.16947</a>；<a href="https://github.com/deepseek-ai/LPLB" target="_blank">DeepSeek LPLB（代码仓库）</a> —— 两者是独立工作，易混淆</li>
     <li><a href="https://arxiv.org/abs/2511.10971" target="_blank">ERMoE — arXiv:2511.10971</a></li>
     <li><a href="https://arxiv.org/abs/2512.03915" target="_blank">Theoretical Framework for ALF-LB — arXiv:2512.03915</a></li>
     <li><a href="https://arxiv.org/abs/2601.17111" target="_blank">LLEP — arXiv:2601.17111</a></li>
