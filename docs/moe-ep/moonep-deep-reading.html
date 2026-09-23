@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MoonEP 深度阅读笔记 —— 动态冗余专家与构造性完美均衡的 EP 通信库</title>
+<!-- 霞鹜文楷：开源可商用的中文楷体风格字体；加载失败时自动回退到微软雅黑 -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/lxgw-wenkai-webfont@1.7.0/style.css">
+<style>
+body { font-family: "LXGW WenKai", "Microsoft YaHei", "PingFang SC", "Segoe UI", sans-serif; font-size: 17.5px; line-height: 1.85; letter-spacing: 0.01em; max-width: 1080px; margin: 40px auto; padding: 0 28px; color: #1f2328; background: #fff; }
+h1, h2, h3, h4, .kicker { font-family: "Microsoft YaHei", "PingFang SC", sans-serif; }
+h1 { font-size: 2.0em; border-bottom: 2px solid #e5e7eb; padding-bottom: .35em; }
+h2 { font-size: 1.45em; border-bottom: 1px solid #e5e7eb; padding-bottom: .2em; margin-top: 2em; }
+h3, h4, h5, h6 { margin-top: 1.6em; }
+a { color: #0969da; text-decoration: none; }
+a:hover { text-decoration: underline; }
+code { background: #f6f8fa; padding: .12em .35em; border-radius: 4px; font-family: "Cascadia Code", Consolas, "Microsoft YaHei", monospace; font-size: .92em; }
+pre { background: #f6f8fa; padding: 16px; border-radius: 8px; overflow: auto; line-height: 1.45; }
+pre code { background: none; padding: 0; }
+table { border-collapse: collapse; width: 100%; margin: 1.2em 0; display: block; overflow-x: auto; }
+th, td { border: 1px solid #d0d7de; padding: 8px 10px; text-align: left; vertical-align: top; }
+th { background: #f6f8fa; font-family: "Microsoft YaHei", "PingFang SC", sans-serif; }
+blockquote { margin: 1em 0; padding: .6em 1em; border-left: 4px solid #d0d7de; color: #57606a; background: #f6f8fa; }
+hr { border: none; border-top: 1px solid #d8dee4; margin: 2em 0; }
+.formula { background: #f6f8fa; padding: 12px 16px; border-radius: 8px; overflow-x: auto; margin: 1em 0; }
+ul, ol { padding-left: 1.8em; }
+.ev { display: inline-block; font-size: .78em; font-weight: 700; border-radius: 4px; padding: 0 .45em; margin-left: .3em; vertical-align: 1px; font-family: "Microsoft YaHei", sans-serif; }
+.ev-v { background: #dafbe1; color: #116329; }
+.ev-r { background: #fff8c5; color: #7d4e00; }
+.ev-u { background: #ffebe9; color: #82071e; }
+.mermaid { text-align: center; margin: 1.4em 0; }
+.figcaption { margin: .4em 0 1.2em; color: #57606a; font-size: .92em; text-align: center; }
+.qa { border: 1px solid #e5e7eb; border-radius: 10px; padding: 4px 20px 12px; margin: 1.6em 0; background: #fcfdfe; }
+.qa > h3 { border-bottom: 1px dashed #d8dee4; padding-bottom: .3em; margin-top: 1.2em; }
+.kicker { display: block; color: #57606a; font-size: .95em; margin-bottom: .4em; }
+</style>
+<script>
+window.MathJax = {
+  tex: {
+    inlineMath: [['$', '$']],
+    displayMath: [['$$', '$$'], ['\\[', '\\]']],
+    processEscapes: false
+  },
+  svg: { fontCache: 'global' }
+};
+</script>
+<script>
+(function () {
+  var sources = [
+    "../../assets/lib/mathjax-tex-svg.js",
+    "https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js",
+    "https://cdn.bootcdn.net/ajax/libs/mathjax/3.2.2/es5/tex-svg.js",
+    "https://cdn.staticfile.org/mathjax/3.2.2/es5/tex-svg.js",
+    "https://unpkg.com/mathjax@3/es5/tex-svg.js"
+  ];
+  function load(i) {
+    if (i >= sources.length) {
+      var node = document.getElementById("mathjax-load-fail");
+      if (node) node.style.display = "block";
+      return;
+    }
+    var s = document.createElement("script");
+    s.src = sources[i];
+    s.onerror = function () { load(i + 1); };
+    document.head.appendChild(s);
+  }
+  load(0);
+})();
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+<script>mermaid.initialize({ startOnLoad: true, theme: "neutral", fontFamily: '"Microsoft YaHei", "PingFang SC", sans-serif' });</script>
+</head>
+<body>
+<a href="https://luxiangz.github.io/llm-tech-map/" style="position:fixed;top:12px;right:14px;z-index:99;background:#f6f7f9;border:1px solid #e2e5ea;border-radius:999px;padding:4px 12px;font-size:14px;color:#2c5fa8;text-decoration:none;box-shadow:0 1px 4px rgba(0,0,0,.08)">← 技术地图首页</a>
+<div id="mathjax-load-fail" style="display:none;position:fixed;top:12px;left:14px;z-index:99;background:#fff4e5;border:1px solid #e8b04b;color:#8a5300;border-radius:8px;padding:8px 12px;font-size:13px">公式渲染组件未能加载，当前显示的是 LaTeX 源码。</div>
+
+<span class="kicker">MoE EP 负载均衡系列 · 深度阅读之六（MoonEP）· 2026-09-23</span>
+<h1>MoonEP 深度阅读笔记 —— 动态冗余专家与「构造性完美均衡」的 EP 通信库</h1>
+
+<p><strong>阅读对象：</strong>Moonshot AI 开源的 <a href="https://github.com/MoonshotAI/MoonEP" target="_blank">MoonEP</a>（“A Perfectly Balanced Expert Parallelism Library via Dynamic Redundant Experts”，Yutian Chen 等，2026）：一个<strong>EP 通信库</strong>（与 DeepEP 同类、被引擎调用，而非完整引擎），用「每步在线规划 + 动态冗余专家」做到<strong>无论路由多倾斜、每个 rank 恰好收到 $S \times K$ 个 token</strong>——均衡不是优化目标，是布局的构造性质。内核全部用 CUTLASS Python DSL（CuTe）编写。</p>
+<p><strong>证据标注：</strong><span class="ev ev-v">V</span> = 一手核对（本地仓库源码逐文件精读 + README + 仓库基准图 + GitHub API）；<span class="ev ev-r">R</span> = 合理推断/图读数；<span class="ev ev-u">U</span> = 待核实。静态精读（需 SM90/100 + NVLink 集群，未运行）。</p>
+<p><strong>系列定位：</strong>与 <a href="eplb-deep-reading.html">EPLB</a>（放置）、<a href="ultraep-deep-reading.html">UltraEP</a>（全栈运行时）、<a href="lplb-deep-reading.html">LPLB</a>（训练 LP 分流）、<a href="metro-deep-reading.html">METRO</a>（decode 激活均衡）并列——token 均衡问题的第三条路线：<strong>不预测、不分摊、不选副本，而是重新分组</strong>。</p>
+
+<h2>1. 一页结论</h2>
+<ul>
+<li><strong>MoonEP 是什么：</strong>EP 通信库（dispatch / combine / prefetch / grad_reduce 四个算子 + 内置在线规划器），用动态冗余专家保证每 rank 恒定计算 $S \times K$ token、形状完全静态——把「容忍不均衡」变成「布局上消灭不均衡」。<span class="ev ev-v">V</span></li>
+<li><strong>均衡怎么来的：</strong>每步前向跑一个 cooperative 规划内核：汇聚各 rank 真实路由 → 以 CAP = S×K 做<strong>组间贪心互填</strong>（超载组 → 最空组，受方一次补满）→ 专家级过户 → 挑 B 个迁入专家<strong>预取权重</strong>到本 rank 槽位 → 广播规划表。「每 rank 恰好 S×K」由构造保证（每源恰 S×K 条目 + 列容量 ≤ CAP + 贪心终态），无需迭代求解。<span class="ev ev-v">V</span></li>
+<li><strong>代价与回报：</strong>代价是迁入专家在本 rank 没有权重（预取槽复制 / 对称内存直读兜底，梯度独立 buffer 归约回 home）；回报是静态形状——消除每层 host 同步、无动态分配器、高失衡下不 OOM。<span class="ev ev-v">V</span></li>
+<li><strong>实测（8×H20，vs DeepEP v2 elastic）：</strong>通信时间随失衡（maxvio 0.2→20）几乎不变而 DeepEP 持续恶化；combine 各水平显著更快（高失衡约 21%）；dispatch 含规划+预取在低失衡下略慢、maxvio≥10 反超；端到端（9 层 MoE）maxvio=5 起领先 3.9–11.1%，maxvio=20 时 DeepEP OOM 而 MoonEP 正常跑完。<span class="ev ev-r">R</span>（图读数）</li>
+<li><strong>生态：</strong>vLLM 已合入（PR #52101 “BF16 integration of MoonEP balanced EP backend”，<strong>2026-09-18 merge</strong>）；与 Kimi K3 的关系（开放日同期开源）官方未直接背书，U。<span class="ev ev-v">V</span>/<span class="ev ev-u">U</span></li>
+<li><strong>边界：</strong>单节点 NVLink 域（EP = 节点内 world size）、依赖 NVSwitch multicast、bf16 + H/H′ 需 128 倍数、权重必须是连续 $[E{+}B, H, H']$ 对称张量（与现有引擎布局深度耦合）、rank0 规划是串行热点。<span class="ev ev-v">V</span></li>
+</ul>
+
+<h2>2. 身份与定位：通信库，不是引擎</h2>
+<p>README 自述：“keeps token loads perfectly balanced across ranks via dynamic redundant experts”。三个容易误读的点先钉死：<span class="ev ev-v">V</span></p>
+<ol>
+<li><strong>它是通信库</strong>（对标 DeepEP 的位置）：提供 dispatch/combine/prefetch/reduce_grad 四个算子，group GEMM 由框架做——但「均衡」内嵌在通信库里（规划器是库的一部分），这与 DeepEP「给什么路由搬什么货」根本不同。</li>
+<li><strong>「完美均衡」是精确含义</strong>：每个 rank 恰好收到 $S \times K$ 个实 token（S = 每 rank 输入 token 数，K = top-k），与路由倾斜无关——不是「尽量均衡」的启发式目标。</li>
+<li><strong>动态冗余专家是手段</strong>：迁入的 token 要用本 rank 没有的专家 → 每步把少量远端专家权重预取进 B 个槽（推理可越界直读）。冗余是<strong>每步动态变化</strong>的，与 EPLB/UltraEP 的「分钟级/每 microbatch 复制」都不同粒度。</li>
+</ol>
+<p><strong>时间线：</strong>开源于 2026-07 末（媒体集中 2026-07-28~08-02，与 Kimi K3 开放日同期；“是否为 K3 三大 Infra 技术之一”无一手出处，U）；vLLM 集成三步走（RFC #52095 → PR #52101 BF16 backend <strong>已合入 2026-09-18</strong> → PR #54147 tools/ep_kernels 构建链，open）。真武 PPU 支持“under review”。<span class="ev ev-v">V</span></p>
+
+<h2>3. 核心思想：构造性均衡 —— token 均衡的第三条路线</h2>
+<p>把本系列四条路线并排放，MoonEP 的独特性才看得清：</p>
+<table>
+<thead><tr><th>路线</th><th>代表</th><th>均衡动作</th><th>改变什么</th></tr></thead>
+<tbody>
+<tr><td>慢环放置</td><td>EPLB</td><td>分钟级重排 + 复制</td><td>专家放哪（权重搬一次管很久）</td></tr>
+<tr><td>比例分流</td><td>LPLB</td><td>每 batch 解 LP 定 0/1 之间的比例</td><td>token 在既有副本间的比例</td></tr>
+<tr><td>激活选副本</td><td>METRO</td><td>每 batch 贪心选单一副本</td><td>decode 的激活专家集合</td></tr>
+<tr><td><strong>重新分组</strong></td><td><strong>MoonEP</strong></td><td><strong>每步重算「谁给谁多少」+ 预取权重</strong></td><td><strong>token 的目的地 + 少量权重的临时位置</strong></td></tr>
+</tbody>
+</table>
+<p>关键差别：EPLB/LPLB/METRO 都接受「专家→rank」的映射是给定的，只在 token 侧做文章；MoonEP <strong>每步重排分组本身</strong>——超载组的 token 连同（预取的）专家权重一起挪到空 rank。所以它不需要负载预测（用本步真实路由），也不需要 aux-loss 配合，代价是每步多一次规划 + 权重预取的通信。<span class="ev ev-v">V</span></p>
+<p>「每 rank 恰好 S×K」为什么能<strong>白拿</strong>：每个源 rank 产出恰 $N = S \times K$ 条目（每 token 恰 K 个路由）；组间贪心以 CAP = N 为容量互填（各源总和 = 各容量总和，Σbal = 0），受方一次补满的终态即「每列恰好 N」——性质由构造保证，测试只验守恒/容量不变量而不需要断言它。<span class="ev ev-v">V</span></p>
+
+<div class="mxgraph" style="max-width:100%;border:1px solid #e5e7eb;border-radius:10px;background:#fff" data-mxgraph='{&quot;xml&quot;: &quot;&lt;mxfile host=\&quot;app.diagrams.net\&quot; pages=\&quot;1\&quot;&gt;&lt;diagram id=\&quot;moonep_balance\&quot; name=\&quot;完美均衡的构造\&quot;&gt;\n    &lt;mxGraphModel dx=\&quot;1600\&quot; dy=\&quot;900\&quot; grid=\&quot;1\&quot; gridSize=\&quot;10\&quot; guides=\&quot;1\&quot; tooltips=\&quot;1\&quot; connect=\&quot;1\&quot; arrows=\&quot;1\&quot; fold=\&quot;1\&quot; page=\&quot;1\&quot; pageScale=\&quot;1\&quot; pageWidth=\&quot;1460\&quot; pageHeight=\&quot;960\&quot; math=\&quot;1\&quot; shadow=\&quot;0\&quot;&gt;\n      &lt;root&gt;\n        &lt;mxCell id=\&quot;0\&quot; /&gt;\n        &lt;mxCell id=\&quot;1\&quot; parent=\&quot;0\&quot; /&gt;\n        &lt;mxCell id=\&quot;t1\&quot; value=\&quot;「完美均衡」的构造：CAP = S×K 的贪心互填 —— 性质由构造保证，与路由倾斜无关\&quot; style=\&quot;text;html=1;fontSize=19;fontStyle=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;\&quot; vertex=\&quot;1\&quot; parent=\&quot;1\&quot;&gt;&lt;mxGeometry x=\&quot;100\&quot; y=\&quot;16\&quot; width=\&quot;1260\&quot; height=\&quot;34\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;lA\&quot; value=\&quot;路由自然倾斜（每 rank 输入 S 个 token × K 路由 ⇒ 各 rank 产出恰 S×K 条目）\&quot; style=\&quot;text;html=1;fontSize=14;fontStyle=1;fontColor=#666666;strokeColor=none;fillColor=none;\&quot; vertex=\&quot;1\&quot; parent=\&quot;1\&quot;&gt;&lt;mxGeometry x=\&quot;60\&quot; y=\&quot;70\&quot; width=\&quot;700\&quot; height=\&quot;26\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;bar1\&quot; value=\&quot;\&quot; style=\&quot;rounded=0;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;\&quot; vertex=\&quot;1\&quot; parent=\&quot;1\&quot;&gt;&lt;mxGeometry x=\&quot;110\&quot; y=\&quot;230\&quot; width=\&quot;90\&quot; height=\&quot;320\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;bar2\&quot; value=\&quot;\&quot; style=\&quot;rounded=0;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;\&quot; vertex=\&quot;1\&quot; parent=\&quot;1\&quot;&gt;&lt;mxGeometry x=\&quot;260\&quot; y=\&quot;430\&quot; width=\&quot;90\&quot; height=\&quot;120\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;bar3\&quot; value=\&quot;\&quot; style=\&quot;rounded=0;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;\&quot; vertex=\&quot;1\&quot; parent=\&quot;1\&quot;&gt;&lt;mxGeometry x=\&quot;410\&quot; y=\&quot;500\&quot; width=\&quot;90\&quot; height=\&quot;50\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;capL\&quot; value=\&quot;CAP = S×K\&quot; style=\&quot;text;html=1;fontSize=13;fontStyle=1;fontColor=#b85450;strokeColor=none;fillColor=none;\&quot; vertex=\&quot;1\&quot; parent=\&quot;1\&quot;&gt;&lt;mxGeometry x=\&quot;560\&quot; y=\&quot;348\&quot; width=\&quot;120\&quot; height=\&quot;26\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;capline\&quot; style=\&quot;endArrow=none;html=1;strokeColor=#b85450;strokeWidth=2;dashed=1;\&quot; edge=\&quot;1\&quot; parent=\&quot;1\&quot; source=\&quot;bar1\&quot; target=\&quot;capL\&quot;&gt;&lt;mxGeometry relative=\&quot;1\&quot; as=\&quot;geometry\&quot;&gt;&lt;Array as=\&quot;points\&quot;&gt;&lt;mxPoint x=\&quot;620\&quot; y=\&quot;360\&quot; /&gt;&lt;/Array&gt;&lt;/mxGeometry&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;lb1\&quot; value=\&quot;rank 0：3.2×CAP&amp;lt;br&amp;gt;（热专家扎堆）\&quot; style=\&quot;text;html=1;fontSize=12;align=center;strokeColor=none;fillColor=none;\&quot; vertex=\&quot;1\&quot; parent=\&quot;1\&quot;&gt;&lt;mxGeometry x=\&quot;85\&quot; y=\&quot;560\&quot; width=\&quot;140\&quot; height=\&quot;40\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;lb2\&quot; value=\&quot;rank 1：0.75×CAP\&quot; style=\&quot;text;html=1;fontSize=12;align=center;strokeColor=none;fillColor=none;\&quot; vertex=\&quot;1\&quot; parent=\&quot;1\&quot;&gt;&lt;mxGeometry x=\&quot;235\&quot; y=\&quot;560\&quot; width=\&quot;140\&quot; height=\&quot;26\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;lb3\&quot; value=\&quot;rank 2：0.4×CAP\&quot; style=\&quot;text;html=1;fontSize=12;align=center;strokeColor=none;fillColor=none;\&quot; vertex=\&quot;1\&quot; parent=\&quot;1\&quot;&gt;&lt;mxGeometry x=\&quot;385\&quot; y=\&quot;560\&quot; width=\&quot;140\&quot; height=\&quot;26\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;dB\&quot; value=\&quot;DeepEP 式分配：步时由最热 rank 决定&amp;lt;br&amp;gt;≈ 3.2×CAP 的通信与等待；失衡越大越糟&amp;lt;br&amp;gt;（MoonEP 规划前同样如此）\&quot; style=\&quot;rounded=1;whiteSpace=wrap;html=1;align=left;spacing=10;fillColor=#fff2cc;strokeColor=#d6b656;\&quot; vertex=\&quot;1\&quot; parent=\&quot;1\&quot;&gt;&lt;mxGeometry x=\&quot;110\&quot; y=\&quot;640\&quot; width=\&quot;420\&quot; height=\&quot;90\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;rA\&quot; value=\&quot;MoonEP 规划后：贪心互填到 CAP\&quot; style=\&quot;text;html=1;fontSize=14;fontStyle=1;fontColor=#666666;strokeColor=none;fillColor=none;\&quot; vertex=\&quot;1\&quot; parent=\&quot;1\&quot;&gt;&lt;mxGeometry x=\&quot;760\&quot; y=\&quot;70\&quot; width=\&quot;500\&quot; height=\&quot;26\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;nbar1\&quot; value=\&quot;\&quot; style=\&quot;rounded=0;whiteSpace=wrap;html=1;fillColor=#82b366;strokeColor=#5B8748;\&quot; vertex=\&quot;1\&quot; parent=\&quot;1\&quot;&gt;&lt;mxGeometry x=\&quot;800\&quot; y=\&quot;300\&quot; width=\&quot;90\&quot; height=\&quot;250\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;nbar2\&quot; value=\&quot;\&quot; style=\&quot;rounded=0;whiteSpace=wrap;html=1;fillColor=#82b366;strokeColor=#5B8748;\&quot; vertex=\&quot;1\&quot; parent=\&quot;1\&quot;&gt;&lt;mxGeometry x=\&quot;950\&quot; y=\&quot;300\&quot; width=\&quot;90\&quot; height=\&quot;250\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;nbar3\&quot; value=\&quot;\&quot; style=\&quot;rounded=0;whiteSpace=wrap;html=1;fillColor=#82b366;strokeColor=#5B8748;\&quot; vertex=\&quot;1\&quot; parent=\&quot;1\&quot;&gt;&lt;mxGeometry x=\&quot;1100\&quot; y=\&quot;300\&quot; width=\&quot;90\&quot; height=\&quot;250\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;ncapline\&quot; style=\&quot;endArrow=none;html=1;strokeColor=#b85450;strokeWidth=2;dashed=1;\&quot; edge=\&quot;1\&quot; parent=\&quot;1\&quot;&gt;&lt;mxGeometry relative=\&quot;1\&quot; as=\&quot;geometry\&quot;&gt;&lt;mxPoint x=\&quot;770\&quot; y=\&quot;300\&quot; /&gt;&lt;mxPoint x=\&quot;1240\&quot; y=\&quot;300\&quot; /&gt;&lt;/mxGeometry&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;ncapL\&quot; value=\&quot;每 rank 恰好 S×K\&quot; style=\&quot;text;html=1;fontSize=13;fontStyle=1;fontColor=#5B8748;strokeColor=none;fillColor=none;\&quot; vertex=\&quot;1\&quot; parent=\&quot;1\&quot;&gt;&lt;mxGeometry x=\&quot;950\&quot; y=\&quot;272\&quot; width=\&quot;180\&quot; height=\&quot;26\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;nlb1\&quot; value=\&quot;rank 0：本地保留 S×K&amp;lt;br&amp;gt;（超出的 2.2×CAP 迁出）\&quot; style=\&quot;text;html=1;fontSize=12;align=center;strokeColor=none;fillColor=none;\&quot; vertex=\&quot;1\&quot; parent=\&quot;1\&quot;&gt;&lt;mxGeometry x=\&quot;775\&quot; y=\&quot;560\&quot; width=\&quot;150\&quot; height=\&quot;40\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;nlb2\&quot; value=\&quot;rank 1：本地 + 迁入补满\&quot; style=\&quot;text;html=1;fontSize=12;align=center;strokeColor=none;fillColor=none;\&quot; vertex=\&quot;1\&quot; parent=\&quot;1\&quot;&gt;&lt;mxGeometry x=\&quot;925\&quot; y=\&quot;560\&quot; width=\&quot;140\&quot; height=\&quot;26\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;nlb3\&quot; value=\&quot;rank 2：本地 + 迁入补满\&quot; style=\&quot;text;html=1;fontSize=12;align=center;strokeColor=none;fillColor=none;\&quot; vertex=\&quot;1\&quot; parent=\&quot;1\&quot;&gt;&lt;mxGeometry x=\&quot;1075\&quot; y=\&quot;560\&quot; width=\&quot;140\&quot; height=\&quot;26\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;m1\&quot; value=\&quot;A1 贪心互填（伪码）&amp;lt;br&amp;gt;bal[h] = group_tokens[h] − CAP     （Σbal = 0）&amp;lt;br&amp;gt;while (h = argmax bal) &amp;gt; 0:&amp;lt;br&amp;gt;    u = argmin bal; z[h,u] = −bal[u]&amp;lt;br&amp;gt;    bal[h] += bal[u]; bal[u] = 0     （受方一次补满）&amp;lt;br&amp;gt;A2：把配额落到专家 → alloc[e,d]；A3：选 B 个迁入专家预取权重\&quot; style=\&quot;rounded=1;whiteSpace=wrap;html=1;align=left;spacing=10;fillColor=#f2f4f8;strokeColor=#666666;fontFamily=Cascadia Code;fontSize=13;\&quot; vertex=\&quot;1\&quot; parent=\&quot;1\&quot;&gt;&lt;mxGeometry x=\&quot;760\&quot; y=\&quot;640\&quot; width=\&quot;640\&quot; height=\&quot;150\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;mv\&quot; value=\&quot;迁移 = 通信\&quot; style=\&quot;edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeWidth=2;strokeColor=#b85450;endArrow=block;exitX=1;exitY=0.35;entryX=0;entryY=0.35;dashed=1;\&quot; edge=\&quot;1\&quot; parent=\&quot;1\&quot; source=\&quot;bar1\&quot; target=\&quot;nbar1\&quot;&gt;&lt;mxGeometry relative=\&quot;1\&quot; as=\&quot;geometry\&quot;&gt;&lt;Array as=\&quot;points\&quot;&gt;&lt;mxPoint x=\&quot;700\&quot; y=\&quot;342\&quot; /&gt;&lt;/Array&gt;&lt;/mxGeometry&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;why\&quot; value=\&quot;为什么「恰好 S×K」由构造保证：① 每个源 rank 恰好输出 S×K 条目；② 每列（目标）配额 ≤ CAP；③ 贪心循环终态把全部空余填满 ⇒ 无需断言、测试只验守恒/容量不变量&amp;lt;br&amp;gt;代价：迁入专家在本 rank 无权重 ⇒ 动态冗余（预取槽复制权重 / 对称内存直读兜底），梯度经 grad_reduce 归约回 home rank\&quot; style=\&quot;rounded=1;whiteSpace=wrap;html=1;align=left;spacing=10;fillColor=#d5e8d4;strokeColor=#82b366;\&quot; vertex=\&quot;1\&quot; parent=\&quot;1\&quot;&gt;&lt;mxGeometry x=\&quot;60\&quot; y=\&quot;810\&quot; width=\&quot;1340\&quot; height=\&quot;90\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;lg2\&quot; value=\&quot;示意数字（3 rank、CAP=1）；实际：8×H20、E=384、H=7168、K=8、S=8192/rank 实测 —— 规划后 comm 时间随 maxvio（0.2→20）几乎不变，DeepEP v2 持续恶化\&quot; style=\&quot;text;html=1;fontSize=12;fontColor=#666666;align=center;strokeColor=none;fillColor=#fafafa;rounded=1;\&quot; vertex=\&quot;1\&quot; parent=\&quot;1\&quot;&gt;&lt;mxGeometry x=\&quot;60\&quot; y=\&quot;760\&quot; width=\&quot;660\&quot; height=\&quot;40\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n      &lt;/root&gt;\n    &lt;/mxGraphModel&gt;\n  &lt;/diagram&gt;\n&lt;/mxfile&gt;&quot;}'></div>
+<p class="figcaption">图 2 · 完美均衡的构造：CAP=S×K 的贪心互填——左为路由自然倾斜（DeepEP 式「最热 rank 定步时」），右为规划后每 rank 恒 S×K；下方为 A1 伪码与构造性性质。drawio 源文件同上（完美均衡的构造 sheet）。</p>
+
+<h2>4. 在线规划内核：一个 cooperative grid 的 Phase A–D</h2>
+<p><code>planning.py</code>，入口 <code>launch_planning(ctx, topk_experts_flat, tokens_per_expert, cu_seqlens, plan)</code>，输入是<strong>本 rank 的真实路由</strong>；单内核 num_sms×CTA、512 线程/CTA，分阶段：<span class="ev ev-v">V</span></p>
+<pre><code>cap = S*K
+gt[h] = Σ_{e ∈ home group h} tpe_all_ranks[e]        # A0：multimem 多播汇聚，rank0 算前缀和
+bal[h] = gt[h] - cap                                  # Σbal = 0
+while (h = argmax bal) > 0:                           # A1：组间贪心互填
+    u = argmin bal; z[h,u] = -bal[u]                  #   超载组 → 最空组
+    bal[h] += bal[u]; bal[u] = 0                      #   受方一次补满 ⇒ 每 rank 恰收 cap
+for each home group h:                                # A2：专家级过户
+    while (d = argmax z[h]) > 0:
+        e = 本组剩余最多的专家; take = min(rem, quota)
+        alloc[e,d] += take; alloc[e,h] -= take        #   ⇒ 迁移专家数最少（整组整组地搬）
+for each dest rank d:                                 # A3：选预取专家 + 铺 VM 布局
+    experts_to_copy[d] = alloc 中 token 最多的 B 个远端专家
+    for g in [0, E+B): cu_seqlens[d,g] = pad 到 token_padding 倍数的累积段末
+rank0 一次多播整张规划表
+每 rank：C1 本地 topk 按 expert 排序（直方图 + 段前缀 + match_any）
+         C2 对每条目在 alloc_cumsum 上固定趟二分 → dst = rank·NvS + 段内偏移
+            同 token 命中同 dest 的后续项编码为 -(raw)-1（dedup）  D 本地化输出 + 设备端 barrier</code></pre>
+<p>四点值得注意：<strong>①</strong> 贪心目标是「最小化迁移」（受方一次补满 → 尽量整专家过户），冗余专家只在「某组溢出需要远端接盘」时出现；<strong>②</strong> 每个 dest 至多从一个远端 home 组接收 ⇒ B = E/R 个预取槽即够训练全本地化；<strong>③</strong> rank0 承担汇聚/贪心/广播（单 warp 贪心循环是串行段）；<strong>④</strong> <code>NvS = S×K + (token_padding−1)·2·epn</code> 是 padding 上界的闭式解——shape 仍然全静态。<span class="ev ev-v">V</span></p>
+
+<h2>5. 端到端数据流：融合 permute 的通信</h2>
+
+<div class="mxgraph" style="max-width:100%;border:1px solid #e5e7eb;border-radius:10px;background:#fff" data-mxgraph='{&quot;xml&quot;: &quot;&lt;mxfile host=\&quot;app.diagrams.net\&quot; pages=\&quot;1\&quot;&gt;&lt;diagram id=\&quot;moonep_pipeline\&quot; name=\&quot;MoonEP 端到端数据流\&quot;&gt;\n    &lt;mxGraphModel dx=\&quot;1600\&quot; dy=\&quot;900\&quot; grid=\&quot;1\&quot; gridSize=\&quot;10\&quot; guides=\&quot;1\&quot; tooltips=\&quot;1\&quot; connect=\&quot;1\&quot; arrows=\&quot;1\&quot; fold=\&quot;1\&quot; page=\&quot;1\&quot; pageScale=\&quot;1\&quot; pageWidth=\&quot;1560\&quot; pageHeight=\&quot;1120\&quot; math=\&quot;1\&quot; shadow=\&quot;0\&quot;&gt;\n      &lt;root&gt;\n        &lt;mxCell id=\&quot;0\&quot; /&gt;\n        &lt;mxCell id=\&quot;1\&quot; parent=\&quot;0\&quot; /&gt;\n        &lt;mxCell id=\&quot;t1\&quot; value=\&quot;MoonEP 前向：在线规划 → 预取 → 融合 permute 的 dispatch → 静态形状 group GEMM → 融合 unpermute 的 combine（每 rank 恒定 S×K token）\&quot; style=\&quot;text;html=1;fontSize=19;fontStyle=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;\&quot; vertex=\&quot;1\&quot; parent=\&quot;1\&quot;&gt;&lt;mxGeometry x=\&quot;100\&quot; y=\&quot;16\&quot; width=\&quot;1360\&quot; height=\&quot;34\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;ph1\&quot; value=\&quot;① 每步在线规划（planning.py，单 cooperative grid）\&quot; style=\&quot;text;html=1;fontSize=15;fontStyle=1;fontColor=#666666;strokeColor=none;fillColor=none;\&quot; vertex=\&quot;1\&quot; parent=\&quot;1\&quot;&gt;&lt;mxGeometry x=\&quot;40\&quot; y=\&quot;70\&quot; width=\&quot;500\&quot; height=\&quot;26\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;ph2\&quot; value=\&quot;② 通信与计算（每层静态 shape，无 host 同步）\&quot; style=\&quot;text;html=1;fontSize=15;fontStyle=1;fontColor=#666666;strokeColor=none;fillColor=none;\&quot; vertex=\&quot;1\&quot; parent=\&quot;1\&quot;&gt;&lt;mxGeometry x=\&quot;40\&quot; y=\&quot;420\&quot; width=\&quot;420\&quot; height=\&quot;26\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;ph3\&quot; value=\&quot;③ 反向（plan 复用 + 梯度归约）\&quot; style=\&quot;text;html=1;fontSize=15;fontStyle=1;fontColor=#666666;strokeColor=none;fillColor=none;\&quot; vertex=\&quot;1\&quot; parent=\&quot;1\&quot;&gt;&lt;mxGeometry x=\&quot;40\&quot; y=\&quot;840\&quot; width=\&quot;360\&quot; height=\&quot;26\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;a1\&quot; value=\&quot;本 rank 真实路由&amp;lt;br&amp;gt;topk[N] + tokens_per_expert[E]\&quot; style=\&quot;rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;\&quot; vertex=\&quot;1\&quot; parent=\&quot;1\&quot;&gt;&lt;mxGeometry x=\&quot;60\&quot; y=\&quot;110\&quot; width=\&quot;250\&quot; height=\&quot;70\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;a2\&quot; value=\&quot;A0 汇聚：multimem 多播 tpe/topk&amp;lt;br&amp;gt;rank0 算专家前缀和 + 组 token\&quot; style=\&quot;rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;\&quot; vertex=\&quot;1\&quot; parent=\&quot;1\&quot;&gt;&lt;mxGeometry x=\&quot;360\&quot; y=\&quot;110\&quot; width=\&quot;260\&quot; height=\&quot;70\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;a3\&quot; value=\&quot;A1 组间贪心互填（CAP = S×K）&amp;lt;br&amp;gt;超载组 → 最空组，受方一次补满&amp;lt;br&amp;gt;⇒ 每 rank 恰收 S×K 实 token\&quot; style=\&quot;rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;\&quot; vertex=\&quot;1\&quot; parent=\&quot;1\&quot;&gt;&lt;mxGeometry x=\&quot;670\&quot; y=\&quot;100\&quot; width=\&quot;300\&quot; height=\&quot;90\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;a4\&quot; value=\&quot;A2 专家级过户 alloc[e,d]&amp;lt;br&amp;gt;A3 选 B 个预取专家 + 铺 cu_seqlens&amp;lt;br&amp;gt;rank0 一次广播整张规划表\&quot; style=\&quot;rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;\&quot; vertex=\&quot;1\&quot; parent=\&quot;1\&quot;&gt;&lt;mxGeometry x=\&quot;1020\&quot; y=\&quot;100\&quot; width=\&quot;300\&quot; height=\&quot;90\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;a5\&quot; value=\&quot;B/C 每 rank 本地排序 + 二分落位&amp;lt;br&amp;gt;dst = rank·NvS + 段内偏移（同 dest 重复项负编码 dedup）&amp;lt;br&amp;gt;设备端 barrier 发布，全程无 host 往返\&quot; style=\&quot;rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;\&quot; vertex=\&quot;1\&quot; parent=\&quot;1\&quot;&gt;&lt;mxGeometry x=\&quot;670\&quot; y=\&quot;230\&quot; width=\&quot;650\&quot; height=\&quot;90\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;a6\&quot; value=\&quot;规划产物（MoonEPCommPlan，前后向复用）&amp;lt;br&amp;gt;dst[N] · cu_seqlens[E+B] · experts_to_copy[R,B] · zero_fill\&quot; style=\&quot;rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;\&quot; vertex=\&quot;1\&quot; parent=\&quot;1\&quot;&gt;&lt;mxGeometry x=\&quot;60\&quot; y=\&quot;230\&quot; width=\&quot;560\&quot; height=\&quot;80\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;b1\&quot; value=\&quot;prefetch_weight（与 dispatch 并行）&amp;lt;br&amp;gt;2D TMA 把 B 个远端专家权重&amp;lt;br&amp;gt;拷入本 rank 预取槽 [E,E+B)\&quot; style=\&quot;rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;\&quot; vertex=\&quot;1\&quot; parent=\&quot;1\&quot;&gt;&lt;mxGeometry x=\&quot;60\&quot; y=\&quot;460\&quot; width=\&quot;290\&quot; height=\&quot;90\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;b2\&quot; value=\&quot;dispatch：cp.async.bulk 直写&amp;lt;br&amp;gt;远端 expert-grouped 槽位&amp;lt;br&amp;gt;（permute 融进通信；权重 int32 scatter；&amp;lt;br&amp;gt;zero warp 清 padding；builder 物化 dedup）\&quot; style=\&quot;rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;\&quot; vertex=\&quot;1\&quot; parent=\&quot;1\&quot;&gt;&lt;mxGeometry x=\&quot;390\&quot; y=\&quot;450\&quot; width=\&quot;330\&quot; height=\&quot;110\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;b3\&quot; value=\&quot;dispatch_epilogue（本地）&amp;lt;br&amp;gt;primary 行扇出到全部副本槽\&quot; style=\&quot;rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;\&quot; vertex=\&quot;1\&quot; parent=\&quot;1\&quot;&gt;&lt;mxGeometry x=\&quot;760\&quot; y=\&quot;460\&quot; width=\&quot;250\&quot; height=\&quot;90\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;b4\&quot; value=\&quot;group GEMM（框架侧）&amp;lt;br&amp;gt;按 cu_seqlens 读统一权重张量 [E+B,H,H&#x27;]&amp;lt;br&amp;gt;zero_copy：直接在 NVL 视图上原地读写\&quot; style=\&quot;rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;\&quot; vertex=\&quot;1\&quot; parent=\&quot;1\&quot;&gt;&lt;mxGeometry x=\&quot;1050\&quot; y=\&quot;450\&quot; width=\&quot;330\&quot; height=\&quot;110\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;b5\&quot; value=\&quot;combine_prologue（本地预规约）&amp;lt;br&amp;gt;重复行 fp32 累加回 primary\&quot; style=\&quot;rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;\&quot; vertex=\&quot;1\&quot; parent=\&quot;1\&quot;&gt;&lt;mxGeometry x=\&quot;1050\&quot; y=\&quot;620\&quot; width=\&quot;330\&quot; height=\&quot;80\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;b6\&quot; value=\&quot;combine：只拉 primary 行&amp;lt;br&amp;gt;G2S→S2G 累加回 token-major [S,H]&amp;lt;br&amp;gt;（unpermute 融进通信；权重原样 gather 回 [S,K]）\&quot; style=\&quot;rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;\&quot; vertex=\&quot;1\&quot; parent=\&quot;1\&quot;&gt;&lt;mxGeometry x=\&quot;600\&quot; y=\&quot;615\&quot; width=\&quot;400\&quot; height=\&quot;90\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;b7\&quot; value=\&quot;输出 hidden_sh[S,H] + route_weights_sk[S,K]&amp;lt;br&amp;gt;每 rank 计算量恒定 S×K token、形状完全静态\&quot; style=\&quot;rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;\&quot; vertex=\&quot;1\&quot; parent=\&quot;1\&quot;&gt;&lt;mxGeometry x=\&quot;120\&quot; y=\&quot;620\&quot; width=\&quot;420\&quot; height=\&quot;80\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;c1\&quot; value=\&quot;combine bwd：复用保存的 plan 重新 dispatch&amp;lt;br&amp;gt;（跳过规划与预取）\&quot; style=\&quot;rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;\&quot; vertex=\&quot;1\&quot; parent=\&quot;1\&quot;&gt;&lt;mxGeometry x=\&quot;60\&quot; y=\&quot;880\&quot; width=\&quot;360\&quot; height=\&quot;80\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;c2\&quot; value=\&quot;GEMM bwd：预取槽梯度写入独立 reduce buffer&amp;lt;br&amp;gt;[R,B,H,H&#x27;] fp32（不污染框架自身梯度归约）\&quot; style=\&quot;rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;\&quot; vertex=\&quot;1\&quot; parent=\&quot;1\&quot;&gt;&lt;mxGeometry x=\&quot;470\&quot; y=\&quot;880\&quot; width=\&quot;400\&quot; height=\&quot;80\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;c3\&quot; value=\&quot;grad_reduce：每个 home rank 经 NVLink&amp;lt;br&amp;gt;远端读回自己专家的槽梯度、fp32 累加&amp;lt;br&amp;gt;cross_rank_barrier 后只本地清槽\&quot; style=\&quot;rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;\&quot; vertex=\&quot;1\&quot; parent=\&quot;1\&quot;&gt;&lt;mxGeometry x=\&quot;920\&quot; y=\&quot;870\&quot; width=\&quot;360\&quot; height=\&quot;100\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;ea12\&quot; style=\&quot;edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeWidth=2;strokeColor=#1c2430;\&quot; edge=\&quot;1\&quot; parent=\&quot;1\&quot; source=\&quot;a1\&quot; target=\&quot;a2\&quot;&gt;&lt;mxGeometry relative=\&quot;1\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;ea23\&quot; style=\&quot;edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeWidth=2;strokeColor=#1c2430;\&quot; edge=\&quot;1\&quot; parent=\&quot;1\&quot; source=\&quot;a2\&quot; target=\&quot;a3\&quot;&gt;&lt;mxGeometry relative=\&quot;1\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;ea34\&quot; style=\&quot;edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeWidth=2;strokeColor=#1c2430;\&quot; edge=\&quot;1\&quot; parent=\&quot;1\&quot; source=\&quot;a3\&quot; target=\&quot;a4\&quot;&gt;&lt;mxGeometry relative=\&quot;1\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;ea45\&quot; style=\&quot;edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeWidth=2;strokeColor=#1c2430;\&quot; edge=\&quot;1\&quot; parent=\&quot;1\&quot; source=\&quot;a4\&quot; target=\&quot;a5\&quot;&gt;&lt;mxGeometry relative=\&quot;1\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;ea56\&quot; style=\&quot;edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeWidth=2;strokeColor=#b85450;exitX=0;exitY=0.5;entryX=1;entryY=0.5;\&quot; edge=\&quot;1\&quot; parent=\&quot;1\&quot; source=\&quot;a5\&quot; target=\&quot;a6\&quot;&gt;&lt;mxGeometry relative=\&quot;1\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;eb12\&quot; style=\&quot;edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeWidth=2;strokeColor=#1c2430;\&quot; edge=\&quot;1\&quot; parent=\&quot;1\&quot; source=\&quot;b1\&quot; target=\&quot;b2\&quot;&gt;&lt;mxGeometry relative=\&quot;1\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;eb23\&quot; style=\&quot;edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeWidth=2;strokeColor=#1c2430;\&quot; edge=\&quot;1\&quot; parent=\&quot;1\&quot; source=\&quot;b2\&quot; target=\&quot;b3\&quot;&gt;&lt;mxGeometry relative=\&quot;1\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;eb34\&quot; style=\&quot;edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeWidth=2;strokeColor=#1c2430;\&quot; edge=\&quot;1\&quot; parent=\&quot;1\&quot; source=\&quot;b3\&quot; target=\&quot;b4\&quot;&gt;&lt;mxGeometry relative=\&quot;1\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;eb45\&quot; style=\&quot;edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeWidth=2;strokeColor=#1c2430;exitX=0.5;exitY=1;entryX=0.5;entryY=0;\&quot; edge=\&quot;1\&quot; parent=\&quot;1\&quot; source=\&quot;b4\&quot; target=\&quot;b5\&quot;&gt;&lt;mxGeometry relative=\&quot;1\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;eb56\&quot; style=\&quot;edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeWidth=2;strokeColor=#1c2430;\&quot; edge=\&quot;1\&quot; parent=\&quot;1\&quot; source=\&quot;b5\&quot; target=\&quot;b6\&quot;&gt;&lt;mxGeometry relative=\&quot;1\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;eb67\&quot; style=\&quot;edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeWidth=2;strokeColor=#1c2430;\&quot; edge=\&quot;1\&quot; parent=\&quot;1\&quot; source=\&quot;b6\&quot; target=\&quot;b7\&quot;&gt;&lt;mxGeometry relative=\&quot;1\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;ec12\&quot; style=\&quot;edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeWidth=2;strokeColor=#1c2430;\&quot; edge=\&quot;1\&quot; parent=\&quot;1\&quot; source=\&quot;c1\&quot; target=\&quot;c2\&quot;&gt;&lt;mxGeometry relative=\&quot;1\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;ec23\&quot; style=\&quot;edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeWidth=2;strokeColor=#1c2430;\&quot; edge=\&quot;1\&quot; parent=\&quot;1\&quot; source=\&quot;c2\&quot; target=\&quot;c3\&quot;&gt;&lt;mxGeometry relative=\&quot;1\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;eplan1\&quot; value=\&quot;plan 驱动 prefetch / dispatch / GEMM 寻址\&quot; style=\&quot;edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;dashed=1;strokeColor=#d6b656;exitX=0.25;exitY=1;entryX=0.5;entryY=0;\&quot; edge=\&quot;1\&quot; parent=\&quot;1\&quot; source=\&quot;a6\&quot; target=\&quot;b2\&quot;&gt;&lt;mxGeometry relative=\&quot;1\&quot; as=\&quot;geometry\&quot;&gt;&lt;Array as=\&quot;points\&quot;&gt;&lt;mxPoint x=\&quot;200\&quot; y=\&quot;400\&quot; /&gt;&lt;mxPoint x=\&quot;555\&quot; y=\&quot;400\&quot; /&gt;&lt;/Array&gt;&lt;/mxGeometry&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;eplan2\&quot; value=\&quot;experts_to_copy → 预取表\&quot; style=\&quot;edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;dashed=1;strokeColor=#d6b656;exitX=0;exitY=0.5;entryX=0.5;entryY=0;\&quot; edge=\&quot;1\&quot; parent=\&quot;1\&quot; source=\&quot;a6\&quot; target=\&quot;b1\&quot;&gt;&lt;mxGeometry relative=\&quot;1\&quot; as=\&quot;geometry\&quot;&gt;&lt;Array as=\&quot;points\&quot;&gt;&lt;mxPoint x=\&quot;205\&quot; y=\&quot;430\&quot; /&gt;&lt;mxPoint x=\&quot;205\&quot; y=\&quot;430\&quot; /&gt;&lt;/Array&gt;&lt;/mxGeometry&gt;&lt;/mxCell&gt;\n        &lt;mxCell id=\&quot;lg\&quot; value=\&quot;图例：蓝 = 数据/框架侧；绿 = MoonEP 通信内核；红 = 规划内核（核心）；橙 = 反向路径；黄 = 规划产物&amp;lt;br&amp;gt;工程底座：CUTLASS Python DSL（CuTe）JIT + inline PTX；VMM 对称内存全 RW + NVSwitch multicast 广播；自复位 grid/cross-rank barrier + PDL ⇒ 无 host 同步\&quot; style=\&quot;text;html=1;fontSize=12;fontColor=#666666;align=left;strokeColor=none;fillColor=#fafafa;rounded=1;\&quot; vertex=\&quot;1\&quot; parent=\&quot;1\&quot;&gt;&lt;mxGeometry x=\&quot;60\&quot; y=\&quot;1020\&quot; width=\&quot;1000\&quot; height=\&quot;56\&quot; as=\&quot;geometry\&quot; /&gt;&lt;/mxCell&gt;\n      &lt;/root&gt;\n    &lt;/mxGraphModel&gt;\n  &lt;/diagram&gt;\n  &lt;/mxfile&gt;&quot;}'></div>
+<p class="figcaption">图 1 · MoonEP 端到端：前向（规划 → 预取/直写 dispatch → 静态 group GEMM → 融合 unpermute 的 combine）与反向（plan 复用 + 梯度归约）。drawio 源文件：<a href="assets/moonep-deep-reading.drawio">assets/moonep-deep-reading.drawio</a>（MoonEP 端到端数据流 sheet）。</p>
+
+<p>两个「融合」是理解 MoonEP 通信的钥匙：<span class="ev ev-v">V</span></p>
+<ul>
+<li><strong>permute 融进 dispatch</strong>：没有独立 permute 内核——token 行用 <code>cp.async.bulk</code> 直接写到远端 rank 的 <strong>expert-grouped 槽位</strong>（<code>dst</code> 编码的偏移处）；同一 token 命中同 dest 的 K 项被规划器 dedup 成 1 次传输，epilogue 再本地扇出到副本槽。group GEMM 拿到的 buffer 天然按专家分组。</li>
+<li><strong>unpermute 融进 combine</strong>：combine_prologue 先把重复行 fp32 预规约回 primary；combine 只拉 primary 行、按路由权重求和回 token-major。route weight 全程按 int32 视图在 meta 区 scatter/gather，从不 dedup。</li>
+<li><strong>zero_copy</strong>：dispatch 返回 NVL shard 的<strong>视图</strong>，专家 FFN 原地读写（combine 端用 <code>data_ptr()</code> 断言同一块）——消灭 comm→用户缓冲的边界拷贝；代价是视图生命周期约束（autograd 反向须 <code>zero_copy=False</code>）。</li>
+</ul>
+
+<h2>6. 内存模型：统一权重张量与 B 槽</h2>
+<p>与框架的契约是全库最「硬」的部分：每个投影（gate/up/down）每层一个<strong>连续对称内存张量 $[E{+}B, H, H']$</strong>，各 rank 布局相同（“contiguity is a hard requirement”——VM 组 GEMM 靠行寻址专家，这是与「每专家独立张量」框架不兼容、vLLM 需专门适配的原因）：<span class="ev ev-v">V</span></p>
+<table>
+<thead><tr><th>行区间</th><th>内容</th><th>说明</th></tr></thead>
+<tbody>
+<tr><td>$[0, E)$</td><td>各 home rank 的主专家参数</td><td>物理上就是主 rank 参数内存经对称映射全局可见</td></tr>
+<tr><td>$[E, E{+}B)$</td><td>本 rank 预取槽</td><td>prefetch 按 experts_to_copy 填充；物理内存来自<strong>跨层共享的进程级池</strong>（额外成本 = 全模型 B 份专家权重，非每层 B 份）</td></tr>
+</tbody>
+</table>
+<ul>
+<li><strong>训练 B = E/R</strong>（规划器保证 GEMM 只摸本地行）；<strong>推理推荐 B = 3–4</strong>，槽不够时 group GEMM 按对称映射直读 home 行（稍慢、正确）。</li>
+<li><strong>梯度侧</strong>：预取槽的梯度不是参数梯度，放独立 fp32 reduce buffer $[R,B,H,H']$（同池）；<code>reduce_grad</code> 让每个 home rank 经 NVLink 远端读回自己专家的槽梯度、fp32 累加，barrier 后只本地清槽（注释：曾试远端清零被否——同向 NVLink 读写共享带宽）。</li>
+</ul>
+
+<h2>7. 工程底座：CuTe DSL + 对称内存 + 无 host 同步</h2>
+<ul>
+<li><strong>全部内核用 CUTLASS Python DSL（CuTe）写</strong>，JIT + host LRU 缓存，shape 全 constexpr 特化；不是 Triton 也不是手写 .cu。<code>csrc/</code> 仅 478 行：VMM 对称内存（cuMemCreate/Map/Export fd）+ NVSwitch multicast（BindMem）驱动封装。唯一 pip 依赖 <code>nvidia-cutlass-dsl==4.4.2</code>。</li>
+<li><strong>对称内存全 RW</strong>：各 rank 的 chunk 按 rank 序 map 进一段连续 VA，dispatch 直写远端区；multicast VA 上的 <code>multimem.st</code> = 硬件扇出广播（规划表一次广播）。fd 经 AF_UNIX SOCK_DGRAM + SCM_RIGHTS 传递；对齐是血泪教训集中地（chunk 字节数必须对齐 VMM/multicast 粒度的 max）。</li>
+<li><strong>无 host 同步</strong>：cooperative launch + 自复位 grid/cross-rank barrier（DeepGEMM 血统，<code>fence.proxy.alias/async.global</code> 桥接 multicast 与 TMA）+ PDL + 设备端读 <code>dup_counts</code> + 全静态 shape——「静态形状消除逐层 host 同步」的完整含义。</li>
+<li><strong>位宽契约</strong>：RANK_BITS=7（R≤128）、KIDX_BITS=7；跨 2^31 地址运算显式 i64；bf16 payload 需 H%8==0，H/H′ 需 128 倍数（2D TMA tile）。</li>
+</ul>
+
+<h2>8. 实测数据（仓库 figure 读数）</h2>
+<p>配置：8×H20、EP=8。通信对拍（E=384, H=7168, K=8, S=8192/rank, 32 SMs，唯一可比对象 = DeepEP v2 elastic 展开路径）与端到端（seq16k、9 层 MoE、E=256、topk8、H′=2048）。<strong>以下为本文从仓库 PNG 目测读数</strong>：<span class="ev ev-r">R</span></p>
+<table>
+<thead><tr><th>口径</th><th>maxvio=0.2</th><th>1</th><th>5</th><th>10–15</th><th>20</th></tr></thead>
+<tbody>
+<tr><td>dispatch fwd（µs，MoonEP 总，含 plan+prefetch）</td><td>~2600（v2 ~2300）</td><td>~2620</td><td>~2620</td><td>~2600 vs v2 ~2550+</td><td><strong>~2410 vs v2 ~2600（反超）</strong></td></tr>
+<tr><td>combine fwd（µs）</td><td>~1930 vs 2136</td><td>~1940 vs 2200</td><td>—</td><td>~1950 vs 2350+</td><td><strong>~1945 vs 2468（−21%）</strong></td></tr>
+<tr><td>端到端迭代时间（DeepEP/MoonEP 归一化）</td><td>0.98（MoonEP 略慢）</td><td>0.995</td><td>1.039</td><td>1.076–1.127</td><td><strong>DeepEP OOM；MoonEP 正常跑完</strong></td></tr>
+</tbody>
+</table>
+<p>三点诚实读法：<strong>①</strong> MoonEP 各操作时间随 maxvio 几乎不变（完美均衡 ⇒ 对失衡免疫），DeepEP v2 全面单调恶化（最热 rank 决定）；<strong>②</strong> 低失衡下 MoonEP 端到端反而略慢（≈2%）——dispatch 背着规划+预取的固定开销，交叉点在 maxvio≈2–5；<strong>③</strong> 高失衡的两个杀手锏：通信时间持平 + 静态形状不 OOM（DeepEP 动态形状在高失衡下显存碎片化）。README 未给数值表，引用绝对数需看图。<span class="ev ev-v">V</span>/<span class="ev ev-r">R</span></p>
+
+<h2>9. 代码走读与测试完备度</h2>
+<table>
+<thead><tr><th>文件</th><th>职责</th></tr></thead>
+<tbody>
+<tr><td><code>moonep/planning.py</code></td><td>核心：规划内核 Phase A–D（§4）；MoonEPCommPlan 数据类</td></tr>
+<tr><td><code>moonep/dispatch.py / dispatch_epilogue.py</code></td><td>直写远端 expert-grouped 槽（融合 permute）+ dedup builder + 本地副本扇出</td></tr>
+<tr><td><code>moonep/combine.py / combine_prologue.py</code></td><td>重复行 fp32 预规约 + 只拉 primary 回 token-major（融合 unpermute）</td></tr>
+<tr><td><code>moonep/prefetch.py / grad_reduce.py</code></td><td>B 槽 2D TMA 权重预取 / home rank 梯度归约与清槽</td></tr>
+<tr><td><code>moonep/buffer.py / api.py</code></td><td>Buffer（S,H,K,E,num_ep_ranks,token_padding,B…）、对称内存/多播创建、async event 语义</td></tr>
+<tr><td><code>csrc/nvl_shared_buffer.cuh</code></td><td>478 行：VMM 对称内存 + NVSwitch multicast 驱动封装</td></tr>
+<tr><td><code>tests/</code></td><td>纯 torch CPU 参考实现逐元素比对 + 守恒/容量/padding 不变量 + 8 卡 e2e；与 DeepEP v2 对齐基准（同路由 seed/计时/SM）</td></tr>
+</tbody>
+</table>
+<p>测试完备度是三仓库中最好的（对照 EPLB 无测试文件、UltraEP 单卡断言）：规划结果与 CPU 参考逐元素相等、alloc 行和=专家计数（守恒）、列和≤CAP（容量）、cu_seqlens 单调 + padding 倍数、dst 解码界检查；dedup 因 atomicAdd 前缀顺序不稳定只做<strong>语义（集合）比较</strong>并文档化。基准公平性细节（seed 1234 同路由、warmup20/iters50、SM=32、带宽公式两侧一致、grad_reduce 不计入）都在 bench docstring。<span class="ev ev-v">V</span></p>
+
+<h2>10. 局限（代码级可见）</h2>
+<ul>
+<li><strong>单节点 NVLink 域</strong>：EP = 节点内 world size（bench 即 8 卡）；跨节点 EP 需上层再切（与 UltraEP 的 RSN 域约束同型）；</li>
+<li><strong>依赖 NVSwitch multicast</strong>（规划广播路径硬依赖）；bf16 + H/H′ 128 对齐、token_padding 上界约束；</li>
+<li><strong>布局契约深度耦合</strong>：连续 [E+B,H,H′] 对称张量 + cu_seqlens 寻址，与「每专家独立张量」的现有框架不兼容——vLLM 走专用 backend 适配，其他引擎移植成本高；</li>
+<li><strong>rank0 串行规划热点</strong>：汇聚 + 单 warp 贪心 + 广播集中在 rank0（靠组数少/B 小摊薄），规模上去后的伸缩性未验证；</li>
+<li><strong>S 静态</strong>：每 rank 输入 token 数固定（静态 shape 的另一面）——变长 batch 需 padding 到 S，浪费随流量波动增大；</li>
+<li><strong>无第三方大规模复现</strong>：README 之外只有小型博客级复现；「K3 在用」无一手出处。<span class="ev ev-u">U</span></li>
+</ul>
+
+<h2>11. 全家福：五个均衡器的位置图</h2>
+<table>
+<thead><tr><th>方案</th><th>阶段</th><th>均衡什么 / 怎么均衡</th><th>形态</th></tr></thead>
+<tbody>
+<tr><td>EPLB</td><td>放置（分钟级）</td><td>token 期望负载 / 复制 + 贪心装箱</td><td>纯算法（164 行）</td></tr>
+<tr><td>UltraEP</td><td>训练+prefill 全栈</td><td>每 microbatch 精确负载 / 配额二分 + NVSHMEM 通信</td><td>独立运行时</td></tr>
+<tr><td>LPLB</td><td>训练逐 batch</td><td>组内 max token / 冗余边 LP 分流（单 SM）</td><td>训练库</td></tr>
+<tr><td>METRO</td><td>decode 逐 batch</td><td>每 GPU 激活专家数 / 单副本贪心</td><td>路由层</td></tr>
+<tr><td><strong>MoonEP</strong></td><td><strong>训练 + 推理通信</strong></td><td><strong>每 rank 恒 S×K / 每步重分组 + 动态预取（构造性）</strong></td><td><strong>EP 通信库</strong></td></tr>
+</tbody>
+</table>
+<p>与 UltraEP 的分工最值得记：两者同属「以均衡为卖点、自带通信」的一代，但 UltraEP 是「规划+复制+通信」全栈运行时（NVSHMEM、跨节点 RSN 域），MoonEP 是单节点 NVLink 域内「均衡即布局性质」的通信原语——前者追求覆盖，后者追求极简与静态。<span class="ev ev-v">V</span></p>
+
+<h2>12. 快问快答</h2>
+<div class="qa">
+<h3>Q1：「完美均衡」真的完美吗？</h3>
+<p>它均衡的是<strong>每 rank 的 token 计数量</strong>（恒 S×K），不建模每专家计算时间差异与 group GEMM 的非线性——与 LPLB/METRO 的 token-only 目标同源的盲区（TEMPO 方向）。但在「token 数就是一阶瓶颈」的场景（通信量 ∝ token 数）它是构造性的最强保证。<span class="ev ev-r">R</span></p>
+<h3>Q2：和 DeepEP 的本质区别一句话？</h3>
+<p>DeepEP 是「忠实搬运工」：路由给什么搬什么，最热 rank 决定步时；MoonEP 是「调度型通信库」：每步先算一个均衡的目的地分配（连权重预取一起规划），再按计划直写。代价 = 规划 + 预取开销（低失衡 ≈2% 端到端），收益 = 失衡免疫 + 静态形状。<span class="ev ev-v">V</span></p>
+<h3>Q3：推理能用吗？</h3>
+<p>能，且已进 vLLM（BF16 balanced EP backend，2026-09-18 合入）。推理路径 B=3–4 预取槽 + 越界对称直读兜底，无梯度归约负担；静态形状对 CUDA Graph 友好。<span class="ev ev-v">V</span></p>
+<h3>Q4：为什么要「连续统一权重张量」这么苛刻？</h3>
+<p>group GEMM 按 cu_seqlens 的行段寻址专家，要求 [E+B,H,H′] 一整块连续内存（本地行 + 预取槽同张量）；这也让预取 = 行拷贝、越界读 = 对称映射直读。换来的是零拷贝视图与 fused permute——契约苛刻但机制简单。<span class="ev ev-v">V</span></p>
+<h3>Q5：规划每步都跑，开销真的可忽略吗？</h3>
+<p>单 cooperative kernel、无 host 往返、rank0 广播一次；对拍中 MoonEP 已把 plan 单独计时并计入总账——低失衡下端到端 ≈2% 的落后就是这个开销的显影。规模大（组多、专家多）时 rank0 单 warp 贪心是串行段，宣称「negligible」在你的规模上要自己量。<span class="ev ev-r">R</span></p>
+<h3>Q6：它和 EPLB 们互斥吗？</h3>
+<p>分层可叠：放置层（EPLB 类）决定主专家基座分布，MoonEP 每步在其上重分组 + 预取；但 MoonEP 的预取槽已经承担了「冗余」角色，再叠 EPLB 复制的边际收益取决于基座是否长期偏斜。<span class="ev ev-r">R</span></p>
+</div>
+
+<h2>13. 参考链接</h2>
+<ul>
+<li>官方仓库（源码即一手资料）：<a href="https://github.com/MoonshotAI/MoonEP" target="_blank">MoonshotAI/MoonEP</a>；本地逐文件分析 <code>src/_analysis/MoonEP_code_analysis.md</code>（~1.1 万行静态精读，本笔记主要底稿）</li>
+<li>vLLM 集成：<a href="https://github.com/vllm-project/vllm/pull/52101" target="_blank">PR #52101（BF16 backend，已合入 2026-09-18）</a> · <a href="https://github.com/vllm-project/vllm/pull/52095" target="_blank">RFC #52095</a> · <a href="https://github.com/vllm-project/vllm/pull/54147" target="_blank">PR #54147（ep_kernels，open）</a></li>
+<li>系列：<a href="eplb-deep-reading.html">EPLB 深读</a> · <a href="ultraep-deep-reading.html">UltraEP 深读</a> · <a href="lplb-deep-reading.html">LPLB 深读</a> · <a href="metro-deep-reading.html">METRO 深读</a> · <a href="moe-ep-overview.html">方案总览 v2.0</a></li>
+<li>背景：DeepEP（对标物）· CUTLASS Python DSL（CuTe）· NVSwitch multicast / VMM 对称内存</li>
+</ul>
+
+<hr>
+<p style="color:#57606a;font-size:.9em">本文由 ZCode 整理（2026-09-23）：以本地仓库静态精读 + GitHub API 核对为主；基准数值为仓库 figure 图读数（R 级，引用绝对值请回原图核对）。图（drawio）源文件：<a href="assets/moonep-deep-reading.drawio">assets/moonep-deep-reading.drawio</a>。</p>
+
+<script src="https://viewer.diagrams.net/js/viewer-static.min.js" onload="setTimeout(function(){ if (window.GraphViewer) GraphViewer.processElements(); }, 0)"></script>
+</body>
+</html>

@@ -36,6 +36,7 @@ description: 面向大模型方向的完整技术知识目录，覆盖从数学�
 - [EPLB 深度阅读笔记 —— 冗余专家 · 三步放置算法逐位推演 · vLLM/SGLang 集成](docs/moe-ep/eplb-deep-reading.html)
 - [LPLB 深度阅读笔记 —— 冗余边上的线性规划与单 SM 内点法（DeepSeek）](docs/moe-ep/lplb-deep-reading.html)
 - [METRO 深度阅读笔记 —— memory-bound decode 下均衡激活专家而非 token](docs/moe-ep/metro-deep-reading.html)
+- [MoonEP 深度阅读笔记 —— 动态冗余专家与构造性完美均衡的 EP 通信库（Moonshot AI）](docs/moe-ep/moonep-deep-reading.html)
 - [MoE 基础、演进、问题与负载均衡前沿](docs/moe-ep/moe-load-balancing-report.html)
 
 ### 交互式工具
