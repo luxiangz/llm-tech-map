@@ -22,6 +22,7 @@ description: 面向大模型方向的完整技术知识目录，覆盖从数学�
 - [前缀命中在 Transformer / MoE 中到底节省了什么计算](docs/inference/prefix-cache-kv-moe.html)
 - [MoE 与 FFN 原理及 vLLM / vLLM-Ascend 前馈融合算子](docs/inference/moe-ffn-fused-operators.html)
 - [投机解码完全指南：从拒绝采样到并行草稿生成](docs/inference/speculative-decoding-complete-guide.html)
+- [TileRT 深度解构 —— 持久化引擎内核与 execution gap 的系统性消除](docs/inference/tilert-deep-analysis.html)
 
 ### 并行与通信
 - [SP 与 CP 详解 — 序列并行 vs 上下文并行的来龙去脉与完整对比](docs/parallel/sp-vs-cp.html)
@@ -247,6 +248,7 @@ flowchart LR
 - [ ] vLLM 源码解析（调度/执行/注意力/显存管理）
 - [ ] SGLang、RadixAttention 与结构化生成
 - [ ] TensorRT-LLM（NVIDIA 优化栈）
+- [ ] TileRT：持久化引擎内核、tile 级流水线、execution gap、vLLM KVConnector PD 分离插件 — 📄 [TileRT 深度解构笔记](docs/inference/tilert-deep-analysis.html)
 - [ ] TGI、llama.cpp、MLC-LLM、Ollama、Triton Inference Server
 - [ ] 昇腾引擎：MindIE、vLLM-Ascend、nano-vllm
 - [ ] 引擎横向对比：功能/性能/生态选型、主流引擎执行流水线对比

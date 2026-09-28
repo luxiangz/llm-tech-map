@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TileRT 深度解构 —— 持久化引擎内核与 execution gap 的系统性消除</title>
+<!-- 霞鹜文楷：开源可商用的中文楷体风格字体；加载失败时自动回退到微软雅黑 -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/lxgw-wenkai-webfont@1.7.0/style.css">
+<style>
+body { font-family: "LXGW WenKai", "Microsoft YaHei", "PingFang SC", "Segoe UI", sans-serif; font-size: 17.5px; line-height: 1.85; letter-spacing: 0.01em; max-width: 1080px; margin: 40px auto; padding: 0 28px; color: #1f2328; background: #fff; }
+h1, h2, h3, h4, .kicker { font-family: "Microsoft YaHei", "PingFang SC", sans-serif; }
+h1 { font-size: 2.0em; border-bottom: 2px solid #e5e7eb; padding-bottom: .35em; }
+h2 { font-size: 1.45em; border-bottom: 1px solid #e5e7eb; padding-bottom: .2em; margin-top: 2em; }
+h3, h4, h5, h6 { margin-top: 1.6em; }
+a { color: #0969da; text-decoration: none; }
+a:hover { text-decoration: underline; }
+code { background: #f6f8fa; padding: .12em .35em; border-radius: 4px; font-family: "Cascadia Code", Consolas, "Microsoft YaHei", monospace; font-size: .92em; }
+pre { background: #f6f8fa; padding: 16px; border-radius: 8px; overflow: auto; line-height: 1.45; }
+pre code { background: none; padding: 0; }
+table { border-collapse: collapse; width: 100%; margin: 1.2em 0; display: block; overflow-x: auto; }
+th, td { border: 1px solid #d0d7de; padding: 8px 10px; text-align: left; vertical-align: top; }
+th { background: #f6f8fa; font-family: "Microsoft YaHei", "PingFang SC", sans-serif; }
+blockquote { margin: 1em 0; padding: .6em 1em; border-left: 4px solid #d0d7de; color: #57606a; background: #f6f8fa; }
+hr { border: none; border-top: 1px solid #d8dee4; margin: 2em 0; }
+.formula { background: #f6f8fa; padding: 12px 16px; border-radius: 8px; overflow-x: auto; margin: 1em 0; }
+ul, ol { padding-left: 1.8em; }
+.ev { display: inline-block; font-size: .78em; font-weight: 700; border-radius: 4px; padding: 0 .45em; margin-left: .3em; vertical-align: 1px; font-family: "Microsoft YaHei", sans-serif; }
+.ev-v { background: #dafbe1; color: #116329; }
+.ev-r { background: #fff8c5; color: #7d4e00; }
+.ev-u { background: #ffebe9; color: #82071e; }
+.mermaid { text-align: center; margin: 1.4em 0; }
+.figcaption { margin: .4em 0 1.2em; color: #57606a; font-size: .92em; text-align: center; }
+.kicker { display: block; color: #57606a; font-size: .95em; margin-bottom: .4em; }
+</style>
+<script>
+window.MathJax = {
+  tex: {
+    inlineMath: [['$', '$']],
+    displayMath: [['$$', '$$'], ['\\[', '\\]']],
+    processEscapes: false
+  },
+  svg: { fontCache: 'global' }
+};
+</script>
+<script>
+(function () {
+  var sources = [
+    "../../assets/lib/mathjax-tex-svg.js",
+    "https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js",
+    "https://cdn.bootcdn.net/ajax/libs/mathjax/3.2.2/es5/tex-svg.js",
+    "https://cdn.staticfile.org/ajax/libs/mathjax/3.2.2/es5/tex-svg.js",
+    "https://unpkg.com/mathjax@3/es5/tex-svg.js"
+  ];
+  function load(i) {
+    if (i >= sources.length) {
+      var node = document.getElementById("mathjax-load-fail");
+      if (node) node.style.display = "block";
+      return;
+    }
+    var s = document.createElement("script");
+    s.src = sources[i];
+    s.onerror = function () { load(i + 1); };
+    document.head.appendChild(s);
+  }
+  load(0);
+})();
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+<script>mermaid.initialize({ startOnLoad: true, theme: "neutral", fontFamily: '"Microsoft YaHei", "PingFang SC", sans-serif' });</script>
+</head>
+<body>
+<a href="https://luxiangz.github.io/llm-tech-map/" style="position:fixed;top:12px;right:14px;z-index:99;background:#f6f7f9;border:1px solid #e2e5ea;border-radius:999px;padding:4px 12px;font-size:14px;color:#2c5fa8;text-decoration:none;box-shadow:0 1px 4px rgba(0,0,0,.08)">← 技术地图首页</a>
+<div id="mathjax-load-fail" style="display:none;position:fixed;top:12px;left:14px;z-index:99;background:#fff4e5;border:1px solid #e8b04b;color:#8a5300;border-radius:8px;padding:8px 12px;font-size:13px">公式渲染组件未能加载，当前显示的是 LaTeX 源码。</div>
+
+<span class="kicker">推理引擎与 Serving · 低时延专题 · 2026-09-28</span>
+<h1>TileRT 深度解构 —— 持久化引擎内核与 execution gap 的系统性消除</h1>
+
+<p><strong>分析对象：</strong>tile-ai 组织（<a href="https://github.com/tile-ai/TileRT" target="_blank">TileRT</a>，v0.1.6）——TileLang 团队推出的超低时延 LLM 解码运行时，tagline 为 "Tile-Based Runtime for Ultra-Low-Latency LLM Inference"。已承载 Z.ai GLM-5.1-highspeed 生产流量，AgentX 榜单（2026-09-24）8×MI355X 跑 GLM-5.3 FP8 单用户 <strong>469 tok/s</strong> 居第一；与小米 MiMo 合作的 1T 参数模型在单节点 8 GPU 上实测约 <strong>1200 tok/s</strong>。</p>
+<p><strong>证据标注：</strong><span class="ev ev-v">V</span> = 官方博客 / README / 合作方博客明确陈述；<span class="ev ev-r">R</span> = 合理推断；<span class="ev ev-u">U</span> = 待核实。本文为网络资料解构（未做源码精读——TileRT 内核本身以预编译 <code>.so</code> 黑盒交付，仓库无可读内核源码，这一点本身也是本文的重要发现）。</p>
+
+<h2>TL;DR</h2>
+<p><strong>TileRT 的核心创新是把整个模型在编译期静态展开成一个常驻 GPU 的「持久化引擎内核」（Persistent Engine Kernel），将算子打碎为 tile 级任务、把调度下沉到 GPU 内部，从而消除 kernel launch、跨 kernel 同步、显存往返等「执行缝隙」（execution gap）开销。</strong>它不做通用 serving，专攻 batch-1 单流生成速度（TPOT），通过 vLLM KVConnector 插件以 PD 分离形态嵌入现有推理栈。</p>
+<p>一句话定位：<strong>它是「解码极速能力」而非「推理平台」——前缀处理、并发调度、API 生态全部让渡给 vLLM，自己只把一件事做到硬件理论极限：单个 token 的生成延迟。</strong></p>
+
+<h2>一、问题定义：Execution Gap（执行缝隙）</h2>
+<p>TileRT 全部设计源于一个数量级落差（官方博客给出的账）<span class="ev ev-v">V</span>：</p>
+<ul>
+<li>8×H200 聚合显存带宽约 38 TB/s，GLM-5.1 单步 decode 仅需激活约 42 GB 参数；</li>
+<li>由 decode 的访存墙（memory-bound roofline）可得理论下限：</li>
+</ul>
+<div class="formula">
+$$\text{TPOT}_{\min} = \frac{B_{\text{active}}}{\text{BW}_{\text{agg}}} = \frac{42\ \text{GB}}{38\ \text{TB/s}} \approx 1.1\ \text{ms} \;\Rightarrow\; \text{约 900 tok/s 的理论上限}$$
+</div>
+<ul>
+<li>但传统引擎真实只能跑出几十 tok/s。Profiler 显示 GPU 利用率并不低——<strong>算力被「困在执行边界之间」</strong>。</li>
+</ul>
+<p>作者把这之外的开销统称为 <strong>execution gap</strong>：kernel launch 延迟、kernel 间的全局同步、中间结果在 global memory 的往返、通信与计算之间的停顿、runtime 与 device 的调度握手。在百毫秒级的大 kernel 时代这些开销被打摊薄；而 decode 的微秒级 kernel 下，「kernel 还没热起来就已经结束了」，固定开销重新进入关键路径。TileRT 的全部技术，就是对这四个字的系统性围剿。</p>
+
+<pre class="mermaid">
+flowchart TB
+    subgraph TRAD["传统执行模型：host 逐算子 launch"]
+        direction LR
+        K1["Kernel 1<br/>RMSNorm"] -. "gap：launch + 同步<br/>+ 显存往返" .-> K2["Kernel 2<br/>GEMM"]
+        K2 -. "gap" .-> K3["Kernel 3<br/>AllReduce"]
+        K3 -. "gap" .-> K4["Kernel 4<br/>Attention"]
+    end
+    subgraph PERS["TileRT：持久化引擎（host 只 launch 一次）"]
+        direction LR
+        T1["tile N<br/>计算中"] -->|"流式握手<br/>无 barrier"| T2["tile N+1<br/>已在预取"]
+        T2 -->|"持续重叠"| T3["tile N+2<br/>数据在路上"]
+    end
+    TRAD ~~~ PERS
+</pre>
+<p class="figcaption">图 1：execution gap 的来源与 TileRT 的解法——传统模型的开销藏在 kernel 边界里，TileRT 干脆消灭边界。</p>
+
+<h2>二、架构解构：五层技术栈</h2>
+<p>TileRT 的架构可以拆成自上而下的五层，每层都在回答「如何让 GPU 不停下来」。</p>
+
+<h3>2.1 执行模型层：Persistent Engine Kernel（持久化引擎内核）</h3>
+<ul>
+<li>编译期把<strong>整个模型静态展开</strong>为 GPU 上一个常驻运行的引擎内核，host 侧只 launch 一次；</li>
+<li>没有逐算子的 kernel launch 序列，优化范围从「单个 kernel」扩大到「整个 forward pass」；</li>
+<li>中间结果停留在 register / shared memory / L2，不反复写回显存；</li>
+<li>调度不再由 host runtime 驱动，而是下沉到 GPU 内部持续自驱。</li>
+</ul>
+<p>这是与 vLLM / SGLang 类「动态调度 + 逐算子执行」框架最根本的分野——前者为吞吐和通用性保留调度自由度，TileRT 用静态性换延迟。</p>
+
+<h3>2.2 流水线层：Tile 级流水线 + 持续预取</h3>
+<ul>
+<li>数据搬运、张量计算、通信被切成细粒度的物理 tile 任务，在存储层级（global → shared → register）间持续流动；</li>
+<li>当前 tile 在计算核内处理时，后续数据已在多级预取路径上，实现深度的片上重叠；</li>
+<li>对比 NVIDIA 的 PDL（Programmatic Dependent Launch，只能让下一个 kernel 提前 launch）：TileRT 直接消除了 kernel 边界，可以精确控制预取时机、距离和搬运内容，重叠能力强于 PDL。</li>
+</ul>
+
+<h3>2.3 同步层：流式同步替代全局 barrier</h3>
+<ul>
+<li>持久化内核失去了 kernel 边界隐式提供的全局同步，TileRT 改用<strong>流式 producer–consumer 握手</strong>：上游阶段产出部分数据即交给下游，阶段间持续重叠而非齐步走；</li>
+<li>官方明确说这项技术在 AMD 架构上「特别有效」。</li>
+</ul>
+
+<h3>2.4 通信层：one-shot push + 有序本地归约</h3>
+<p>TP8 下放弃 ring all-reduce / reduce-scatter + all-gather 的多轮通信模式：</p>
+<ul>
+<li>每个 rank 直接把数据<strong>单边写入所有 peer 的 symmetric buffer</strong>（one-shot push），然后各 rank 按固定顺序做本地归约；</li>
+<li>消除多轮传输和独立同步阶段；通信不再是一个独立 kernel，直接织入执行 pipeline 与计算持续重叠。</li>
+</ul>
+
+<h3>2.5 特化层：Warp → Block → GPU 的异构 Worker</h3>
+<p>从 warp specialization 一路扩展到<strong>整机异构</strong>。以 GLM-5.1 为例的分工：</p>
+<ul>
+<li><strong>GPU 0 = 稀疏索引 Worker</strong>：Top-K 选择、MoE 路由等动态稀疏阶段；</li>
+<li><strong>GPU 1–7 = MLA Worker</strong>：RMSNorm、GEMM、Flash Sparse Attention、AllReduce 等规整计算流。</li>
+</ul>
+<p>动机：稀疏路由、Top-K、MTP 验证这类动态阶段不适合同构 TP 扩展，让「擅长的人干擅长的事」。GPU 在这个视角下从同构并行设备变成「持续流动、紧密编排的异构执行系统」。</p>
+
+<pre class="mermaid">
+flowchart TB
+    subgraph ENGINE["持久化 Engine Kernel：编译期静态展开整个模型"]
+        direction TB
+        subgraph WARPS["Warp 特化分工（tile 粒度）"]
+            direction LR
+            MW["搬运 warp 组<br/>global → shared → register<br/>持续预取"]
+            CW["计算 warp 组<br/>GEMM / Attention / Norm"]
+            COMM["通信 warp 组<br/>one-shot push + 本地归约"]
+        end
+        ST["流式握手：上游产出部分数据，下游立即开工，无全局 barrier"]
+        MW -->|"喂数据"| CW
+        CW -->|"移交"| COMM
+        COMM -->|"归约结果回流"| CW
+        ST -.-> WARPS
+    end
+    subgraph GPUs["GPU 级异构（GLM-5.1 实例）"]
+        direction LR
+        G0["GPU 0 · 稀疏索引 Worker<br/>Top-K / MoE 路由"] -->|"路由元数据"| G17["GPU 1–7 · MLA Worker<br/>RMSNorm / GEMM / Flash Sparse Attention / AllReduce"]
+    end
+    ENGINE ~~~ GPUs
+</pre>
+<p class="figcaption">图 2：持久化引擎的内部结构——warp 特化分工 + 流式握手在芯片内，异构 worker 分工在整机内，两层「特化」贯穿始终。</p>
+
+<h3>2.6 编译底座（重要且需要注意的部分）</h3>
+<p>TileRT 的内核生成技术建立在 <a href="https://github.com/tile-ai/tilelang" target="_blank">TileLang</a>（tile 级 GPU kernel DSL，约 7.5k stars）之上，底层编译技术官方称会「逐步贡献」到 TileLang 和 TileScale 项目。<strong>但 TileRT 仓库本身只发布预编译的后端动态库</strong>（<code>libtilert_dsv32.so</code> / <code>libtilert_glm5.so</code> / <code>libtilert_glm52_rocm.so</code>），内核源码并未随仓库开放——它是 MIT 协议的开源项目，但内核实现目前是黑盒交付。</p>
+
+<h3>2.7 为什么在 AMD CDNA 4（MI350X / MI355X）上如鱼得水</h3>
+<p>官方博客给出三条硬件层面的理由，这也是它在 AgentX 榜上用 AMD 卡打赢 NVIDIA FP4 方案的底层解释<span class="ev ev-v">V</span>：</p>
+<ol>
+<li><strong>寄存器容量</strong>：每个 CU 更大的寄存器堆 → 同 occupancy 下更多 in-flight 数据常驻，支撑更深预取与更多阶段重叠；</li>
+<li><strong>分区 cache 与细粒度内存控制</strong>：CDNA 的 compute partition 各有本地 cache，内存指令可控可见范围 → 分区内跨 block 轻量交换数据，硬件分区成为软件可主动利用的 locality 层级；</li>
+<li><strong>ISA 级控制</strong>：inline assembly + 开放可反汇编工具链，关键路径可做针对性手工优化。</li>
+</ol>
+
+<h2>三、工程形态：一个「插件化 Decode 引擎」的交付方式</h2>
+
+<h3>3.1 交付物</h3>
+<table>
+<thead><tr><th>组件</th><th>形态</th></tr></thead>
+<tbody>
+<tr><td>Python 包</td><td><code>pip install tilert</code>（v0.1.6，Python 3.12）</td></tr>
+<tr><td>后端内核</td><td>预编译 <code>.so</code>：dsv32 / glm5（CUDA）、glm52_rocm（ROCm），每进程只加载一个</td></tr>
+<tr><td>权重工具</td><td>HF 官方权重 → 每设备分片（8 shard，<code>*_dev_{0..7}</code>）转换器</td></tr>
+<tr><td>服务接口</td><td>OpenAI 兼容端点；<code>python -m tilert.generate</code> CLI（v0.1.6.post2 的 NVIDIA CLI 有已知 bug，需走 Python API）</td></tr>
+<tr><td>环境</td><td>8×B200（CUDA 13.2）/ 8×MI350X·MI355X（ROCm 7.14）；官方 Docker 镜像</td></tr>
+</tbody>
+</table>
+<p>模型支持面目前很窄：DeepSeek-V3.2 / V3.2-Exp、GLM-5 / 5.1（CUDA 侧），GLM-5.2 / 5.3（ROCm 侧）。每加一个模型都需要为它编译整套持久化内核——这是静态执行模型的代价。</p>
+
+<h3>3.2 推测解码：MTP 与 DFlash 两条腿</h3>
+<ul>
+<li><strong>MTP</strong>（GLM-5.2/5.3 支持深度 1/3，NVIDIA 侧固定 3）：合成负载最高 590 tok/s，GLM-5.2/5.3 平均接受长度 3.2；</li>
+<li><strong>DFlash</strong>（<a href="https://arxiv.org/abs/2602.06036" target="_blank">arXiv:2602.06036</a>，块级掩码并行预测）：草稿模型一次前向填充整个掩码块（块大小 8），草稿侧仅用滑动窗口注意力（SWA）使单次预测算力为常数，Muon 二阶优化器 + 自蒸馏训练；验证仍走拒绝采样保证无损。与小米联调后平均接受长度：<strong>Coding 6.30 / Math 5.56 / Agent 4.29</strong>（每轮 8 个草稿 token 接受 6–7 个）。</li>
+</ul>
+<p>有效速度的账很简单：$v_{\text{eff}} = \bar{L}_{\text{accept}} / t_{\text{step}}$。DFlash 把 $\bar{L}_{\text{accept}}$ 从 MTP 的 ~3.2 拉到 ~6.3，等于在不动系统的情况下再翻一倍——这正是它能破 1000 TPS 的关键拼图之一。</p>
+
+<h3>3.3 PD 分离：不动 vLLM 一行源码的接入方式</h3>
+<p>v0.1.5 引入，这是 TileRT 从「benchmark 玩具」走向生产的关键一步：</p>
+<ul>
+<li><strong>接口</strong>：完全基于 vLLM V1 官方扩展点 <code>KVConnectorBase_V1</code>，自定义 <code>TileRTConnector</code>（kv_producer 角色），零 fork / 零 patch；</li>
+<li><strong>数据面</strong>：传输引擎支持 NIXL（多 NIC 主机推荐 <code>UCX_NET_DEVICES</code> 绑定 RDMA 网卡）与 Mooncake，协议与引擎解耦；<strong>RDMA 单边写</strong>直接落进 TileRT decode 节点预注册的显存，无序列化、不经主机内存；forward 窗口内只做快速状态提取到 staging buffer，实际传输由后台异步 sender 完成，不拖慢同批原生请求；</li>
+<li><strong>交接</strong>：传输内容为压缩 KV、稀疏注意力索引缓存及元数据；接收侧转成 TileRT 原生内存布局后<strong>直接注入运行中的引擎实例</strong>——无冷启动、无调度空泡，MTP 从第一步就生效；</li>
+<li><strong>路由</strong>：外部路由器把延迟敏感请求发给 vLLM 做 prefill（强制 <code>max_tokens=1</code>），带 <code>tilert_host</code> 标记的请求 KV 直送 TileRT 解码池，不带标记的走原生 vLLM 解码池；TileRT 池有独立的 <strong>gated-dispatch 背压</strong>（<code>--queue-timeout</code> 可排队而非 429），与 vLLM 池的无界队列完全隔离；</li>
+<li><strong>约束</strong>：一个解码引擎同时只服务一条序列；KV cache dtype 两端必须匹配（如 <code>fp8_ds_mla ↔ fp8</code>）。</li>
+</ul>
+
+<pre class="mermaid">
+flowchart LR
+    C["Client"] --> R["pd_router<br/>延迟敏感路由"]
+    R -->|"标记请求"| V["vLLM Prefill 池<br/>max_tokens = 1<br/>prefix cache / 并发"]
+    R -->|"普通请求"| V
+    V -->|"KVConnector · RDMA 单边写<br/>NIXL / Mooncake"| TD["TileRT Decode 池<br/>持久化引擎 · gated-dispatch 背压"]
+    V -->|"原生 KV 通道"| VD["原生 vLLM Decode 池<br/>无界队列调度"]
+    TD -->|"首 token 后持续解码"| C
+    VD --> C
+</pre>
+<p class="figcaption">图 3：PD 分离拓扑——vLLM 是平台与门面，TileRT 是挂在后面的「外挂变速箱」，两套解码池背压隔离互不干扰。</p>
+
+<p>两种拓扑：<strong>A</strong> = TileRT 解码节点 + 原生 vLLM prefill + pd_router；<strong>B</strong> = 共享 prefill 池经 vLLM MultiConnector 同时喂 TileRT 解码池与原生 vLLM 解码池（同 batch 混跑互不干扰）。第三方已有实战复现：GPUStack 编排的 8×B300 上 GLM-5.1 PD 分离部署（CSDN，2026-08）。</p>
+
+<h2>四、标志性成绩与数据汇总</h2>
+<table>
+<thead><tr><th>时间</th><th>硬件</th><th>模型 / 精度</th><th>成绩</th><th>备注</th></tr></thead>
+<tbody>
+<tr><td>2026-09-24 AgentX 榜</td><td>8×MI355X</td><td>GLM-5.3 FP8 + BF16 KV</td><td><strong>469 tok/s</strong> 单用户</td><td>第一名，超第二名（GB300 NVL72，FP4）100+ tok/s，不牺牲精度</td></tr>
+<tr><td>2026-06-08</td><td>单节点 8×商用 GPU</td><td>MiMo-V2.5-Pro-UltraSpeed（1T 参数，MoE FP4）</td><td><strong>~1200 tok/s</strong> 实测峰值，官宣破 1000 TPS</td><td>无定制芯片，对标 Cerebras / Groq 量级</td></tr>
+<tr><td>v0.1.3</td><td>8×B200</td><td>GLM-5-FP8 / DeepSeek-V3.2</td><td>500 / 600 tok/s</td><td>合成负载最高值</td></tr>
+<tr><td>v0.1.2 MTP=3</td><td>—</td><td>GLM-5.x</td><td>590 tok/s 合成负载</td><td>平均接受长度 3.2</td></tr>
+<tr><td>v0.1.1</td><td>8×B200</td><td>—</td><td>端到端延迟再降 ~35%，对基线 3–4×</td><td></td></tr>
+<tr><td>长上下文衰减</td><td>8×MI350X TP8</td><td>GLM-5.3 FP8 + MTP K=3</td><td>1K ctx 648 → 1M ctx 425 tok/s</td><td>上下文增长 1000×，保留 2/3 性能；MI350X 频率低于 MI355X，数据偏保守</td></tr>
+</tbody>
+</table>
+<p>另一个有参考价值的商业数据：MiMo UltraSpeed 定价为标准版的 3 倍，换取约 10 倍生成速度——低时延正在被直接定价。</p>
+
+<h2>五、案例深挖：与小米 MiMo 的模型-系统协同设计</h2>
+<p>1000 TPS 不是纯系统优化的结果，而是「模型为流水线而改」的范本。官方的判断很直白：当性能逼近硬件边界，瓶颈从单个 kernel 变成<strong>结构性边界</strong>（memory hierarchy 与模型结构不匹配、通信拓扑与路由模式冲突、KV cache 增长与 locality 矛盾、动态稀疏破坏同构并行），模型→编译器→硬件的单向适配不再够用。MiMo-V2.5-Pro-UltraSpeed 的三个协同设计点：</p>
+<ol>
+<li><strong>选择性 MXFP4 量化</strong>：只把对量化容忍度最高的 MoE Experts（参数绝大部分）压到 FP4（OCP MX v1.0 规范，QAT 训练），其余网络保持高精度——直接针对商用 GPU 的带宽墙，$B_{\text{active}}$ 的下降线性转化为 TPOT 下降；</li>
+<li><strong>DFlash 草稿架构对齐</strong>：草稿模型用 SWA 与 MiMo-V2 系列主模型对齐，单次预测算力为常数；块大小限 8 以压低验证开销；</li>
+<li><strong>高频瓶颈前置到模型侧</strong>：MTP 每层额外的 LM Head 在 1000 TPS 下引入数十微秒级开销，RMSNorm、RoPE、KV 写入等「FLOP 可忽略但反复切断执行流」的碎片操作成为主要矛盾——这些在模型设计阶段就要算进去。</li>
+</ol>
+<p>官方配套的宏观论点是 <strong>「Speed 是新的 Scaling Law」</strong>：Chat 时代（2023–24）value &lt; cost 拼质量，Agentic 时代（2025–）value ≈ cost 拼吞吐，Autonomous 时代（未来两年）value &gt;&gt; cost 拼速度——固定延迟预算内能做多少轮 rollout、多深的推理链、多少次自验证，速度本身就是新的扩展维度。</p>
+
+<h2>六、生态定位：和谁比、像谁、缺什么</h2>
+<table>
+<thead><tr><th>维度</th><th>TileRT</th><th>vLLM / SGLang</th><th>TensorRT-LLM</th><th>Cerebras / Groq</th></tr></thead>
+<tbody>
+<tr><td>定位</td><td>batch-1 极致 decode 延迟</td><td>通用 serving，吞吐与并发优先</td><td>NVIDIA 官方全栈优化</td><td>专用硬件（晶圆级 / 片上 SRAM）</td></tr>
+<tr><td>执行模型</td><td>持久化引擎内核，编译期静态展开</td><td>动态调度，逐算子（持续迭代 overlap）</td><td>静态图 + kernel fusion</td><td>编译到专用架构</td></tr>
+<tr><td>硬件</td><td>商用 B200 / MI350X·MI355X</td><td>广泛</td><td>仅 NVIDIA</td><td>自有硬件</td></tr>
+<tr><td>接入方式</td><td>vLLM KVConnector 插件（PD 分离）</td><td>自身即平台</td><td>自身即平台</td><td>API 服务</td></tr>
+<tr><td>开源程度</td><td>MIT，但内核为预编译黑盒</td><td>全开源</td><td>部分闭源二进制</td><td>闭源服务</td></tr>
+</tbody>
+</table>
+<p>几个精确的判断：</p>
+<ul>
+<li><strong>它不是 vLLM 的竞争者，是 vLLM 的「外挂变速箱」</strong>：PD 分离拓扑里两者是共生关系，vLLM 管 prefill、并发、prefix cache、标准 API，TileRT 只管把 decode 压到极限；</li>
+<li><strong>与专用硬件的对比是它最强的叙事</strong>：1T 模型 1200 tok/s 出自单台标准 8-GPU 节点，而此前这个量级基本是 Cerebras / Groq 专属；</li>
+<li><strong>TileLang 是它的技术母体和生态位</strong>：tile-ai 组织以 TileLang（7.5k stars）为核心，TileOPs（LLM 算子库）、tilelang-ascend / metax（国产硬件适配）为枝干，TileRT 是这条技术路线在「完整推理引擎」层面的第一次产品化——用 DSL 生成整个持久化内核，这条路 Triton 系框架目前没有走到。</li>
+</ul>
+
+<h2>七、局限与风险（批判性视角）</h2>
+<ol>
+<li><strong>内核黑盒</strong>：仓库只有 20 个 commit，交付物是预编译 <code>.so</code>，内核源码未开放（「逐步贡献到 TileLang / TileScale」目前更多是承诺）。想审计、二次开发、移植模型都做不到，实质上接近商业 SDK 的开源壳；</li>
+<li><strong>模型支持面极窄且扩展成本高</strong>：静态展开的执行模型意味着每支持一个新模型 / 新结构都要重新编译整套引擎，当前仅 DS-V3.2 与 GLM-5 系；</li>
+<li><strong>batch-1 单流专注是双刃剑</strong>：吞吐型场景（高并发、大 batch）完全不适用；官方路线图里 batch 2/4 仍属「计划」。这决定了它必须以 PD 分离插件形态存在，无法独立承担通用服务；</li>
+<li><strong>单引擎单序列</strong>：一个解码引擎同时只服务一条序列，资源占用和弹性伸缩的经济学需要实际部署检验；</li>
+<li><strong>成绩多来自自家参与的合作与榜单</strong><span class="ev ev-r">R</span>：AgentX 虽是 SemiAnalysis 主导的开源可复现基准，但 1000 TPS 等数字的复现依赖特定权重（MiMo FP4-DFlash 检查点已开源）与配置，独立第三方复现数据还很少；</li>
+<li><strong>项目很年轻</strong>：v0.1.x 阶段，CLI 有已知 bug，长上下文、复杂真实流量下的 tail latency 是官方自己承认的持续战场（「极致 benchmark 往往是脆弱的」）。</li>
+</ol>
+
+<h2>八、对低时延方向的启示</h2>
+<ul>
+<li><strong>「Execution Gap」是一个值得内化的分析框架</strong>：分析任何 decode 侧性能时，把开销分为 roofline 内（带宽 / FLOP）与 roofline 外（launch / 同步 / 往返 / 调度），后者在微秒级 kernel 时代是几十 tok/s 与几百 tok/s 的差距来源。相关技术谱系可对照：NVIDIA PDL（TileRT 的对照组）、DeepSeek DeepGEMM、SGLang 的 overlap scheduler、CUTLASS device-side GEMM——它们都在同一个方向上，TileRT 只是走得最远（直接消灭 kernel 边界）；</li>
+<li><strong>低时延的终局是协同设计</strong>：系统侧榨干之后，下一步的空间在模型侧——量化精度分配（expert-only FP4）、投机解码架构（MTP → DFlash 的接受长度跃迁）、甚至 LM Head 的层数。做低时延研究不应只盯 kernel；</li>
+<li><strong>对 RL / rollout 的直接意义</strong>：rollout 评测的 gate 本质上也是「固定时间预算内能产出多少合格 token」，TileRT 这类引擎（或它的技术思想）直接影响 rollout 吞吐上限与 test-time scaling 的可行预算；</li>
+<li><strong>AMD 路线值得跟踪</strong>：TileRT 在 CDNA 4 上的表现说明「低时延优化」未必绑定 NVIDIA 生态，寄存器容量和分区 cache 的设计差异在持久化内核范式下被放大。</li>
+</ul>
+
+<h2>参考来源</h2>
+<ul>
+<li><a href="https://github.com/tile-ai/TileRT" target="_blank">GitHub: tile-ai/TileRT</a> · <a href="https://github.com/tile-ai" target="_blank">tile-ai 组织</a> · <a href="https://github.com/tile-ai/tilelang" target="_blank">TileLang</a></li>
+<li><a href="https://www.tilert.ai" target="_blank">TileRT 官网与博客</a>：<a href="https://www.tilert.ai/blog/tilert-amd-agentx.html" target="_blank">AMD AgentX</a> · <a href="https://www.tilert.ai/blog/breaking-1000-tps.html" target="_blank">Breaking 1000 TPS</a> · <a href="https://www.tilert.ai/blog/tilert-vllm-disaggregation.html" target="_blank">vLLM Disaggregation</a> · <a href="https://www.tilert.ai/blog/speed-as-the-next-scaling-law-zh.html" target="_blank">Speed as the Next Scaling Law（中文）</a></li>
+<li><a href="https://mimo.xiaomi.com/blog/mimo-tilert-1000tps" target="_blank">小米 MiMo 合作博客</a> · <a href="https://arxiv.org/abs/2602.06036" target="_blank">DFlash 论文 arXiv:2602.06036</a></li>
+<li><a href="https://huggingface.co/Tile-AI/DeepSeek-V3.2-Exp-TileRT" target="_blank">HuggingFace: Tile-AI/DeepSeek-V3.2-Exp-TileRT</a></li>
+<li>第三方复现：GPUStack × TileRT × 8×B300 GLM-5.1 PD 分离（CSDN，2026-08）</li>
+</ul>
+
+<blockquote>注：文中 2026 年的基准数字多来自官方博客与合作方宣传，标注为最高值 / 峰值，部署前建议自行复现验证。</blockquote>
+</body>
+</html>
