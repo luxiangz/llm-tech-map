@@ -12,6 +12,7 @@
 | lplb-deep-reading.html | — | LPLB 深度阅读笔记（2026-09-23：DeepSeek 冗余边上的 LP + 单 SM 内点法；含 numpy 复刻脚本 assets/lplb_lp_verify.py；澄清与 arXiv:2511.16947 FineMoE 的混淆） |
 | metro-deep-reading.html | — | METRO 深度阅读笔记（2026-09-23：memory-bound decode 下「均衡激活专家而非 token」，arXiv:2512.09277；含玩具例子图与端到端图，SLO 吞吐最高 4.11× EPLB） |
 | moonep-deep-reading.html | — | MoonEP 深度阅读笔记（2026-09-23：动态冗余专家 + 构造性完美均衡的 EP 通信库；本地源码精读 + 基准图读数 + vLLM 合入核验 2026-09-18） |
+| ascend-moe-parallel-deep-reading.html | — | 昇腾 MoE 专家层四方案深度对比（2026-09-28：ALLGATHER/ALLTOALL/MC2/FUSED_MC2 流水线对照与融合递进，Qwen3.5 工程案例复盘；含 ZercMoe MegaKernel 三增强；drawio 三图） |
 | moe-load-balancing-report.html | moe_load_balancing_report.html | MoE 基础、演进、问题与负载均衡前沿（2026-09-18：重写 2.3 经典负载均衡损失六步拆解、2.5 评估指标口径与算例；2026-09-23：§4.2 拆分 FineMoE 与 DeepSeek LPLB 两条） |
 
 研究范围：DeepSeek EPLB、UltraEP（arXiv:2606.04101，小红书×北大）、MoonEP（Moonshot AI）。
