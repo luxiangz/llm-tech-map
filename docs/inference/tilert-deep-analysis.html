@@ -317,12 +317,12 @@ flowchart LR
 <tr><td>FP4 / MXFP4</td><td>—</td><td>10.1 PFLOPS</td><td>不支持</td><td><b>2,007 TFLOPS</b>（原生 MXFP4；多档 2007/1784/1561）</td></tr>
 <tr><td>INT8</td><td>1,979 TOPS</td><td>5 POPS（稀疏 10.1）</td><td>≈1.12 POPS</td><td>1,034 TOPS（多档同 FP8）</td></tr>
 <tr><td>FP32</td><td>67 TFLOPS</td><td>157.3 TFLOPS</td><td>150 TFLOPS</td><td>TF32 273 TFLOPS（多档 273/243/212）；FP32 走 Vector 核</td></tr>
-<tr><td>显存容量</td><td>141 GB HBM3e</td><td>288 GB HBM3E</td><td>128 GB</td><td>144 GB（PR 版 128 GB）</td></tr>
+<tr><td>显存容量</td><td>141 GB HBM3e</td><td>288 GB HBM3E</td><td>128 GB</td><td>最高 144 GB（DT 档；另有 96 GB 档，PR 为 128 GB——已上市 Atlas 650E 实配 96 GB/卡）</td></tr>
 <tr><td>显存带宽</td><td>4.8 TB/s</td><td>8 TB/s</td><td>3.2 TB/s</td><td><b>4 TB/s</b>（PR 版 1.6 TB/s）</td></tr>
-<tr><td>卡间互联（每卡）</td><td>NVLink 900 GB/s（双向）</td><td>Infinity Fabric ≈1,071 GB/s（7×153 GB/s，双向）</td><td>灵衢 UB 双向 784 GB/s</td><td><b>灵衢 UB 2.0 ≈ 2,016 GB/s（双向）</b>——换算：HiLink 72 Lane × 112 Gbps ÷ 8 = <b>1,008 GB/s（单向）</b>，全双工 ×2 ≈ 2,016 GB/s，与白皮书"对外 IO 峰值 2 TB/s"吻合（双向口径，由 SerDes 位数换算推断）；18 个 X4 端口，Scale-up/Scale-out 复用，另支持 PCIe 5.0 与 2×400G UBoE。<b>四平台最高</b>：≈A3（784）的 2.6×、MI355X（1,071）的 1.9×、H200（900）的 2.2×</td></tr>
+<tr><td>卡间互联（每卡）</td><td>NVLink 900 GB/s（双向）</td><td>Infinity Fabric ≈1,071 GB/s（7×153 GB/s，双向）</td><td>灵衢 UB 双向 784 GB/s</td><td>灵衢 UB 2.0：<b>单机（Atlas 650E）每卡 784 GB/s 双向</b>（官方规格表"单机总带宽 8×784 GB/s（双向）"，与 A3 同值）；<b>双机 16 卡 Full-mesh 每卡 1.68 TB/s 双向</b>（"双机总带宽 2×8×1.68 TB/s"）；芯片 IO 总峰值 2,016 GB/s 双向——换算 HiLink 72 Lane × 112 Gbps ÷ 8 = 1,008 GB/s 单向 ×2（含 scale-up 与 scale-out：每 NPU UBoE 400 Gbps + RoCE 400 Gbps + PCIe 5.0，端口复用、18 个 X4）。<b>双机形态为四平台最高</b>：1.68 TB/s ≈ MI355X 单机（1,071）的 1.6×、H200（900）的 1.9×</td></tr>
 <tr><td>低精度格式</td><td>FP8</td><td>FP8 / FP6 / FP4</td><td>仅 FP16 / INT8（+FP32）</td><td>原生 MXFP4 / MXFP8 / HiF8 / FP8 / INT8（第三代达芬奇 Cube 核）</td></tr>
 </table>
-<p style="font-size:.9em;color:#57606a">注：950 白皮书算力为"Cube+Vector 总算力"口径且分多档 SKU，表内取最高档；已上市整机 Atlas 650E（950DT×8）官标 12.4 PFLOPS @MXFP4，对应 1,561 TFLOPS/卡 档（<a href="https://www.hiascend.com/hardware/ai-server" target="_blank">hiascend 硬件页</a>），与本表多档口径吻合。H200/MI355X 数值为稀疏口径翻倍的稠密值。</p>
+<p style="font-size:.9em;color:#57606a">注：950 白皮书算力为"Cube+Vector 总算力"口径且分多档 SKU，表内取最高档；<b>已上市单机为 Atlas 650E（950DT×8，14U 风冷，8×96GB/4.0 TB/s，单机最大输入功耗 14.5 kW）</b>，官方规格表标 12.48 PFLOPS @mxFP4 / 6.43 PFLOPS @FP8 / 3.40 PFLOPS @FP16——即 1,561/804/425 TFLOPS/卡 档（<a href="https://www.hiascend.com/hardware/ai-server" target="_blank">hiascend 硬件页</a>），与本表多档口径吻合；950 无 16 卡单机，16 卡为"双机 16 NPU 灵衢 Full-mesh"形态，更大规模经 UB Switch 组超节点（白皮书称可达 K 级，支持 Full Mesh/Clos/混合拓扑）。H200/MI355X 数值为稀疏口径翻倍的稠密值。</p>
 
 <h3>理论 Decode 上限的计算原理</h3>
 <p>Decode 阶段为访存受限（memory-bound）：自回归每生成一个 token，至少要把<b>激活的参数权重</b>从显存完整读一遍。因此单步时延下限与吞吐上限由带宽而非算力决定：</p>
@@ -379,7 +379,7 @@ t_{\text{real}} \;=\; \underbrace{\frac{S_{\text{act}}}{\eta \cdot B_{\text{agg}
 <li><b>不可辨识是本质局限</b>：单锚点定不出带宽型与延迟型开销的占比——这正是给区间而非点估的原因。收敛路径有二：用文章两个上下文点做半解析拟合（解出 $T_0$ 与 KV 斜率后按各平台带宽/互联时延折算，即 DistServe / Sarathi 一类论文的标准建模路数），或等第二个实测锚点出现（两方程解两未知数）；</li>
 <li><b>引擎等价是最大前提</b>：TileRT 目前只有 CUDA/ROCm 后端，A3/A5 上不存在同等引擎（CANN 栈需重写持久化内核）——预估的是"硬件若被同等榨取"的量级，不是可交付成绩；</li>
 <li><b>精度路线差异</b>：GLM-5.3 原生 FP8 权重，A3 需 W8A8 量化（额外反量化开销与精度风险）；A5 原生 FP8/MXFP4，若走 MXFP4（21 GB）则白盒上限升至 1,524 · 0.66 ms（与 MI355X FP8 同值），两法预估同为 ≈469 tok/s · ≈2.13 ms——A5 的"4 TB/s × MXFP4"等效于 MI355X 的"8 TB/s × FP8"；</li>
-<li><b>延迟型项的平台不变性最脆</b>：法 B 把 MI355X 的 1.48 ms 平移到华为系，但灵衢（784 / 2,016 GB/s）与 IF（1,071 GB/s）的每层通信时延、CANN 与 ROCm 的执行开销都不同，对华为系可能偏乐观或偏悲观；带宽型项的 $\eta$ 系数亦随显存体系有差异；</li>
+<li><b>延迟型项的平台不变性最脆</b>：法 B 把 MI355X 的 1.48 ms 平移到华为系，但灵衢（单机 784、双机 1.68 TB/s 每卡）与 IF（1,071 GB/s）的每层通信时延、CANN 与 ROCm 的执行开销都不同，对华为系可能偏乐观或偏悲观；带宽型项的 $\eta$ 系数亦随显存体系有差异；</li>
 <li>法 B 隐含"带宽越高的平台达成率越低"（延迟项占比更大），因此 H200（带宽低于 MI355X）的真实达成率可能高于 30.8%——区间的真正含义是<b>开销中带宽敏感成分的占比未知</b>。定位为数量级估计器（±30–50% 误差合理），不是成绩预测。</li>
 </ul>
 
