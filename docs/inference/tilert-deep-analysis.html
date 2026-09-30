@@ -332,15 +332,16 @@ T_{\text{upper}} = \frac{1}{t_{\text{step}}} = \frac{B_{\text{agg}}}{S_{\text{ac
 \]</div>
 <p>其中 $B_{\text{agg}}$ 为节点聚合显存带宽，$S_{\text{act}}$ 为单 token 激活参数字节。按 TileRT 博客口径：GLM-5.1（MoE）单步激活 ≈42 GB（FP8/1 字节权重）；W8/INT8 权重同为 1 字节/权重，故 $S_{\text{act}}$ 同取 42 GB；MXFP4 则减半为 21 GB。假设：① 激活权重在 8 卡间理想切分、各卡带宽并行；② 只计权重流量（不含 KV Cache、通信、反量化）；③ 算力足够（memory-bound 成立）。这个上限与"传统引擎几十 tok/s"之间的 1~2 个数量级差，正是正文分析的 execution gap。</p>
 
-<h3>表 2 · 8 卡节点理论 Decode 上限（$S_{\text{act}} = 42$ GB）</h3>
+<h3>表 2 · 节点理论 Decode 上限（$S_{\text{act}} = 42$ GB）</h3>
 <table>
-<tr><th>平台（8 卡）</th><th>每卡带宽</th><th>聚合带宽 $B_{\text{agg}}$</th><th>权重口径</th><th>单步时延下限</th><th>理论 Decode 上限</th><th>vs 8×H200</th></tr>
+<tr><th>平台</th><th>每卡带宽</th><th>聚合带宽 $B_{\text{agg}}$</th><th>权重口径</th><th>单步时延下限</th><th>理论 Decode 上限</th><th>vs 8×H200</th></tr>
 <tr><td>8×H200（TileRT 原账）</td><td>4.8 TB/s</td><td>38.4 TB/s</td><td>FP8（42 GB）</td><td>1.09 ms</td><td>≈ 914 tok/s</td><td>1×</td></tr>
 <tr><td>8×MI355X</td><td>8 TB/s</td><td>64 TB/s</td><td>FP8（42 GB）</td><td>0.66 ms</td><td><b>≈ 1,524 tok/s</b></td><td>1.67×</td></tr>
 <tr><td>昇腾 800I A3（910C×8）</td><td>3.2 TB/s</td><td>25.6 TB/s</td><td>W8/INT8（42 GB）</td><td>1.64 ms</td><td>≈ 610 tok/s</td><td>0.67×</td></tr>
 <tr><td>昇腾 A5（950DT×8）</td><td>4 TB/s</td><td>32 TB/s</td><td>FP8/W8（42 GB）</td><td>1.31 ms</td><td><b>≈ 762 tok/s</b></td><td>0.83×</td></tr>
+<tr><td>昇腾 A5 双机 16 卡（950DT×16，灵衢 Full-mesh）</td><td>4 TB/s</td><td>64 TB/s</td><td>FP8/W8（42 GB）</td><td>0.66 ms</td><td><b>≈ 1,524 tok/s</b></td><td>1.67×</td></tr>
 </table>
-<p style="font-size:.9em;color:#57606a">附注：950DT 原生 MXFP4，若按 4-bit 权重（$S_{\text{act}} = 21$ GB）计，A5 上限翻倍至 ≈1,524 tok/s，追平 8×MI355X 的 FP8 档；950PR（1.6 TB/s）按 FP8 计为 ≈305 tok/s。所有行均为官方带宽 ÷ 42 GB 的算术推导，未计 KV Cache 与通信开销；950 组网侧经灵衢 UB 2.0 可扩展至大规模集群（白皮书称支持超 128K 卡）。</p>
+<p style="font-size:.9em;color:#57606a">附注：950DT 原生 MXFP4，若按 4-bit 权重（$S_{\text{act}} = 21$ GB）计，A5 上限翻倍（8 卡 ≈1,524 · 0.66 ms，追平 8×MI355X 的 FP8 档；双机 16 卡 ≈3,048 · 0.33 ms）；950PR（1.6 TB/s）按 FP8 计为 ≈305 tok/s。所有行均为官方带宽 ÷ 42 GB 的算术推导，未计 KV Cache 与通信开销；950 组网侧经灵衢 UB 2.0 可扩展至大规模集群（白皮书称支持超 128K 卡）。</p>
 
 <h3>追问：实测 469 tok/s 距理论上限 1,524 tok/s 很远，怎么解释</h3>
 <p>AMD 官方技术文章《TileRT AgentX on AMD Instinct GPUs》给出的 469 tok/s（≈2.13 ms/token；8×MI355X，GLM-5.3，TP8，FP8 权重 + <b>BF16 KV</b>，MTP K=3，单用户 AgentX 榜第一）与表 2 的 1,524 tok/s（0.66 ms/token）之间差 ≈3.2 倍。这不是矛盾，而是<b>口径差了四层</b>——1,524 是"短上下文、只读权重、100% 峰值带宽、零通信"的白盒上限，469 是端到端 agent 会话回放的真实成绩。逐层剥离：</p>
@@ -367,19 +368,20 @@ t_{\text{real}} \;=\; \underbrace{\frac{S_{\text{act}}}{\eta \cdot B_{\text{agg}
 <li><b>法 B · 开销全部视为延迟型</b>（加性平移）：$t_{\text{est}} = t_{\text{roofline}} + 1.48\ \text{ms}$，其中 1.48 ms 为 MI355X 每 token 额外时延（$1/469 - 1/1524$）——对高带宽平台偏保守。真实值落在两法之间。</li>
 </ul>
 <table>
-<tr><th>平台（8 卡）</th><th>白盒上限<br>tok/s · ms/token</th><th>法 A（×30.8%）<br>tok/s · ms/token</th><th>法 B（+1.48 ms）<br>tok/s · ms/token</th><th>预估区间</th></tr>
+<tr><th>平台</th><th>白盒上限<br>tok/s · ms/token</th><th>法 A（×30.8%）<br>tok/s · ms/token</th><th>法 B（+1.48 ms）<br>tok/s · ms/token</th><th>预估区间</th></tr>
 <tr><td>8×H200（FP8）</td><td>914 · 1.09 ms</td><td>≈ 281 · ≈ 3.56 ms</td><td>≈ 389 · ≈ 2.57 ms</td><td><b>≈ 280–390 tok/s（2.6–3.6 ms）</b></td></tr>
 <tr><td>8×MI355X（FP8）——<b>实测锚点</b></td><td>1,524 · 0.66 ms</td><td colspan="3"><b>469 tok/s · 2.13 ms/token（AgentX 实测，2026-09-24 榜首）</b></td></tr>
 <tr><td>昇腾 800I A3（W8/INT8）</td><td>610 · 1.64 ms</td><td>≈ 188 · ≈ 5.33 ms</td><td>≈ 321 · ≈ 3.12 ms</td><td><b>≈ 190–320 tok/s（3.1–5.3 ms）</b></td></tr>
 <tr><td>昇腾 A5 950DT（FP8）</td><td>762 · 1.31 ms</td><td>≈ 235 · ≈ 4.27 ms</td><td>≈ 359 · ≈ 2.79 ms</td><td><b>≈ 235–360 tok/s（2.8–4.3 ms）</b></td></tr>
+<tr><td>昇腾 A5 双机 16 卡（FP8）</td><td>1,524 · 0.66 ms</td><td>≈ 469 · ≈ 2.13 ms</td><td>≈ 469 · ≈ 2.13 ms</td><td><b>≈ 469 tok/s（2.13 ms）——两法同值</b></td></tr>
 </table>
 <p>旁证：同引擎 8×B200 跑 GLM-5 FP8 合成负载 500 tok/s（白盒上限的 33%）、MI355X 合成 590（39%）——30~40% 达成率是当前顶级引擎的普遍水位，469 的 31% 不离群。</p>
 <p>五点限定（全部 <span class="ev ev-r">R</span>，预估而非成绩）：</p>
 <ul>
 <li><b>不可辨识是本质局限</b>：单锚点定不出带宽型与延迟型开销的占比——这正是给区间而非点估的原因。收敛路径有二：用文章两个上下文点做半解析拟合（解出 $T_0$ 与 KV 斜率后按各平台带宽/互联时延折算，即 DistServe / Sarathi 一类论文的标准建模路数），或等第二个实测锚点出现（两方程解两未知数）；</li>
 <li><b>引擎等价是最大前提</b>：TileRT 目前只有 CUDA/ROCm 后端，A3/A5 上不存在同等引擎（CANN 栈需重写持久化内核）——预估的是"硬件若被同等榨取"的量级，不是可交付成绩；</li>
-<li><b>精度路线差异</b>：GLM-5.3 原生 FP8 权重，A3 需 W8A8 量化（额外反量化开销与精度风险）；A5 原生 FP8/MXFP4，若走 MXFP4（21 GB）则白盒上限升至 1,524 · 0.66 ms（与 MI355X FP8 同值），两法预估同为 ≈469 tok/s · ≈2.13 ms——A5 的"4 TB/s × MXFP4"等效于 MI355X 的"8 TB/s × FP8"；</li>
-<li><b>延迟型项的平台不变性最脆</b>：法 B 把 MI355X 的 1.48 ms 平移到华为系，但灵衢（单机 784、双机 1.68 TB/s 每卡）与 IF（1,071 GB/s）的每层通信时延、CANN 与 ROCm 的执行开销都不同，对华为系可能偏乐观或偏悲观；带宽型项的 $\eta$ 系数亦随显存体系有差异；</li>
+<li><b>精度路线差异</b>：GLM-5.3 原生 FP8 权重，A3 需 W8A8 量化（额外反量化开销与精度风险）；A5 原生 FP8/MXFP4，若走 MXFP4（21 GB）则白盒上限升至 1,524 · 0.66 ms（与 MI355X FP8 同值），两法预估同为 ≈469 tok/s · ≈2.13 ms——A5 的"4 TB/s × MXFP4"等效于 MI355X 的"8 TB/s × FP8"；16 卡 MXFP4 白盒上限 3,048 · 0.33 ms，法 A ≈938 · 1.07 ms / 法 B ≈554 · 1.80 ms；</li>
+<li><b>延迟型项的平台不变性最脆</b>：法 B 把 MI355X 的 1.48 ms 平移到华为系，但灵衢（单机 784、双机 1.68 TB/s 每卡）与 IF（1,071 GB/s）的每层通信时延、CANN 与 ROCm 的执行开销都不同，对华为系可能偏乐观或偏悲观；带宽型项的 $\eta$ 系数亦随显存体系有差异。16 卡行还多两层假设：TP16 通信参与方较校准用的 TP8 翻倍（延迟项可能偏大），以及 42 GB 在 16 卡间理想切分；</li>
 <li>法 B 隐含"带宽越高的平台达成率越低"（延迟项占比更大），因此 H200（带宽低于 MI355X）的真实达成率可能高于 30.8%——区间的真正含义是<b>开销中带宽敏感成分的占比未知</b>。定位为数量级估计器（±30–50% 误差合理），不是成绩预测。</li>
 </ul>
 
