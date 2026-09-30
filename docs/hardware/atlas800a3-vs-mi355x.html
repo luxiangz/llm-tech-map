@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Atlas 800 A3（昇腾910C） vs AMD Instinct MI355X — 8卡节点官方数据对比</title>
+<title>Atlas 800I A3（昇腾910C） vs AMD Instinct MI355X — 8卡节点官方数据对比</title>
 <!-- 霞鹜文楷：开源可商用的中文楷体风格字体；加载失败时自动回退到微软雅黑 -->
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/lxgw-wenkai-webfont@1.7.0/style.css">
 <script>
@@ -47,113 +47,109 @@ window.MathJax = {
 <body>
 <a href="https://luxiangz.github.io/llm-tech-map/" style="position:fixed;top:12px;right:14px;z-index:99;background:#f6f7f9;border:1px solid #e2e5ea;border-radius:999px;padding:4px 12px;font-size:14px;color:#2c5fa8;text-decoration:none;box-shadow:0 1px 4px rgba(0,0,0,.08)">← 技术地图首页</a>
 
-<h1>Atlas 800 A3（昇腾 910C） vs AMD Instinct MI355X<br>—— 8 卡节点官方数据全量对比</h1>
+<h1>Atlas 800I A3（昇腾 910C·推理超节点） vs AMD Instinct MI355X<br>—— 8 卡节点官方数据对比</h1>
 
-<p class="kicker" style="color:#5a6b82">对比维度：算力 · 显存带宽 · 节点内/跨节点互联 · 网络与扩展 · 功耗散热 · 形态 · 软件生态　|　数据截止：2026-09-28　|　所有数据均标注官方来源，算术推导值单独标记<span class="calc">计算</span></p>
+<p class="kicker" style="color:#5a6b82">对比维度：算力 · 显存带宽 · 节点内/跨节点互联 · 网络与扩展 · 功耗散热 · 形态 · 软件生态 · Decode 访存墙上限　|　数据截止：2026-09-30　|　本版以 800I A3 推理超节点为唯一基线（单卡规格官方明标）　|　所有数据均标注官方来源，算术推导值单独标记<span class="calc">计算</span></p>
 
 <h2>〇、一页结论</h2>
 <div class="concl">
 <ul>
-<li><b>单芯片硬指标 MI355X 全面领先</b>：FP16 稠密算力为 910C 的 <b>3.1～4.5 倍</b>（2.5 PFLOPS vs 0.56/0.75/0.8 PFLOPS 三档官方口径，见 1.1 节）、显存容量 <b>2.25 倍</b>（288GB vs 128GB）、显存带宽 <b>2.5 倍</b>（8 vs 3.2 TB/s），且 MI355X 官方支持 FP8/FP6/FP4 低精度格式，A3 官方规格中未标注任何 8bit 以下浮点格式——这是推理成本上最大的代差。</li>
-<li><b>8 卡节点层面差距同比例放大</b>：MI355X 平台 FP16 稠密 20.0 PFLOPS vs A3 的 6.0 PFLOPS（训练款 800T A3 口径；推理款 800I A3 为 4.48 PFLOPS）；FP8 稠密 40.0 PFLOPS、FP4 稠密 80.8 PFLOPS（A3 无对应官方数据）。</li>
-<li><b>互联是 A3 唯一结构性优势</b>：单卡卡间双向带宽 784 GB/s（灵衢 UB，约为 MI355X Infinity Fabric 聚合 ≈1.07 TB/s 的 73%，差距不大），但 UB 总线可通过总线板 + L2 交换把 <b>384 卡统一编址成一台计算机</b>（48TB 统一显存、1:1 无收敛、200ns 单跳时延）；MI355X 的 Infinity Fabric <b>止步于 8 卡 mesh</b>，跨节点只能退回以太网（UALink 要等 2026 年 MI400/Helios）。推理集群的 KV Cache 共享、大 EP 训练通信，A3 的超节点总线语义是 MI355X 节点目前给不了的。</li>
-<li><b>代价与生态</b>：MI355X 单卡 1400W、8 卡平台风冷散热器热设计 41.8kW，必须液冷为主；A3 单机风冷 10U 可部署（整机最大输入功耗 16.2kW），机房友好。软件上 ROCm 7 + PyTorch/vLLM/SGLang 原生生态 vs CANN + MindSpore/torch_npu 适配生态，MI355X 成熟度占优。</li>
+<li><b>单芯片硬指标 MI355X 全面领先</b>：FP16 稠密算力为 910C 的 <b>4.5 倍</b>（2.5 vs 0.56 PFLOPS，800I A3 白皮书单卡明标；若按 SuperPoD 满配 800 TFLOPS 档为 3.1 倍）、显存容量 <b>2.25 倍</b>（288GB vs 128GB）、显存带宽 <b>2.5 倍</b>（8 vs 3.2 TB/s），且 MI355X 官方支持 FP8/FP6/FP4 低精度格式，A3 官方规格未标注任何 8bit 以下浮点格式——这是推理成本上最大的代差。唯一打平的精度档是 FP32（150 vs 157.3 TFLOPS）。</li>
+<li><b>8 卡节点层面差距同比例放大</b>：MI355X 平台 FP16 稠密 20.0 PFLOPS vs 800I A3 的 4.48 PFLOPS（4.5×）；FP8 稠密 40.0 PFLOPS、FP4 稠密 80.8 PFLOPS（A3 无对应官方数据）。</li>
+<li><b>互联是 A3 唯一结构性优势</b>：单卡卡间双向带宽 784 GB/s（灵衢 UB，约为 MI355X Infinity Fabric 聚合 ≈1.07 TB/s 的 73%，差距不大），但 UB 总线可通过总线板 + L2 交换把 <b>384 卡统一编址成一台计算机</b>（48TB 统一显存、1:1 无收敛、200ns 单跳时延）；MI355X 的 Infinity Fabric <b>止步于 8 卡 mesh</b>，跨节点只能退回以太网（UALink 要等 2026 年 MI400/Helios）。推理集群的 KV Cache 共享、大 EP 通信，A3 的超节点总线语义是 MI355X 节点目前给不了的。</li>
+<li><b>代价与生态</b>：MI355X 单卡 1400W、8 卡平台风冷散热器热设计 41.8kW，液冷为设计基线；A3 单机风冷 10U 可部署（整机功耗官方未公开）。软件上 ROCm 7 + PyTorch/vLLM/SGLang 原生生态 vs CANN + MindSpore/torch_npu 适配生态，MI355X 成熟度占优。</li>
 </ul>
 </div>
 
 <h2>一、对比对象与口径说明</h2>
-<p><b>华为侧</b>取 <b>Atlas 800T A3 超节点服务器</b>（训练款，华为企业业务官网<sup class="src"><a href="#ref1">[1]</a></sup>），搭载 8 颗昇腾 910 处理器。注意两点命名事实（均有官方出处）：</p>
+<p><b>华为侧</b>取 <b>Atlas 800I A3 超节点服务器</b>（推理款，华为企业业务官网<sup class="src"><a href="#ref1">[1]</a></sup>），搭载 8 颗昇腾 910 处理器；它是目前<b>唯一有单卡明标规格</b>的 A3 整机——其技术白皮书直接给出单 AI 处理器 560 TFLOPS@FP16 / 150 TFLOPS@FP32<sup class="src"><a href="#ref2">[2]</a></sup>。命名事实（有官方出处）：</p>
 <ul>
-<li>官网产品页一律称"昇腾 910"，而华为 2025 全联接大会徐直军主题演讲明确称这 384 颗芯片为 <b>Ascend 910C</b><sup class="src"><a href="#ref5">[5]</a></sup>——即 A3 世代芯片就是业界所称的 910C；搭载 910B 的是上一代 <b>A2 系列</b>（Atlas 800T A2），两者不是一代产品。</li>
-<li>同代还有推理款 <b>Atlas 800I A3</b>（FP16 4.48 PFLOPS，互联/显存规格相同<sup class="src"><a href="#ref3">[3]</a></sup>），本文以训练款 800T A3 为主，差异处单独标注。</li>
+<li>官网产品页一律称"昇腾 910"，而华为 2025 全联接大会徐直军主题演讲明确称这 384 颗芯片为 <b>Ascend 910C</b><sup class="src"><a href="#ref6">[6]</a></sup>——即 A3 世代芯片就是业界所称的 910C；搭载 910B 的是上一代 A2 系列，两者不是一代产品。</li>
 </ul>
-<p><b>AMD 侧</b>取 <b>AMD Instinct MI355X</b>（2025-06-12 发布，CDNA 4<sup class="src"><a href="#ref6">[6]</a></sup>），节点级采用 AMD 官方《MI355X Platform Datasheet》定义的 8 卡液冷 UBB 参考平台（双路 EPYC 9005）<sup class="src"><a href="#ref7">[7]</a></sup>，整机厂商实例为 Dell PowerEdge XE9785/XE9785L 等。</p>
-<div class="note"><b>数据口径原则（应你的要求）</b>：文中每个数字只来自官方页面/官方文档（来源编号 <a href="#refs">文末列表</a>）；凡由官方数字乘除得到的推导值（如 ×8 聚合、倍数）一律标 <span class="calc">计算</span>；华为未公开的项目明确写"官方未公开"，不用第三方猜测补位。</div>
+<p><b>AMD 侧</b>取 <b>AMD Instinct MI355X</b>（2025-06-12 发布，CDNA 4<sup class="src"><a href="#ref7">[7]</a></sup>），节点级采用 AMD 官方《MI355X Platform Datasheet》定义的 8 卡液冷 UBB 参考平台（双路 EPYC 9005）<sup class="src"><a href="#ref8">[8]</a></sup>，整机厂商实例为 Dell PowerEdge XE9785/XE9785L 等。</p>
+<div class="note"><b>数据口径原则</b>：文中每个数字只来自官方页面/官方文档（来源编号 <a href="#refs">文末列表</a>）；凡由官方数字乘除得到的推导值（如 ×8 聚合、倍数）一律标 <span class="calc">计算</span>；华为未公开的项目明确写"官方未公开"，不用第三方猜测补位。</div>
 
-<h3>1.1 昇腾 910"同代三档"算力口径（本文对比基线）</h3>
-<p>同一代"昇腾 910"（A3 世代）官方口径下存在三个算力档位，显存（8×128GB、3.2 TB/s）与互联（D2D 双向 784 GB/s）三档完全相同，差异在算力档：</p>
+<h3>1.1 昇腾 910（A3 世代）官方算力口径</h3>
 <table>
 <tr><th>档位</th><th>单卡 FP16</th><th>整机 FP16</th><th>单卡 FP32</th><th>单卡 INT8</th><th>来源</th></tr>
-<tr><td>800I A3（推理款）</td><td><b>560 TFLOPS</b>（白皮书单卡明标）</td><td>4.48 PFLOPS</td><td><b>150 TFLOPS</b>（白皮书单卡明标）</td><td>≈1.12 POPS <span class="calc">计算：8.96÷8</span></td><td class="src">[3]</td></tr>
-<tr><td><b>800T A3（训练款，本文主口径）</b></td><td>≈752 TFLOPS <span class="calc">计算：6.0÷8</span></td><td>6.0 PFLOPS</td><td>未公开</td><td>≈1.5 POPS <span class="calc">计算：12.0÷8</span></td><td class="src">[1]</td></tr>
-<tr><td>SuperPoD 满配 / 支持文档</td><td><b>800 TFLOPS</b>（$307.2 \div 384$）</td><td>307.2 PFLOPS（384 卡）</td><td>未公开</td><td>未公开</td><td class="src">[2][14]</td></tr>
+<tr><td><b>800I A3（推理款，本文基线）</b></td><td><b>560 TFLOPS</b>（白皮书单卡明标）</td><td>4.48 PFLOPS</td><td><b>150 TFLOPS</b>（白皮书单卡明标）</td><td>≈1.12 POPS <span class="calc">计算：8.96÷8</span></td><td class="src">[1][2]</td></tr>
+<tr><td>SuperPoD 满配（384 卡）</td><td><b>800 TFLOPS</b>（$307.2 \div 384$）；同页另列 288.7 PFLOPS 档（$\approx 752$ TFLOPS/卡）</td><td>307.2 PFLOPS</td><td>未公开</td><td>未公开</td><td class="src">[3][4]</td></tr>
 </table>
-<p>档位差异应来自 NPU 型号/主频分档（官方未说明成因）；引用 910C 算力时必须注明出处档位。本文除特别注明外，均以训练款 800T A3 档为对比基线（对标 MI355X 训练卡）。</p>
+<p>档位差异应来自 NPU 型号/主频分档（官方未说明成因）；引用 910C 算力时必须注明出处档位。除算力外，显存（8×128GB、3.2 TB/s）与互联（D2D 双向 784 GB/s）各档位相同<sup class="src"><a href="#ref1">[1]</a><a href="#ref3">[3]</a></sup>。本文除特别注明外均以 800I A3 档为基线。</p>
 
 <h2>二、单芯片对比：昇腾 910C vs MI355X</h2>
-<p>华为官网不单独发布 910C 芯片规格页，单卡数值由整机官方值 ÷8 推导（标 <span class="calc">计算</span>）；MI355X 数据全部来自 AMD 官方产品页规格表<sup class="src"><a href="#ref6">[6]</a></sup>。</p>
+<p>910C 的 FP16/FP32 单卡值来自 800I A3 技术白皮书明标<sup class="src"><a href="#ref2">[2]</a></sup>，INT8 单卡值由整机官方值 ÷8 推导；MI355X 数据全部来自 AMD 官方产品页规格表<sup class="src"><a href="#ref7">[7]</a></sup>。</p>
 <table>
-<tr><th>项目</th><th>昇腾 910C（A3 世代）</th><th>AMD Instinct MI355X</th><th>来源</th></tr>
-<tr><td>架构 / 制程</td><td>达芬奇架构；制程官方未公开</td><td>CDNA 4；台积电 <b>3nm（计算芯片）+ 6nm（I/O 芯片）</b></td><td class="src">AMD<sup><a href="#ref6">[6]</a></sup></td></tr>
-<tr><td>晶体管 / 核心规模</td><td class="na">官方未公开</td><td>185 亿晶体管；16,384 流处理器 / 256 CU / 1024 矩阵核，峰值引擎时钟 2400 MHz</td><td class="src">AMD<sup><a href="#ref6">[6]</a></sup></td></tr>
-<tr><td>FP16 / BF16（稠密）</td><td>同代三档（均为官方口径）：<b>0.56 PFLOPS</b>（800I A3 白皮书单卡明标 560 TFLOPS<sup><a href="#ref3">[3]</a></sup>）· 0.75 PFLOPS <span class="calc">计算：6.0÷8</span>（800T A3 训练档）· <b>0.8 PFLOPS</b>（SuperPoD $307.2 \div 384 = 800$<sup><a href="#ref2">[2]</a></sup>；支持文档同标 ≈800<sup><a href="#ref14">[14]</a></sup>）；稀疏官方未标注</td><td><b>2.5 PFLOPS</b>（稀疏 5.0）<span class="win">≈3.3×</span></td><td class="src">华为<sup><a href="#ref1">[1]</a><a href="#ref2">[2]</a><a href="#ref3">[3]</a><a href="#ref14">[14]</a></sup> / AMD<sup><a href="#ref6">[6]</a></sup></td></tr>
-<tr><td>FP8</td><td class="na">官方规格未标注 FP8（无公开数据）</td><td><b>5 PFLOPS 稠密 / 10.1 稀疏</b>（MXFP8 与 OCP-FP8 同值）</td><td class="src">AMD<sup><a href="#ref6">[6]</a></sup></td></tr>
-<tr><td>FP4 / FP6</td><td class="na">无官方数据</td><td><b>10.1 PFLOPS</b>（MXFP4 与 MXFP6 同值）</td><td class="src">AMD<sup><a href="#ref6">[6]</a></sup></td></tr>
-<tr><td>INT8</td><td>≈ 1.5 POPS <span class="calc">计算：12.0÷8</span>（训练档；推理款 800I A3 为 $8.96 \div 8 \approx 1.12$ POPS<sup><a href="#ref3">[3]</a></sup>）</td><td>5 POPS 稠密 / 10.1 稀疏 <span class="win">≈3.3×</span></td><td class="src">华为<sup><a href="#ref1">[1]</a><a href="#ref3">[3]</a></sup> / AMD<sup><a href="#ref6">[6]</a></sup></td></tr>
-<tr><td>FP64 / FP32</td><td>FP32：<b>150 TFLOPS</b>（800I A3 白皮书单卡口径<sup><a href="#ref3">[3]</a></sup>，与 MI355X 的 157.3 同档）；FP64 官方未公开</td><td>FP64 78.6 TFLOPS；FP32 矩阵 157.3 TFLOPS（TF32 为软件仿真）</td><td class="src">华为<sup><a href="#ref3">[3]</a></sup> / AMD<sup><a href="#ref6">[6]</a></sup></td></tr>
-<tr><td>显存容量</td><td><b>128 GB</b>（官网"片上内存"，未标注 HBM 代际）</td><td><b>288 GB HBM3E</b>，全片 ECC <span class="win">2.25×</span></td><td class="src">华为<sup><a href="#ref1">[1]</a></sup> / AMD<sup><a href="#ref6">[6]</a></sup></td></tr>
-<tr><td>显存带宽</td><td><b>3.2 TB/s</b></td><td><b>8 TB/s</b> <span class="win">2.5×</span></td><td class="src">华为<sup><a href="#ref2">[2]</a></sup> / AMD<sup><a href="#ref6">[6]</a></sup></td></tr>
-<tr><td>片上缓存</td><td class="na">官方未公开</td><td>256 MB Infinity Cache（LLC）</td><td class="src">AMD<sup><a href="#ref6">[6]</a></sup></td></tr>
-<tr><td>功耗（TBP）</td><td class="na">单卡未公开（整机最大输入功耗 16.2 kW<sup><a href="#ref4">[4]</a></sup>）</td><td><b>1400 W</b>（OAM 模块）</td><td class="src">华为<sup><a href="#ref4">[4]</a></sup> / AMD<sup><a href="#ref6">[6]</a></sup></td></tr>
-<tr><td>主机接口</td><td>无 PCIe 直连披露；对主机走系统总线，卡间走灵衢 UB</td><td>PCIe 5.0 ×16</td><td class="src">AMD<sup><a href="#ref6">[6]</a></sup> / 华为<sup><a href="#ref1">[1]</a></sup></td></tr>
+<tr><th>项目</th><th>昇腾 910C（800I A3 档）</th><th>AMD Instinct MI355X</th><th>来源</th></tr>
+<tr><td>架构 / 制程</td><td>达芬奇架构；制程官方未公开</td><td>CDNA 4；台积电 <b>3nm（计算芯片）+ 6nm（I/O 芯片）</b></td><td class="src">AMD<sup><a href="#ref7">[7]</a></sup></td></tr>
+<tr><td>晶体管 / 核心规模</td><td class="na">官方未公开</td><td>185 亿晶体管；16,384 流处理器 / 256 CU / 1024 矩阵核，峰值引擎时钟 2400 MHz</td><td class="src">AMD<sup><a href="#ref7">[7]</a></sup></td></tr>
+<tr><td>FP16 / BF16（稠密）</td><td><b>0.56 PFLOPS</b>（白皮书单卡明标；SuperPoD 满配档为 0.8 PFLOPS，$307.2 \div 384$<sup><a href="#ref3">[3]</a></sup>）；稀疏官方未标注</td><td><b>2.5 PFLOPS</b>（稀疏 5.0）<span class="win">4.5×</span></td><td class="src">华为<sup><a href="#ref2">[2]</a><a href="#ref3">[3]</a></sup> / AMD<sup><a href="#ref7">[7]</a></sup></td></tr>
+<tr><td>FP8</td><td class="na">官方规格未标注 FP8（无公开数据）</td><td><b>5 PFLOPS 稠密 / 10.1 稀疏</b>（MXFP8 与 OCP-FP8 同值）</td><td class="src">AMD<sup><a href="#ref7">[7]</a></sup></td></tr>
+<tr><td>FP4 / FP6</td><td class="na">无官方数据</td><td><b>10.1 PFLOPS</b>（MXFP4 与 MXFP6 同值）</td><td class="src">AMD<sup><a href="#ref7">[7]</a></sup></td></tr>
+<tr><td>INT8</td><td>≈ 1.12 POPS <span class="calc">计算：8.96÷8</span></td><td>5 POPS 稠密 / 10.1 稀疏 <span class="win">4.5×</span></td><td class="src">华为<sup><a href="#ref1">[1]</a></sup> / AMD<sup><a href="#ref7">[7]</a></sup></td></tr>
+<tr><td>FP64 / FP32</td><td>FP32：<b>150 TFLOPS</b>（白皮书单卡明标<sup><a href="#ref2">[2]</a></sup>，与 MI355X 的 157.3 基本打平）；FP64 官方未公开</td><td>FP64 78.6 TFLOPS；FP32 矩阵 157.3 TFLOPS（TF32 为软件仿真）</td><td class="src">华为<sup><a href="#ref2">[2]</a></sup> / AMD<sup><a href="#ref7">[7]</a></sup></td></tr>
+<tr><td>显存容量</td><td><b>128 GB</b>（官网"片上内存"，未标注 HBM 代际）</td><td><b>288 GB HBM3E</b>，全片 ECC <span class="win">2.25×</span></td><td class="src">华为<sup><a href="#ref1">[1]</a></sup> / AMD<sup><a href="#ref7">[7]</a></sup></td></tr>
+<tr><td>显存带宽</td><td><b>3.2 TB/s</b></td><td><b>8 TB/s</b> <span class="win">2.5×</span></td><td class="src">华为<sup><a href="#ref1">[1]</a><a href="#ref3">[3]</a></sup> / AMD<sup><a href="#ref7">[7]</a></sup></td></tr>
+<tr><td>片上缓存</td><td class="na">官方未公开</td><td>256 MB Infinity Cache（LLC）</td><td class="src">AMD<sup><a href="#ref7">[7]</a></sup></td></tr>
+<tr><td>功耗（TBP）</td><td class="na">单卡未公开（800I A3 整机功耗官方亦未公开<sup><a href="#ref1">[1]</a></sup>）</td><td><b>1400 W</b>（OAM 模块）</td><td class="src">AMD<sup><a href="#ref7">[7]</a></sup></td></tr>
+<tr><td>主机接口</td><td>无 PCIe 直连披露；对主机走系统总线，卡间走灵衢 UB</td><td>PCIe 5.0 ×16</td><td class="src">AMD<sup><a href="#ref7">[7]</a></sup> / 华为<sup><a href="#ref1">[1]</a></sup></td></tr>
 </table>
-<div class="note">注意：AMD 官方页的 FP16 峰值是 <b>稠密 2.5 / 稀疏 5.0 PFLOPS</b>（MI355X 相比 MI325X 精简了 CU 数量、提高了时钟，FP16 峰值与上代持平；其增量主要在 FP8/FP6/FP4 与 288GB 显存）。网络上常见的"MI355X 5.3 PFLOPS FP16"是把稀疏峰值/上代口径混用了，本文一律按 AMD 官方页为准。</div>
 
-<div class="note"><b>口径提示</b>：下表除特别注明外以训练款 800T A3 档（≈752 TFLOPS/卡）为基线；"昇腾 910"同代三档（560 / 752 / 800 TFLOPS FP16）的完整口径与出处见 1.1 节，引用 910C 算力时必须注明档位。</div>
+<div class="note"><b>为什么 FP32 峰值与 FP16 不是 2:1（或任何位宽换算）关系</b>：两个峰值出自<b>不同运算单元</b>。达芬奇架构的每个 AI Core 由 <b>Cube 矩阵单元</b>（专吃矩阵乘，决定 FP16 峰值 560 TFLOPS）+ <b>Vector 向量单元</b>（承担 FP32/逐元素算子，决定 FP32 峰值 150 TFLOPS）+ Scalar 标量单元组成（华为公开架构设计），两类单元的数量与吞吐按架构配比独立设计，$560/150 \approx 3.7:1$ 是设计结果，不是"位宽减半吞吐翻倍"的换算。对照 MI355X：FP16 矩阵 2500 TFLOPS vs FP32 157.3 TFLOPS（矩阵与向量同值），比例 15.9:1<sup class="src"><a href="#ref7">[7]</a></sup>——昇腾的 FP32 相对配比反而厚得多，因此 FP32 档两家几乎打平。真正的 2:1 只出现在<b>同一计算单元内的相邻精度</b>：A3 自己的数字里 INT8 = 2×FP16（$8.96 = 2 \times 4.48$ PFLOPS<sup><a href="#ref1">[1]</a></sup>）；MI355X 的 FP8 = 2×FP16（$5 = 2 \times 2.5$）、FP4 = 2×FP8（$10.1 \approx 2 \times 5$）<sup><a href="#ref7">[7]</a></sup>。</div>
 
 <h3>2.1 910C 相对 910B 的代际提升（华为支持文档口径）</h3>
-<p>华为支持网站《Atlas 800I A3 超节点用户指南》（文档号 EDOC1100461231）给出了 910B → 910C 的官方代际对比<sup class="src"><a href="#ref14">[14]</a></sup>。该页为动态渲染无法程序化抓取，下表数字系使用者在官方页面人工摘录（链接可自行核验）；每一行都附本文其他官方数据的交叉验证结果：</p>
+<p>华为支持网站《Atlas 800I A3 超节点用户指南》（文档号 EDOC1100461231）给出了 910B → 910C 的官方代际对比<sup class="src"><a href="#ref4">[4]</a></sup>。该页为动态渲染无法程序化抓取，下表数字系使用者在官方页面人工摘录（链接可自行核验）；每一行都附本文其他官方数据的交叉验证结果：</p>
 <table>
 <tr><th>指标</th><th>910C（指南口径）</th><th>相对 910B</th><th>交叉验证</th></tr>
-<tr><td>FP16 算力</td><td><b>≈ 800 TFLOPS</b></td><td>2×</td><td class="src">与 SuperPoD $307.2 \div 384 = 800$ 一致<sup><a href="#ref2">[2]</a></sup>；产品页 $6.0 \div 8 \approx 752$ 为另一档配置<sup><a href="#ref1">[1]</a></sup></td></tr>
-<tr><td>显存带宽</td><td><b>3.2 TB/s</b></td><td>摘录为 8×（<b>存疑</b>：业界 910B≈1.6 TB/s 对应 2×；910B 官方数值从未公开，若指南原文为 8× 则系首个官方口径，建议人工复核）</td><td class="src">与产品页一致<sup><a href="#ref1">[1]</a><a href="#ref2">[2]</a></sup></td></tr>
+<tr><td>FP16 算力</td><td><b>≈ 800 TFLOPS</b></td><td>2×</td><td class="src">与 SuperPoD $307.2 \div 384 = 800$ 一致<sup><a href="#ref3">[3]</a></sup>；800I A3 白皮书明标档为 560 TFLOPS<sup><a href="#ref2">[2]</a></sup></td></tr>
+<tr><td>显存带宽</td><td><b>3.2 TB/s</b></td><td>摘录为 8×（<b>存疑</b>：业界 910B≈1.6 TB/s 对应 2×；910B 官方数值从未公开，若指南原文为 8× 则系首个官方口径，建议人工复核）</td><td class="src">与产品页一致<sup><a href="#ref1">[1]</a><a href="#ref3">[3]</a></sup></td></tr>
 <tr><td>HBM 容量</td><td><b>128 GB</b></td><td>2×（910B = 64GB，与业界口径一致）</td><td class="src">与产品页一致<sup><a href="#ref1">[1]</a></sup></td></tr>
 <tr><td>H2D 带宽</td><td><b>350 GB/s</b></td><td>5×（910B = 70 GB/s）</td><td class="src">官方首次披露，暂无交叉源</td></tr>
-<tr><td>D2D 带宽</td><td><b>392 GB/s（单向）</b></td><td>7×（按 910B = 56 GB/s，即单 HCCS 链路单向口径）</td><td class="src">与 CloudMatrix 官方描述"每颗 910C 提供超过 392 GB/s 单向带宽"一致<sup><a href="#ref15">[15]</a></sup>；双向 784 GB/s 与产品页一致<sup><a href="#ref1">[1]</a></sup></td></tr>
+<tr><td>D2D 带宽</td><td><b>392 GB/s（单向）</b></td><td>7×（按 910B = 56 GB/s，即单 HCCS 链路单向口径）</td><td class="src">与 CloudMatrix 官方描述"每颗 910C 提供超过 392 GB/s 单向带宽"一致<sup><a href="#ref5">[5]</a></sup>；双向 784 GB/s 与产品页一致<sup><a href="#ref1">[1]</a></sup></td></tr>
 <tr><td>互联带宽</td><td><b>2 TB/s</b></td><td>2.5×（910B ≈ 0.8 TB/s，即双向 784 口径）</td><td class="src"><b>口径待核</b>：产品页 D2D 双向为 784 GB/s<sup><a href="#ref1">[1]</a></sup>，2 TB/s 或为模组/芯片总互联口径（指南未给定义），两值并存</td></tr>
-<tr><td>算力/带宽比</td><td><b>≈ 235 FLOPS/Byte</b>（910B ≈ 1057）</td><td>降至约 1/4.5，大幅缓解访存墙</td><td class="src">$235 = 752 \div 3.2$ 可复算 ✓（即按 752 TFLOPS 档）；1057 无法用公开 910B 口径复算，以指南为准</td></tr>
+<tr><td>算力/带宽比</td><td><b>≈ 235 FLOPS/Byte</b>（910B ≈ 1057）</td><td>降至约 1/4.5，大幅缓解访存墙</td><td class="src">$235 = 752 \div 3.2$ 可复算 ✓（对应 SuperPoD $288.7 \div 384 \approx 752$ TFLOPS 档<sup><a href="#ref3">[3]</a></sup>；800I A3 档为 $560 \div 3.2 = 175$ <span class="calc">计算</span>）；1057 无法用公开 910B 口径复算，以指南为准</td></tr>
 </table>
-<div class="note"><b>两点如实说明</b>：① 910B 的官方规格华为从未公开，业界通用值（FP16 ≈376–400 TFLOPS、64GB、≈1.6 TB/s、HCCS 392 GB/s 单向）均出自第三方拆解；本表"910B 推算值"按指南倍数反推。② "显存带宽 8×"与"互联带宽 2 TB/s"两处与本文已核实的官方口径（2×、784 GB/s 双向）存在张力，可能是摘录笔误或指南采用不同统计口径，已在表中标注，建议打开链接<sup class="src"><a href="#ref14">[14]</a></sup>人工复核原文。</div>
+<div class="note"><b>两点如实说明</b>：① 910B 的官方规格华为从未公开，业界通用值（FP16 ≈376–400 TFLOPS、64GB、≈1.6 TB/s、HCCS 392 GB/s 单向）均出自第三方拆解；本表"910B 推算值"按指南倍数反推。② "显存带宽 8×"与"互联带宽 2 TB/s"两处与本文已核实的官方口径（2×、784 GB/s 双向）存在张力，可能是摘录笔误或指南采用不同统计口径，已在表中标注，建议打开链接<sup class="src"><a href="#ref4">[4]</a></sup>人工复核原文。</div>
 
 <h2>三、8 卡节点全量对比</h2>
-<p>左列为华为官网 Atlas 800T A3 整机规格<sup class="src"><a href="#ref1">[1]</a></sup>；右列优先取 AMD 官方 8 卡平台数据表<sup class="src"><a href="#ref7">[7]</a></sup>，单卡数据 ×8 聚合处标 <span class="calc">计算</span>。</p>
+<p>左列为华为官网 Atlas 800I A3 整机规格<sup class="src"><a href="#ref1">[1]</a></sup>；右列优先取 AMD 官方 8 卡平台数据表<sup class="src"><a href="#ref8">[8]</a></sup>，单卡数据 ×8 聚合处标 <span class="calc">计算</span>。</p>
 <table>
-<tr><th>维度</th><th>Atlas 800T A3（8×910C）</th><th>MI355X 8 卡平台（UBB 液冷）</th><th>来源</th></tr>
-<tr><td><b>FP16 稠密算力</b></td><td><b>6.0 PFLOPS</b>（INT8 12.0 POPS；训练款口径，推理款 800I A3 为 4.48 PFLOPS / 8.96 POPS<sup><a href="#ref3">[3]</a></sup>）</td><td><b>20.0 PFLOPS</b>（稠密；稀疏 40.0）<span class="win">3.3×</span></td><td class="src">华为<sup><a href="#ref1">[1]</a><a href="#ref3">[3]</a></sup> / AMD<sup><a href="#ref7">[7]</a></sup></td></tr>
-<tr><td><b>FP8 稠密算力</b></td><td class="na">官方未标注支持</td><td><b>40.0 PFLOPS</b>（稀疏 80.8）</td><td class="src">AMD<sup><a href="#ref7">[7]</a></sup></td></tr>
-<tr><td><b>FP4 稠密算力</b></td><td class="na">官方未标注支持</td><td><b>80.8 PFLOPS</b>（稀疏 161.5）</td><td class="src">AMD<sup><a href="#ref7">[7]</a></sup></td></tr>
-<tr><td><b>INT8</b></td><td>12.0 POPS</td><td>40.0 POPS 稠密（稀疏 80.8）<span class="win">3.3×</span></td><td class="src">华为<sup><a href="#ref1">[1]</a></sup> / AMD<sup><a href="#ref7">[7]</a></sup></td></tr>
-<tr><td><b>显存容量（节点）</b></td><td><b>1024 GB</b>（8×128GB，统一编址基础）</td><td><b>2304 GB</b>（2.3TB HBM3E）<span class="win">2.25×</span></td><td class="src">华为<sup><a href="#ref1">[1]</a></sup> / AMD<sup><a href="#ref7">[7]</a></sup></td></tr>
-<tr><td><b>显存带宽（节点聚合）</b></td><td>25.6 TB/s <span class="calc">计算：3.2×8</span></td><td><b>64 TB/s</b><span class="win">2.5×</span></td><td class="src">华为<sup><a href="#ref2">[2]</a></sup> / AMD<sup><a href="#ref7">[7]</a></sup></td></tr>
-<tr><td><b>卡间互联（每卡）</b></td><td><b>灵衢 UB，D2D 双向 784 GB/s</b>；总线带宽 1:1 无收敛</td><td>Infinity Fabric：7 条 scale-up 链路 × 每链路峰值 153 GB/s ≈ <b>1.071 TB/s</b> <span class="calc">计算：153×7</span>（双向口径，考证见 4.1）</td><td class="src">华为<sup><a href="#ref1">[1]</a><a href="#ref2">[2]</a></sup> / AMD<sup><a href="#ref6">[6]</a></sup></td></tr>
-<tr><td><b>卡间互联拓扑</b></td><td><b>总线式全互联</b>：每 AI 模组 7 路灵衢（UB）链路 + 1 路 RoCE<sup><a href="#ref10">[10]</a></sup>，机内经灵衢总线板实现任意两卡直通（总线语义全互联，非芯片间专线的直连 mesh），同一总线经 L2 灵衢交换可扩展至 <b>16～384 卡</b>逻辑超节点（16/32/64/128/256/384 卡规格；双机即可 16 卡全互联）</td><td><b>直连 full mesh</b>：每卡 7 条 IF 链路在 UBB 上与其余 7 卡点对点直连（无交换器件），<b>超出 8 卡无总线级互联</b>；跨节点走以太网</td><td class="src">华为<sup><a href="#ref2">[2]</a><a href="#ref10">[10]</a></sup> / AMD<sup><a href="#ref6">[6]</a><a href="#ref9">[9]</a></sup></td></tr>
-<tr><td><b>互联时延</b></td><td><b>200 ns 单跳通信时延</b>（SuperPoD 官方值）</td><td class="na">官方未公布对应指标</td><td class="src">华为<sup><a href="#ref2">[2]</a></sup></td></tr>
-<tr><td><b>跨节点扩展网络</b></td><td>56 × 400GE QSFP-DD 总线协议（UB）直出 + 8 × 400GE RoCE 直出</td><td>每 GPU 1 条 scale-out IF 链路（峰值 128 GB/s）；平台配备 2400 Gb/s（300 GB/s）专用 NIC 带宽/GPU，12 × PCIe 5.0</td><td class="src">华为<sup><a href="#ref1">[1]</a></sup> / AMD<sup><a href="#ref6">[6]</a><a href="#ref7">[7]</a></sup></td></tr>
-<tr><td><b>主机 CPU</b></td><td>4 × 鲲鹏 920（ARM）</td><td>2 × AMD EPYC 9005（Turin，Zen 5）</td><td class="src">华为<sup><a href="#ref1">[1]</a></sup> / AMD<sup><a href="#ref7">[7]</a></sup></td></tr>
-<tr><td><b>系统内存</b></td><td>32 × DDR5 插槽，5200 MT/s，单条最大 64GB</td><td>双路 EPYC 平台 DDR5（以 OEM 整机为准）</td><td class="src">华为<sup><a href="#ref1">[1]</a></sup> / AMD<sup><a href="#ref7">[7]</a></sup></td></tr>
-<tr><td><b>功耗</b></td><td><b>整机设计最大输入功耗 16.2 kW</b>（含 CPU/风扇/电源损耗）；220V AC 或 336/240 HVDC</td><td>仅 8 卡 GPU TBP 合计 11.2 kW <span class="calc">计算：1400×8</span>，不含 CPU/主机；平台热设计：风冷散热器 41.8 kW / 冷板 15.8 kW</td><td class="src">华为<sup><a href="#ref4">[4]</a></sup> / AMD<sup><a href="#ref6">[6]</a><a href="#ref7">[7]</a></sup></td></tr>
-<tr><td><b>散热 / 形态</b></td><td><b>风冷</b>，10U 机架（442×447×920mm），5-35℃；超节点形态转液冷（12 计算柜+4 总线柜，47U）</td><td>直接液冷（DLC）为主，UBB 标准形态；风冷整机为 OEM 可选</td><td class="src">华为<sup><a href="#ref1">[1]</a><a href="#ref2">[2]</a></sup> / AMD<sup><a href="#ref7">[7]</a></sup></td></tr>
-<tr><td><b>存储 / 扩展</b></td><td>5 × PCIe 5.0 插槽；最大 2×2.5" SATA + 8×2.5" NVMe</td><td>12 × PCIe 5.0；NVMe 以 OEM 整机为准</td><td class="src">华为<sup><a href="#ref1">[1]</a></sup> / AMD<sup><a href="#ref7">[7]</a></sup></td></tr>
+<tr><th>维度</th><th>Atlas 800I A3（8×910C）</th><th>MI355X 8 卡平台（UBB 液冷）</th><th>来源</th></tr>
+<tr><td><b>FP16 稠密算力</b></td><td><b>4.48 PFLOPS</b>（INT8 8.96 POPS）</td><td><b>20.0 PFLOPS</b>（稠密；稀疏 40.0）<span class="win">4.5×</span></td><td class="src">华为<sup><a href="#ref1">[1]</a></sup> / AMD<sup><a href="#ref8">[8]</a></sup></td></tr>
+<tr><td><b>FP8 稠密算力</b></td><td class="na">官方未标注支持</td><td><b>40.0 PFLOPS</b>（稀疏 80.8）</td><td class="src">AMD<sup><a href="#ref8">[8]</a></sup></td></tr>
+<tr><td><b>FP4 稠密算力</b></td><td class="na">官方未标注支持</td><td><b>80.8 PFLOPS</b>（稀疏 161.5）</td><td class="src">AMD<sup><a href="#ref8">[8]</a></sup></td></tr>
+<tr><td><b>INT8</b></td><td>8.96 POPS</td><td>40.0 POPS 稠密（稀疏 80.8）<span class="win">4.5×</span></td><td class="src">华为<sup><a href="#ref1">[1]</a></sup> / AMD<sup><a href="#ref8">[8]</a></sup></td></tr>
+<tr><td><b>显存容量（节点）</b></td><td><b>1024 GB</b>（8×128GB，统一编址基础）</td><td><b>2304 GB</b>（2.3TB HBM3E）<span class="win">2.25×</span></td><td class="src">华为<sup><a href="#ref1">[1]</a></sup> / AMD<sup><a href="#ref8">[8]</a></sup></td></tr>
+<tr><td><b>显存带宽（节点聚合）</b></td><td>25.6 TB/s <span class="calc">计算：3.2×8</span></td><td><b>64 TB/s</b><span class="win">2.5×</span></td><td class="src">华为<sup><a href="#ref3">[3]</a></sup> / AMD<sup><a href="#ref8">[8]</a></sup></td></tr>
+<tr><td><b>卡间互联（每卡）</b></td><td><b>灵衢 UB，D2D 双向 784 GB/s</b>；总线带宽 1:1 无收敛</td><td>Infinity Fabric：7 条 scale-up 链路 × 每链路峰值 153 GB/s ≈ <b>1.071 TB/s</b> <span class="calc">计算：153×7</span>（双向口径，考证见 4.1）</td><td class="src">华为<sup><a href="#ref1">[1]</a><a href="#ref3">[3]</a></sup> / AMD<sup><a href="#ref7">[7]</a></sup></td></tr>
+<tr><td><b>卡间互联拓扑</b></td><td><b>总线式全互联</b>：每 AI 模组 7 路灵衢（UB）链路 + 1 路 RoCE<sup><a href="#ref4">[4]</a></sup>，机内经灵衢总线板实现任意两卡直通（总线语义全互联，非芯片间专线的直连 mesh），同一总线经 L2 灵衢交换可扩展至 <b>16～384 卡</b>逻辑超节点（16/32/64/128/256/384 卡规格）</td><td><b>直连 full mesh</b>：每卡 7 条 IF 链路在 UBB 上与其余 7 卡点对点直连（无交换器件），<b>超出 8 卡无总线级互联</b>；跨节点走以太网</td><td class="src">华为<sup><a href="#ref3">[3]</a><a href="#ref4">[4]</a></sup> / AMD<sup><a href="#ref7">[7]</a><a href="#ref9">[9]</a></sup></td></tr>
+<tr><td><b>互联时延</b></td><td><b>200 ns 单跳通信时延</b>（SuperPoD 官方值）</td><td class="na">官方未公布对应指标</td><td class="src">华为<sup><a href="#ref3">[3]</a></sup></td></tr>
+<tr><td><b>跨节点扩展网络</b></td><td>56 × 400GE QSFP-DD 总线协议（UB）直出 + 8 × 400GE RoCE 直出</td><td>每 GPU 1 条 scale-out IF 链路（峰值 128 GB/s）；平台配备 2400 Gb/s（300 GB/s）专用 NIC 带宽/GPU，12 × PCIe 5.0</td><td class="src">华为<sup><a href="#ref1">[1]</a></sup> / AMD<sup><a href="#ref7">[7]</a><a href="#ref8">[8]</a></sup></td></tr>
+<tr><td><b>主机 CPU</b></td><td>4 × 鲲鹏 920（ARM）</td><td>2 × AMD EPYC 9005（Turin，Zen 5）</td><td class="src">华为<sup><a href="#ref1">[1]</a></sup> / AMD<sup><a href="#ref8">[8]</a></sup></td></tr>
+<tr><td><b>系统内存</b></td><td>DDR5，5200 MT/s，单条最大 64GB</td><td>双路 EPYC 平台 DDR5（以 OEM 整机为准）</td><td class="src">华为<sup><a href="#ref1">[1]</a></sup> / AMD<sup><a href="#ref8">[8]</a></sup></td></tr>
+<tr><td><b>功耗</b></td><td class="na">整机功耗官方未公开（仅公布供电制式：220V AC 或 336/240 HVDC）</td><td>仅 8 卡 GPU TBP 合计 11.2 kW <span class="calc">计算：1400×8</span>，不含 CPU/主机；平台热设计：风冷散热器 41.8 kW / 冷板 15.8 kW</td><td class="src">华为<sup><a href="#ref1">[1]</a></sup> / AMD<sup><a href="#ref7">[7]</a><a href="#ref8">[8]</a></sup></td></tr>
+<tr><td><b>散热 / 形态</b></td><td><b>风冷</b>，10U 机架（442×447×920mm），5-35℃；超节点形态转液冷（12 计算柜+4 总线柜，47U）</td><td>直接液冷（DLC）为主，UBB 标准形态；风冷整机为 OEM 可选</td><td class="src">华为<sup><a href="#ref1">[1]</a><a href="#ref3">[3]</a></sup> / AMD<sup><a href="#ref8">[8]</a></sup></td></tr>
+<tr><td><b>存储 / 扩展</b></td><td>5 × PCIe 5.0 插槽；最大 2×2.5" SATA + 8×2.5" NVMe</td><td>12 × PCIe 5.0；NVMe 以 OEM 整机为准</td><td class="src">华为<sup><a href="#ref1">[1]</a></sup> / AMD<sup><a href="#ref8">[8]</a></sup></td></tr>
 </table>
 
 <h2>四、互联架构深度对比：灵衢 UB vs Infinity Fabric</h2>
 <p>这是两个产品哲学分歧最大的地方：华为用"总线换规模"，AMD 用"单卡性能 + 标准生态"。</p>
 
 <h3>4.1 节点内：差距不大；拓扑实现路径不同</h3>
-<p>每卡卡间带宽：910C 为官方标称的 <b>双向 784 GB/s</b><sup class="src"><a href="#ref1">[1]</a></sup>（单向 392 GB/s）；MI355X 为 7 条 Infinity Fabric 链路聚合 ≈<b>1.071 TB/s 双向</b><span class="calc">计算：153×7</span><sup class="src"><a href="#ref6">[6]</a></sup>（单向 ≈536 GB/s），MI355X 约为 A3 的 <b>1.37 倍</b>——同为远高于 PCIe、低于 NVIDIA NVLink 5（1.8 TB/s）的档位，非数量级差距。</p>
-<p><b>"153 GB/s 是否双向"的考证</b>：MI355X 官方规格页未写方向字样，但 AMD 官方对上两代有明文——MI300X 平线数据表写明 "GPUs over <b>128 GB/s bidirectional</b> links"<sup class="src"><a href="#ref9">[9]</a></sup>；AMD 在 Hot Chips 2024 官方幻灯片写 "seven <b>bi-directional</b> links @ 128 GB/s"<sup class="src"><a href="#ref11">[11]</a></sup>；MI325X 平台数据表同样按 7×128 = 896 GB/s 双向聚合口径。MI355X 规格页的 "Scale-up Link Bandwidth 153 GB/s" 沿用同一规格行、同一链路位宽，且 $153 = 128 \times 1.2$ 恰为 serdes 代际提速比例。因此按 AMD 官方口径惯例，153 GB/s 可确认为<b>每链路双向聚合带宽</b>（唯一的保留：MI355X 自家文档未出现 "bidirectional" 字样）。</p>
-<p><b>拓扑对比</b>：MI355X 的 8 卡 mesh 是 UBB 电路板上每对 GPU 之间的<b>专用直连线</b>——7 条链路恰好对应 7 个对端，无交换器件，拓扑天然封顶在 8 卡。A3 的 8 卡是<b>灵衢总线上的全互联</b>：每 AI 模组 7 路 UB 链路<sup class="src"><a href="#ref10">[10]</a></sup>终结在节点内灵衢总线板（L1），由总线实现任意两卡直通、1:1 无收敛；同一总线再经 56×400GE UB 直出（$8 \times 7 = 56$ <span class="calc">计算</span>，即每模组全部 UB 链路都引到总线平面）延伸到 L2 交换与 16～384 卡。逻辑上两者都是任意两卡可直通；物理上一个是静态直连 mesh，一个是交换式总线（规模可外推）——这是两种拓扑的本质差别。</p>
+<p>每卡卡间带宽：910C 为官方标称的 <b>双向 784 GB/s</b><sup class="src"><a href="#ref1">[1]</a></sup>（单向 392 GB/s，与 CloudMatrix 官方描述一致<sup class="src"><a href="#ref5">[5]</a></sup>）；MI355X 为 7 条 Infinity Fabric 链路聚合 ≈<b>1.071 TB/s 双向</b><span class="calc">计算：153×7</span><sup class="src"><a href="#ref7">[7]</a></sup>（单向 ≈536 GB/s），MI355X 约为 A3 的 <b>1.37 倍</b>——同为远高于 PCIe、低于 NVIDIA NVLink 5（1.8 TB/s）的档位，非数量级差距。</p>
+<p><b>"153 GB/s 是否双向"的考证</b>：MI355X 官方规格页未写方向字样，但 AMD 官方对上两代有明文——MI300X 平台数据表写明 "GPUs over <b>128 GB/s bidirectional</b> links"<sup class="src"><a href="#ref9">[9]</a></sup>；AMD 在 Hot Chips 2024 官方幻灯片写 "seven <b>bi-directional</b> links @ 128 GB/s"<sup class="src"><a href="#ref10">[10]</a></sup>；MI325X 平台数据表同样按 7×128 = 896 GB/s 双向聚合口径。MI355X 规格页的 "Scale-up Link Bandwidth 153 GB/s" 沿用同一规格行、同一链路位宽，且 $153 = 128 \times 1.2$ 恰为 serdes 代际提速比例。因此按 AMD 官方口径惯例，153 GB/s 可确认为<b>每链路双向聚合带宽</b>（唯一的保留：MI355X 自家文档未出现 "bidirectional" 字样）。</p>
+<p><b>拓扑对比</b>：MI355X 的 8 卡 mesh 是 UBB 电路板上每对 GPU 之间的<b>专用直连线</b>——7 条链路恰好对应 7 个对端，无交换器件，拓扑天然封顶在 8 卡。A3 的 8 卡是<b>灵衢总线上的全互联</b>：每 AI 模组 7 路 UB 链路（由 $56 \div 8 = 7$ 个 UB 直出端口/模组推导 <span class="calc">计算</span><sup class="src"><a href="#ref1">[1]</a></sup>，与用户指南口径一致<sup class="src"><a href="#ref4">[4]</a></sup>）终结在节点内灵衢总线板（L1），由总线实现任意两卡直通、1:1 无收敛；同一总线再经 56×400GE UB 直出延伸到 L2 交换与 16～384 卡。逻辑上两者都是任意两卡可直通；物理上一个是静态直连 mesh，一个是交换式总线（规模可外推）——这是两种拓扑的本质差别。</p>
 
 <h3>4.2 跨节点：A3 结构性胜出</h3>
-<p>MI355X 的 Infinity Fabric 拓扑上限就是 8 卡 mesh：8 卡之后必须走以太网/RoCE 做 scale-out（每 GPU 1×128 GB/s scale-out 链路，平台配 300 GB/s 专用 NIC 带宽<sup class="src"><a href="#ref6">[6]</a><a href="#ref7">[7]</a></sup>），总线语义（统一编址、微秒级时延）在节点边界消失。AMD 的 UALink 总线要随 MI400/Helios 机架（官方 2026）才落地。</p>
-<p>而 A3 从设计上就是 <b>Atlas 900 A3 SuperPoD（CloudMatrix 384）的单机基础节点</b>：官方白皮书定义产品为"超节点服务器 + 灵衢总线设备"两部分<sup class="src"><a href="#ref10">[10]</a></sup>，节点内 8 卡经灵衢总线板，跨节点经 56×400GE UB 直出接到 L2 总线交换设备（双机即可 16 卡全互联），最大 <b>384 卡像一台计算机一样工作</b>——48TB 片上内存统一编址、总线带宽 1:1 无收敛、单跳时延 200ns，支持 16/32/64/128/256/384 卡逻辑超节点裁剪<sup class="src"><a href="#ref2">[2]</a></sup>。整系统 307.2/288.7 PFLOPS FP16、192 颗鲲鹏 920、12 计算柜 + 4 总线柜<sup class="src"><a href="#ref2">[2]</a></sup>。</p>
-<p>对大模型负载的含义：Megatron/大 EP MoE 训练的 TP/SP 通信、PD 分离推理的跨机 KV Cache 传输，在 A3 超节点里走的是"内存语义总线"，在 MI355X 集群里跨节点只能走"网络语义以太网"——这正是你所在低时延方向上两类系统的本质差异。</p>
+<p>MI355X 的 Infinity Fabric 拓扑上限就是 8 卡 mesh：8 卡之后必须走以太网/RoCE 做 scale-out（每 GPU 1×128 GB/s scale-out 链路，平台配 300 GB/s 专用 NIC 带宽<sup class="src"><a href="#ref7">[7]</a><a href="#ref8">[8]</a></sup>），总线语义（统一编址、微秒级时延）在节点边界消失。AMD 的 UALink 总线要随 MI400/Helios 机架（官方 2026）才落地。</p>
+<p>而 800I A3 从设计上就是 <b>Atlas 900 A3 SuperPoD（CloudMatrix 384）体系的单机形态</b>：节点内 8 卡经灵衢总线板，跨节点经 56×400GE UB 直出接到 L2 总线交换设备，最大 <b>384 卡像一台计算机一样工作</b>——48TB 片上内存统一编址、总线带宽 1:1 无收敛、单跳时延 200ns，支持 16/32/64/128/256/384 卡逻辑超节点裁剪<sup class="src"><a href="#ref3">[3]</a></sup>。整系统 307.2/288.7 PFLOPS FP16、192 颗鲲鹏 920、12 计算柜 + 4 总线柜<sup class="src"><a href="#ref3">[3]</a></sup>。</p>
+<p>对大模型负载的含义：Megatron/大 EP MoE 训练的 TP/SP 通信、PD 分离推理的跨机 KV Cache 传输，在 A3 超节点里走的是"内存语义总线"，在 MI355X 集群里跨节点只能走"网络语义以太网"——这正是低时延方向上两类系统的本质差异。</p>
 
 <div class="mermaid">
 flowchart LR
   subgraph HUAWEI[华为路径：超节点总线]
     direction TB
-    h1[Atlas 800T A3 节点<br/>8×910C 总线式全互联<br/>D2D 双向 784GB/s]
+    h1[Atlas 800I A3 节点<br/>8×910C 总线式全互联<br/>D2D 双向 784GB/s]
     h2[灵衢总线板<br/>L1]
     h3[L2 总线交换<br/>56×400GE UB]
     h4[Atlas 900 A3 SuperPoD<br/>最多 384 卡统一编址<br/>48TB 显存 · 1:1 无收敛 · 200ns 单跳]
@@ -171,7 +167,7 @@ flowchart LR
 
 <h3>4.3 算力/带宽代差量化</h3>
 <div class="formula">\[
-\frac{\text{MI355X 节点 FP16}}{\text{A3 节点 FP16}} = \frac{20.0}{6.0} \approx 3.3\times,\qquad
+\frac{\text{MI355X 节点 FP16}}{\text{800I A3 节点 FP16}} = \frac{20.0}{4.48} \approx 4.5\times,\qquad
 \frac{\text{MI355X 节点显存带宽}}{\text{A3 节点显存带宽}} = \frac{64}{25.6} = 2.5\times,\qquad
 \frac{\text{MI355X 节点显存容量}}{\text{A3 节点显存容量}} = \frac{2304}{1024} \approx 2.25\times
 \]</div>
@@ -180,55 +176,56 @@ xychart-beta
   title "8卡节点峰值算力对比（PFLOPS，稠密口径）"
   x-axis ["FP16", "INT8/FP8类", "FP4"]
   y-axis "PFLOPS" 0 --> 90
-  bar [6.0, 12.0, 0]
+  bar [4.48, 8.96, 0]
   bar [20.0, 40.0, 80.8]
 </div>
-<p style="font-size:14.5px;color:#5a6b82">注：A3 的 INT8 12.0 POPS 与 MI355X 的 FP8 40.0 PFLOPS 精度不同，图中仅按官方给出的可比最高精度并列展示；A3 无官方 FP8/FP4 数据（记 0）。来源：华为<sup class="src"><a href="#ref1">[1]</a></sup>、AMD<sup class="src"><a href="#ref7">[7]</a></sup>。</p>
+<p style="font-size:14.5px;color:#5a6b82">注：800I A3 的 INT8 8.96 POPS 与 MI355X 的 FP8 40.0 PFLOPS 精度不同，图中仅按官方给出的可比最高精度并列展示；A3 无官方 FP8/FP4 数据（记 0）。来源：华为<sup class="src"><a href="#ref1">[1]</a></sup>、AMD<sup class="src"><a href="#ref8">[8]</a></sup>。</p>
 
 <h2>五、功耗、散热与部署</h2>
 <table>
-<tr><th>项目</th><th>Atlas 800T A3</th><th>MI355X 8 卡平台</th><th>来源</th></tr>
-<tr><td>单卡 TBP</td><td class="na">官方未公开</td><td>1400 W</td><td class="src">AMD<sup><a href="#ref6">[6]</a></sup></td></tr>
-<tr><td>整机/平台功耗</td><td><b>整机最大输入功耗 16.2 kW</b>（含 4×鲲鹏 920、风扇、电源转换损耗）</td><td>8 卡 GPU 合计 11.2 kW <span class="calc">计算</span>（不含主机）；平台热设计风冷散热器 41.8 kW / 冷板 15.8 kW</td><td class="src">华为<sup><a href="#ref4">[4]</a></sup> / AMD<sup><a href="#ref7">[7]</a></sup></td></tr>
-<tr><td>散热方式</td><td>单机<b>风冷</b>（4+1 风扇冗余），超节点机柜液冷</td><td>直接液冷为主（UBB 为"Advanced Direct Liquid Cooled"方案），风冷整机 OEM 可选</td><td class="src">华为<sup><a href="#ref1">[1]</a><a href="#ref2">[2]</a></sup> / AMD<sup><a href="#ref7">[7]</a></sup></td></tr>
-<tr><td>供电</td><td>220V AC 或 336 HVDC / 240 HVDC 双输入；PSU→电源砖→单板多级供电</td><td>以 OEM 整机为准（Dell XE9785/XE9785L 等）</td><td class="src">华为<sup><a href="#ref4">[4]</a></sup> / AMD<sup><a href="#ref7">[7]</a></sup></td></tr>
+<tr><th>项目</th><th>Atlas 800I A3</th><th>MI355X 8 卡平台</th><th>来源</th></tr>
+<tr><td>单卡 TBP</td><td class="na">官方未公开</td><td>1400 W</td><td class="src">AMD<sup><a href="#ref7">[7]</a></sup></td></tr>
+<tr><td>整机/平台功耗</td><td class="na">官方未公开（仅公布供电制式 220V AC / 336 HVDC / 240 HVDC）</td><td>8 卡 GPU 合计 11.2 kW <span class="calc">计算</span>（不含主机）；平台热设计风冷散热器 41.8 kW / 冷板 15.8 kW</td><td class="src">华为<sup><a href="#ref1">[1]</a></sup> / AMD<sup><a href="#ref8">[8]</a></sup></td></tr>
+<tr><td>散热方式</td><td>单机<b>风冷</b>（风扇冗余设计），超节点机柜液冷</td><td>直接液冷为主（UBB 为"Advanced Direct Liquid Cooled"方案），风冷整机 OEM 可选</td><td class="src">华为<sup><a href="#ref1">[1]</a><a href="#ref3">[3]</a></sup> / AMD<sup><a href="#ref8">[8]</a></sup></td></tr>
+<tr><td>供电</td><td>220V AC 或 336 HVDC / 240 HVDC 双输入</td><td>以 OEM 整机为准（Dell XE9785/XE9785L 等）</td><td class="src">华为<sup><a href="#ref1">[1]</a></sup> / AMD<sup><a href="#ref8">[8]</a></sup></td></tr>
 <tr><td>工作温度 / 尺寸</td><td>5–35℃；10U（442×447×920mm）</td><td>OEM 整机为准</td><td class="src">华为<sup><a href="#ref1">[1]</a></sup></td></tr>
 </table>
-<p>粗看 A3 整机 16.2kW vs MI355X"11.2kW"不可直接比较：前者是含 CPU/散热的<b>整机</b>上限，后者只是 <b>8 颗 GPU</b> 的板载功率，加上双路 EPYC 主机与转换损耗后同档。真正影响部署的是：A3 单机风冷 10U 即可运行，MI355X 平台以液冷为设计基线——机房改造成本是 MI355X 方案的隐性门槛。</p>
+<p>功耗两侧目前无法直接对账：A3 侧官方未公布整机功耗值；MI355X 的 11.2 kW 只是 8 颗 GPU 的板载功率，加上双路 EPYC 主机与转换损耗后为同量级。真正影响部署的是：A3 单机风冷 10U 即可运行，MI355X 平台以液冷为设计基线——机房改造成本是 MI355X 方案的隐性门槛。</p>
 
 <h2>六、软件生态（官方口径）</h2>
 <table>
 <tr><th>层面</th><th>昇腾 A3</th><th>AMD MI355X</th></tr>
-<tr><td>软件栈</td><td>CANN + MindSpore / PyTorch 适配（torch_npu）<sup class="src"><a href="#ref3">[3]</a></sup></td><td>ROCm 7.0+，官方列表支持 PyTorch、vLLM、SGLang、Triton 等<sup class="src"><a href="#ref6">[6]</a></sup></td></tr>
-<tr><td>低精度路线</td><td>官方规格仅标注 FP16/INT8；FP8/FP4 无官方数据，主流开源推理引擎的低精度优化路径（FP8 KV Cache、FP4 权重）在 A3 上暂无官方对应</td><td>MXFP4/MXFP8 全链路官方支持，平台册宣称同 TCOW 下训练吞吐较 MI325X +40%<sup class="src"><a href="#ref7">[7]</a></sup></td></tr>
-<tr><td>整机生态</td><td>华为 + 国内整机厂（超聚变等），配套 Atlas 900 A3 SuperPoD 交付<sup class="src"><a href="#ref2">[2]</a></sup></td><td>Dell、Supermicro、HPE、GIGABYTE 等多厂商 UBB 整机，OCI 等公有云已上线</td></tr>
+<tr><td>软件栈</td><td>CANN + MindSpore / PyTorch 适配（torch_npu）<sup class="src"><a href="#ref1">[1]</a></sup></td><td>ROCm 7.0+，官方列表支持 PyTorch、vLLM、SGLang、Triton 等<sup class="src"><a href="#ref7">[7]</a></sup></td></tr>
+<tr><td>低精度路线</td><td>官方规格标注 FP16/INT8/FP32；FP8/FP4 无官方数据，主流开源推理引擎的低精度优化路径（FP8 KV Cache、FP4 权重）在 A3 上暂无官方对应</td><td>MXFP4/MXFP8 全链路官方支持，平台册宣称同 TCOW 下训练吞吐较 MI325X +40%<sup class="src"><a href="#ref8">[8]</a></sup></td></tr>
+<tr><td>整机生态</td><td>华为 + 国内整机厂，配套 Atlas 900 A3 SuperPoD 交付<sup class="src"><a href="#ref3">[3]</a></sup></td><td>Dell、Supermicro、HPE、GIGABYTE 等多厂商 UBB 整机，OCI 等公有云已上线</td></tr>
 </table>
 
 <h2>七、官方未公开项清单（A3 侧）</h2>
 <ul>
 <li>910C 制程、晶体管数、核心规模、频率、单卡 TBP——华为官网均未公开，本文未引用任何第三方猜测；</li>
-<li>FP8/FP4/FP64 各精度算力——官方未公开（FP32 已有 800I A3 白皮书单卡口径 150 TFLOPS<sup><a href="#ref3">[3]</a></sup>；官网产品页仅标注 FP16 与 INT8）；</li>
-<li>784 GB/s 官网只给聚合值；结合白皮书"每模组 7 路灵衢链路"可推导每链路 $784 \div 7 \div 2 = 56$ GB/s（单向）<span class="calc">计算</span>，逐链路速率官方未单列；</li>
+<li>FP8/FP4/FP64 各精度算力——官方未公开（FP16 560 / FP32 150 / INT8 ≈1.12 POPS 已有官方口径<sup class="src"><a href="#ref2">[2]</a></sup>）；</li>
+<li>800I A3 整机功耗——产品页与白皮书均未列，仅公布供电制式；</li>
+<li>784 GB/s 官网只给聚合值；每模组 7 路 UB（$56 \div 8$）与每链路 $784 \div 7 \div 2 = 56$ GB/s（单向）均为 <span class="calc">计算</span> 推导，逐链路速率官方未单列；</li>
 <li>HBM 代际（HBM2e/HBM3）——官网只称"片上内存 128GB、3.2TB/s"。</li>
 </ul>
 
 <h2>八、延伸评估：Decode 访存墙理论上限（TileRT 口径的账）</h2>
 
-<p>TileRT 官方博客《Speed as the Next Scaling Law》给 8×H200 算过一笔账<sup class="src"><a href="#ref12">[12]</a></sup>：GLM-5.1 单步 decode 仅需激活约 <b>42 GB</b> 参数（FP8/MXFP8 权重口径），8×H200 聚合显存带宽约 38 TB/s（$4.8 \times 8 = 38.4$ TB/s，与 NVIDIA 官方值一致<sup class="src"><a href="#ref13">[13]</a></sup>），由 memory-bound roofline 得理论 decode 上限约 900+ tok/s；而传统引擎真实只能跑出几十 tok/s，且 profiler 显示 GPU 利用率并不低——算力被"困在执行边界之间"（kernel 边界、launch/调度/同步损耗）。把同一笔账平移到本文两个平台：</p>
+<p>TileRT 官方博客《Speed as the Next Scaling Law》给 8×H200 算过一笔账<sup class="src"><a href="#ref11">[11]</a></sup>：GLM-5.1 单步 decode 仅需激活约 <b>42 GB</b> 参数（FP8/MXFP8 权重口径），8×H200 聚合显存带宽约 38 TB/s（$4.8 \times 8 = 38.4$ TB/s，与 NVIDIA 官方值一致<sup class="src"><a href="#ref12">[12]</a></sup>），由 memory-bound roofline 得理论 decode 上限约 900+ tok/s；而传统引擎真实只能跑出几十 tok/s，且 profiler 显示 GPU 利用率并不低——算力被"困在执行边界之间"（kernel 边界、launch/调度/同步损耗）。把同一笔账平移到本文两个平台：</p>
 
 <div class="formula">\[
 T_{\text{upper}} = \frac{B_{\text{agg}}}{S_{\text{act}}}, \qquad t_{\text{step}} \ge \frac{S_{\text{act}}}{B_{\text{agg}}}
 \]</div>
 
-<p>其中 $B_{\text{agg}}$ 为节点聚合 HBM 带宽，$S_{\text{act}} \approx 42\,\text{GB}$ 为单 token 激活参数字节（GLM-5.1，FP8 口径<sup class="src"><a href="#ref12">[12]</a></sup>）。所有行均为 <span class="calc">计算</span> 值（官方带宽 ÷ TileRT 口径激活量）。</p>
+<p>其中 $B_{\text{agg}}$ 为节点聚合 HBM 带宽，$S_{\text{act}} \approx 42\,\text{GB}$ 为单 token 激活参数字节（GLM-5.1，FP8 口径<sup class="src"><a href="#ref11">[11]</a></sup>）。所有行均为 <span class="calc">计算</span> 值（官方带宽 ÷ TileRT 口径激活量）。</p>
 
 <table>
 <tr><th>平台</th><th>每卡 HBM 带宽</th><th>聚合带宽 $B_{\text{agg}}$</th><th>单步时延下限 $t_{\text{step}}$</th><th>理论 decode 上限</th><th>相对 8×H200</th><th>来源</th></tr>
-<tr><td>8×H200（TileRT 原账参照）</td><td>4.8 TB/s</td><td>38.4 TB/s</td><td>1.09 ms</td><td>≈ 914 tok/s</td><td>1×</td><td class="src">NVIDIA<sup><a href="#ref13">[13]</a></sup> / TileRT<sup><a href="#ref12">[12]</a></sup></td></tr>
-<tr><td><b>8×MI355X</b>（FP8 权重）</td><td>8 TB/s</td><td>64 TB/s</td><td>0.66 ms</td><td><b>≈ 1524 tok/s</b></td><td><b>1.67×</b></td><td class="src">AMD<sup><a href="#ref6">[6]</a><a href="#ref7">[7]</a></sup></td></tr>
-<tr><td><b>A3 单机 8 卡</b>（W8/INT8 权重）</td><td>3.2 TB/s</td><td>25.6 TB/s</td><td>1.64 ms</td><td><b>≈ 610 tok/s</b></td><td>0.67×</td><td class="src">华为<sup><a href="#ref1">[1]</a><a href="#ref2">[2]</a></sup></td></tr>
+<tr><td>8×H200（TileRT 原账参照）</td><td>4.8 TB/s</td><td>38.4 TB/s</td><td>1.09 ms</td><td>≈ 914 tok/s</td><td>1×</td><td class="src">NVIDIA<sup><a href="#ref12">[12]</a></sup> / TileRT<sup><a href="#ref11">[11]</a></sup></td></tr>
+<tr><td><b>8×MI355X</b>（FP8 权重）</td><td>8 TB/s</td><td>64 TB/s</td><td>0.66 ms</td><td><b>≈ 1524 tok/s</b></td><td><b>1.67×</b></td><td class="src">AMD<sup><a href="#ref7">[7]</a><a href="#ref8">[8]</a></sup></td></tr>
+<tr><td><b>A3 单机 8 卡</b>（W8/INT8 权重）</td><td>3.2 TB/s</td><td>25.6 TB/s</td><td>1.64 ms</td><td><b>≈ 610 tok/s</b></td><td>0.67×</td><td class="src">华为<sup><a href="#ref1">[1]</a><a href="#ref3">[3]</a></sup></td></tr>
 <tr><td>A3 单机 8 卡（若退到 FP16 权重）</td><td>3.2 TB/s</td><td>25.6 TB/s</td><td>3.28 ms</td><td>≈ 305 tok/s</td><td>0.33×</td><td class="src">同上</td></tr>
-<tr><td>A3 384 卡超节点（纯算术口径）</td><td>—</td><td>1228.8 TB/s</td><td>0.034 ms</td><td>≈ 29,000 tok/s</td><td>32×</td><td class="src">华为<sup><a href="#ref2">[2]</a></sup></td></tr>
+<tr><td>A3 384 卡超节点（纯算术口径）</td><td>—</td><td>1228.8 TB/s</td><td>0.034 ms</td><td>≈ 29,000 tok/s</td><td>32×</td><td class="src">华为<sup><a href="#ref3">[3]</a></sup></td></tr>
 </table>
 
 <div class="mermaid">
@@ -244,7 +241,7 @@ xychart-beta
 <ul style="margin:6px 0 0;padding-left:22px">
 <li><b>流量口径</b>：只计激活权重读取，未计 KV Cache 读（长上下文会显著吃掉余量）、logits/采样、TP 归约等通信与反量化开销——这是最优情形上限。</li>
 <li><b>并行假设</b>：42 GB 在 8 卡间理想切分、各卡带宽完美并行（TP/EP 权重分片下近似成立）；自回归依赖决定单流时延只能靠带宽，不能靠 batch。</li>
-<li><b>精度敏感性（A3 的关键项）</b>：42 GB 是 FP8 权重口径。MI355X 原生 MXFP8/MXFP4，FP4 口径下激活字节数再减半，上限相应 ≈3048 tok/s；而 910C 官方仅标注 FP16/INT8——A3 要维持同等激活字节数必须走 W8A8/INT8 量化，若退到 FP16 则字节数翻倍、上限减半（≈305 tok/s）。</li>
+<li><b>精度敏感性（A3 的关键项）</b>：42 GB 是 FP8 权重口径。MI355X 原生 MXFP8/MXFP4，FP4 口径下激活字节数再减半，上限相应 ≈3048 tok/s；而 910C 官方标注 FP16/INT8/FP32、未标注 FP8/FP4——A3 要维持同等激活字节数必须走 W8A8/INT8 量化，若退到 FP16 则字节数翻倍、上限减半（≈305 tok/s）。</li>
 <li><b>落差本体与硬件无关</b>：理论数百~上千 tok/s vs 传统引擎几十 tok/s 的 1~2 个数量级差，来自执行层（kernel 边界、调度、同步）损耗，正是 TileRT 这类 tile 级运行时要解决的问题；该结论对 MI355X（ROCm 栈）与 A3（CANN 栈）同样成立。</li>
 <li><b>384 卡行仅是带宽算术</b>（$384 \times 3.2$ TB/s ÷ 42 GB），未计跨卡归约、切分与调度可行性，只用于说明超节点"以规模换带宽"的量级；实际可达值远低于此。</li>
 </ul>
@@ -252,22 +249,19 @@ xychart-beta
 
 <h2 id="refs">九、参考来源（全部为官方页面/官方文档）</h2>
 <ol class="refs">
-<li id="ref1">华为企业业务官网，《Atlas 800T A3 超节点》产品页（算力/显存/互联/网络/形态规格）：<a href="https://e.huawei.com/cn/products/computing/ascend/atlas-800t-a3">e.huawei.com/cn/products/computing/ascend/atlas-800t-a3</a></li>
-<li id="ref2">华为企业业务官网，《Atlas 900 A3 SuperPoD 超节点》产品页（384卡、307.2/288.7 PFLOPS、48TB、784GB/s、200ns、液冷机柜）：<a href="https://e.huawei.com/cn/products/computing/ascend/atlas-900-a3-superpod">e.huawei.com/cn/products/computing/ascend/atlas-900-a3-superpod</a></li>
-<li id="ref3">华为企业业务官网，《Atlas 800I A3 推理超节点服务器》产品页（整机 4.48 PFLOPS FP16 / 8.96 POPS INT8、8×128GB、D2D 784GB/s）及《Atlas 800I A3 超节点技术白皮书 07》（单 AI 处理器 560 TFLOPS@FP16 / 150 TFLOPS@FP32，整机 1.20 PFLOPS@FP32；白皮书可由该页"技术白皮书"入口下载）：<a href="https://e.huawei.com/cn/products/computing/ascend/atlas-800i-a3">e.huawei.com/cn/products/computing/ascend/atlas-800i-a3</a></li>
-<li id="ref4">华为技术支持网站，《Atlas 800T A3 超节点用户指南》"产品特点"（整机设计最大输入功耗 16.2 kW、多级供电设计）：<a href="https://support.huawei.com/enterprise/zh/ascend-computing/atlas-800t-a3-pid-261716443">support.huawei.com → Atlas 800T A3 文档</a></li>
-<li id="ref5">华为官网新闻，徐直军 2025 全联接大会主题演讲（384 颗 Ascend 910C、最大算力 300 PFLOPS）：<a href="https://www.huawei.com/cn/news/2025/9/hc-xu-keynote-speech">huawei.com/cn/news/2025/9/hc-xu-keynote-speech</a></li>
-<li id="ref6">AMD 官网，《AMD Instinct MI355X GPU》产品页全规格表（各精度峰值、288GB HBM3E、8TB/s、IF 链路、1400W、CDNA4 3nm|6nm）：<a href="https://www.amd.com/en/products/accelerators/instinct/mi350/mi355x.html">amd.com/en/products/accelerators/instinct/mi350/mi355x.html</a></li>
-<li id="ref7">AMD 官方《AMD Instinct MI355X Platform Datasheet》（8 卡液冷 UBB：FP16 20.0/FP8 40.0/FP4 80.8 PFLOPS、2,304GB、64TB/s、双路 EPYC 9005、热设计 41.8/15.8kW）：<a href="https://www.amd.com/content/dam/amd/en/documents/instinct-tech-docs/product-briefs/amd-instinct-miI355x-platform-brochure.pdf">amd.com → MI355X Platform Datasheet (PDF)</a></li>
-<li id="ref8">AMD 官方博客，MI350 系列发布（2025-06-12，CDNA 4，"up to 35x inference"）：<a href="https://www.amd.com/en/blogs/2025/amd-instinct-mi350-series-and-beyond-accelerating-the-future-of-ai-and-hpc.html">amd.com/en/blogs/2025/amd-instinct-mi350-series-and-beyond</a></li>
+<li id="ref1">华为企业业务官网，《Atlas 800I A3 超节点服务器》产品页（整机规格：4.48 PFLOPS FP16 / 8.96 POPS INT8、8×128GB、3.2TB/s、D2D 双向 784GB/s、56×400GE UB + 8×400GE RoCE 直出、4×鲲鹏 920、DDR5 5200MT/s、5×PCIe 5.0、2×2.5" SATA + 8×2.5" NVMe、10U 风冷、220V AC / 336/240 HVDC、5–35℃）：<a href="https://e.huawei.com/cn/products/computing/ascend/atlas-800i-a3">e.huawei.com/cn/products/computing/ascend/atlas-800i-a3</a></li>
+<li id="ref2">华为《Atlas 800I A3 超节点技术白皮书 07》（单 AI 处理器 <b>560 TFLOPS@FP16 / 150 TFLOPS@FP32</b>，整机 4.48 PFLOPS FP16 / 1.20 PFLOPS FP32；由产品页"技术白皮书"入口下载）：<a href="https://e.huawei.com/cn/products/computing/ascend/atlas-800i-a3">入口同上</a></li>
+<li id="ref3">华为企业业务官网，《Atlas 900 A3 SuperPoD 超节点》产品页（384 卡、307.2/288.7 PFLOPS、48TB 统一编址、D2D 784GB/s、200ns 单跳、16~384 卡逻辑超节点、12 计算柜+4 总线柜液冷）：<a href="https://e.huawei.com/cn/products/computing/ascend/atlas-900-a3-superpod">e.huawei.com/cn/products/computing/ascend/atlas-900-a3-superpod</a></li>
+<li id="ref4">华为技术支持网站，《Atlas 800I A3 超节点用户指南》（文档号 EDOC1100461231）910B/910C 对比章节（FP16 ≈800 TFLOPS、H2D 350 GB/s、D2D 392 GB/s、互联 2 TB/s、算力/带宽比 ≈235 FLOPS/Byte；两处存疑已标注）：<a href="https://support.huawei.com/enterprise/zh/doc/EDOC1100461231/8eaff0ba?idPath=23710424%7C251366513%7C254884019%7C261408772%7C264117745">support.huawei.com → EDOC1100461231</a></li>
+<li id="ref5">华为云，CloudMatrix384 超节点官方资料（"每颗昇腾 910C 提供超过 392 GB/s 单向 UB 带宽、384 NPU 无阻塞 All-to-All"）：<a href="https://www.huaweicloud.com/intl/zh-cn/news/20250424094932570.html">huaweicloud.com → CloudMatrix384 发布</a></li>
+<li id="ref6">华为官网新闻，徐直军 2025 全联接大会主题演讲（384 颗 Ascend 910C、最大算力 300 PFLOPS、灵衢 UnifiedBus）：<a href="https://www.huawei.com/cn/news/2025/9/hc-xu-keynote-speech">huawei.com/cn/news/2025/9/hc-xu-keynote-speech</a></li>
+<li id="ref7">AMD 官网，《AMD Instinct MI355X GPU》产品页全规格表（各精度峰值、288GB HBM3E、8TB/s、IF 链路 153GB/s×7、1400W、CDNA4 3nm|6nm）：<a href="https://www.amd.com/en/products/accelerators/instinct/mi350/mi355x.html">amd.com/en/products/accelerators/instinct/mi350/mi355x.html</a></li>
+<li id="ref8">AMD 官方《AMD Instinct MI355X Platform Datasheet》（8 卡液冷 UBB：FP16 20.0/FP8 40.0/FP4 80.8 PFLOPS、2,304GB、64TB/s、双路 EPYC 9005、热设计 41.8/15.8kW）：<a href="https://www.amd.com/content/dam/amd/en/documents/instinct-tech-docs/product-briefs/amd-instinct-miI355x-platform-brochure.pdf">amd.com → MI355X Platform Datasheet (PDF)</a></li>
 <li id="ref9">AMD 官方《AMD Instinct MI300X Platform Data Sheet》（明文 "GPUs over 128 GB/s bidirectional links"）：<a href="https://www.amd.com/content/dam/amd/en/documents/instinct-tech-docs/data-sheets/amd-instinct-mi300x-platform-data-sheet.pdf">amd.com → mi300x-platform-data-sheet.pdf</a></li>
-<li id="ref10">华为《Atlas 800T A3 超节点技术白皮书》（"支持 8 个 NPU 模组，单 AI 模组支持 7 路灵衢互联 + 1 路 RoCE"；产品 = 超节点服务器 + 灵衢总线设备；双机 16 NPU 全互联）。原文可在华为企业业务官网资料中心获取；公开转载摘要：<a href="https://www.sohu.com/a/964189146_121778725">2025 年 Atlas 800T A3 超节点技术白皮书（转载）</a></li>
-<li id="ref11">AMD，Hot Chips 2024 官方演讲《AMD MI300X》（"seven bi-directional links @ 128 GB/s" per OAM）：<a href="https://hc2024.hotchips.org/assets/program/conference/day1/23_HC2024.AMD.MI300X.ASmith(MI300X).v1.Final.20240817.pdf">hc2024.hotchips.org → AMD MI300X</a></li>
-<li id="ref12">TileRT 官方博客《Speed as the Next Scaling Law》（GLM-5.1 decode 激活 ≈42 GB/token（FP8/MXFP8 口径）、8×H200 ≈38 TB/s 聚合带宽的 roofline 账）：<a href="https://www.tilert.ai/blog/speed-as-the-next-scaling-law.html">tilert.ai/blog/speed-as-the-next-scaling-law</a></li>
-<li id="ref13">NVIDIA 官网，NVIDIA H200（HBM3e 141GB、4.8 TB/s）：<a href="https://www.nvidia.com/en-us/data-center/h200/">nvidia.com/en-us/data-center/h200</a></li>
-<li id="ref14">华为技术支持网站，《Atlas 800I A3 超节点用户指南》（文档号 EDOC1100461231）910B/910C 对比章节（FP16 ≈800 TFLOPS、H2D 350 GB/s、D2D 392 GB/s、互联 2 TB/s、算力/带宽比 ≈235 FLOPS/Byte 等出处）：<a href="https://support.huawei.com/enterprise/zh/doc/EDOC1100461231/8eaff0ba?idPath=23710424%7C251366513%7C254884019%7C261408772%7C264117745">support.huawei.com → EDOC1100461231</a></li>
-<li id="ref15">华为云，CloudMatrix384 超节点官方资料（"每颗昇腾 910C 提供超过 392 GB/s 单向 UB 带宽、384 NPU 无阻塞 All-to-All"）：<a href="https://www.huaweicloud.com/intl/zh-cn/news/20250424094932570.html">huaweicloud.com → CloudMatrix384 发布</a></li>
+<li id="ref10">AMD，Hot Chips 2024 官方演讲《AMD MI300X》（"seven bi-directional links @ 128 GB/s" per OAM）：<a href="https://hc2024.hotchips.org/assets/program/conference/day1/23_HC2024.AMD.MI300X.ASmith(MI300X).v1.Final.20240817.pdf">hc2024.hotchips.org → AMD MI300X</a></li>
+<li id="ref11">TileRT 官方博客《Speed as the Next Scaling Law》（GLM-5.1 decode 激活 ≈42 GB/token（FP8/MXFP8 口径）、8×H200 ≈38 TB/s 聚合带宽的 roofline 账）：<a href="https://www.tilert.ai/blog/speed-as-the-next-scaling-law.html">tilert.ai/blog/speed-as-the-next-scaling-law</a></li>
+<li id="ref12">NVIDIA 官网，NVIDIA H200（HBM3e 141GB、4.8 TB/s）：<a href="https://www.nvidia.com/en-us/data-center/h200/">nvidia.com/en-us/data-center/h200</a></li>
 </ol>
-<p style="font-size:14px;color:#8a94a3">文档生成：2026-09-28；2026-09-30 修订：补充 A3 灵衢"总线式全互联"拓扑口径、AMD Infinity Fabric 链路双向口径考证、第八章 Decode 访存墙上限评估（TileRT 口径）、2.1 节 910C vs 910B 代际演进（华为支持文档口径，两处存疑已标注）；并将三档口径升级为 1.1 节显式表格，统一全文对比基线（结论、单芯片表、节点表口径一致）。所有数据以两司官方页面/官方文档公开内容为准；标注 <span class="calc">计算</span> 的条目为由官方数据做的乘除推导，未引入第三方数据。</p>
+<p style="font-size:14px;color:#8a94a3">文档生成：2026-09-28。修订记录：2026-09-30 补充互联拓扑口径、AMD IF 双向口径考证、Decode 访存墙上限（TileRT 口径）、910C vs 910B 代际演进；本版（2026-09-30）按需求<b>移除训练款 800T A3 全部内容</b>，全文改以 800I A3 推理超节点（单卡官方明标档：FP16 560 / FP32 150 TFLOPS）为唯一基线，参考来源重排为 [1]–[12]。所有数据以两司官方页面/官方文档公开内容为准；标注 <span class="calc">计算</span> 的条目为由官方数据做的乘除推导，未引入第三方数据。</p>
 </body>
 </html>

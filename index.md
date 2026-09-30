@@ -42,7 +42,7 @@ description: 面向大模型方向的完整技术知识目录，覆盖从数学�
 - [MoE 基础、演进、问题与负载均衡前沿](docs/moe-ep/moe-load-balancing-report.html)
 
 ### 硬件与算力平台
-- [Atlas 800 A3（昇腾910C） vs AMD MI355X —— 8 卡节点官方数据全量对比：算力 / 显存带宽 / 灵衢 UB vs Infinity Fabric 互联拓扑 / 功耗散热 / Decode 访存墙理论上限（TileRT 口径）](docs/hardware/atlas800a3-vs-mi355x.html)
+- [Atlas 800I A3（昇腾910C·推理超节点） vs AMD MI355X —— 8 卡节点官方数据全量对比：算力 / 显存带宽 / 灵衢 UB vs Infinity Fabric 互联拓扑 / 功耗散热 / Decode 访存墙理论上限（TileRT 口径）/ 910C vs 910B 代际演进](docs/hardware/atlas800a3-vs-mi355x.html)
 
 ### 交互式工具
 - [LLM-Viewer —— LLM 网络结构可视化 × Roofline 性能分析（纯浏览器端，无需后端；24 个模型：DeepSeek-V2/V3/R1 的 MLA+MoE、GLM-4/4.5/4.6、Llama-2、OPT 等）](analyzer/llmviewer/)
