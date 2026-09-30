@@ -355,6 +355,28 @@ T_{\text{upper}} = \frac{1}{t_{\text{step}}} = \frac{B_{\text{agg}}}{S_{\text{ac
 </table>
 <p>把账串起来：<b>1,524</b>（白盒）→ ×带宽实效 ≈<b>1,219</b> → +KV/通信轮数/碎片算子 → 短上下文实测 <b>648</b>（MI350X 档，MI355X 略高）→ ×长上下文与 agent 会话混合 → <b>469</b>。达成率 ≈<b>31%</b>——而这已是消灭了 kernel 边界的榜首引擎；传统引擎几十 tok/s 时达成率仅 2–5%。还要注意 469 已含 MTP 接受长度 ~3.2 的收益，若按"读一遍权重出 3.2 token"的投机感知口径衡量，实际达成率比 31% 更低——KV、通信轮数与碎片算子吃掉的比表面更多。理论上限的价值不在"可达"，而在提供一把尺：剩余 ~69% 里，<b>KV 流量与通信是 roofline 内的物理开销</b>（要靠 FP8 KV、更高带宽、更少通信轮数压缩），<b>碎片算子与调度是 roofline 外的工程开销</b>（TileRT 们继续消灭的对象）。</p>
 
+<h3>用实测 469 tok/s 校准：其他平台的预估成绩（非实测）</h3>
+<p>把 MI355X 的实测达成率（$469 / 1524 \approx 30.8\%$，已含 MTP 收益与全部开销）当锚点，可反推其他平台"若存在同等质量引擎、跑同款 GLM-5.3 AgentX 负载"的量级。两种校准法构成区间：</p>
+<ul>
+<li><b>法 A · 等比例折减</b>：预估 = 白盒上限 × 30.8%（假设开销占比与带宽无关，对低带宽平台偏保守）；</li>
+<li><b>法 B · 固定开销加性</b>：把 MI355X 每 token 额外时延 $1/469 - 1/1524 \approx 1.48\ \text{ms}$ 视为不随带宽变化的固定项（通信轮数 / launch / 碎片算子主导），$t_{\text{est}} = t_{\text{roofline}} + 1.48\ \text{ms}$（对高带宽平台偏保守）。真实值落在两法之间——开销中带宽敏感的 KV 部分随带宽缩放，轮数/launch 部分固定。</li>
+</ul>
+<table>
+<tr><th>平台（8 卡）</th><th>白盒上限（tok/s）</th><th>法 A（×30.8%）</th><th>法 B（+1.48 ms/token）</th><th>预估区间</th></tr>
+<tr><td>8×H200（FP8）</td><td>914</td><td>≈ 281</td><td>≈ 389</td><td><b>≈ 280–390 tok/s</b></td></tr>
+<tr><td>8×MI355X（FP8）——<b>实测锚点</b></td><td>1,524</td><td colspan="3"><b>469 tok/s（AgentX 实测，2026-09-24 榜首）</b></td></tr>
+<tr><td>昇腾 800I A3（W8/INT8）</td><td>610</td><td>≈ 188</td><td>≈ 321</td><td><b>≈ 190–320 tok/s</b></td></tr>
+<tr><td>昇腾 A5 950DT（FP8）</td><td>762</td><td>≈ 235</td><td>≈ 359</td><td><b>≈ 235–360 tok/s</b></td></tr>
+</table>
+<p>旁证：同引擎 8×B200 跑 GLM-5 FP8 合成负载 500 tok/s（白盒上限的 33%）、MI355X 合成 590（39%）——30~40% 达成率是当前顶级引擎的普遍水位，469 的 31% 不离群。</p>
+<p>四点限定（全部 <span class="ev ev-r">R</span>，预估而非成绩）：</p>
+<ul>
+<li><b>引擎等价是最大前提</b>：TileRT 目前只有 CUDA/ROCm 后端，A3/A5 上不存在同等引擎（CANN 栈需重写持久化内核）——预估的是"硬件若被同等榨取"的量级，不是可交付成绩；</li>
+<li><b>精度路线差异</b>：GLM-5.3 原生 FP8 权重，A3 需 W8A8 量化（额外反量化开销与精度风险）；A5 原生 FP8/MXFP4，若走 MXFP4（21 GB）则白盒上限升至 1,524（与 MI355X FP8 同值），两法预估也相应变为 ≈469（两法同值），即 A5 的"4 TB/s × MXFP4"等效于 MI355X 的"8 TB/s × FP8"；</li>
+<li><b>通信固定项不完全可比</b>：TP8 轮数开销是延迟主导，A3 的 784 GB/s、A5 的 2,016 GB/s 灵衢会给出与 MI355X IF 不同的固定项，法 B 对华为系可能偏乐观或偏悲观，无实测无法定；</li>
+<li>法 B 隐含"带宽越高的平台达成率越低"（固定项占比更大），因此 H200（带宽低于 MI355X）的真实达成率可能高于 30.8%——区间的真正含义是<b>开销中带宽敏感成分的占比未知</b>。</li>
+</ul>
+
 <p style="font-size:.9em;color:#57606a">附录来源：<a href="https://github.com/lionelZhaowy/industry-ai-accelerators/blob/main/Cloud-and-Programmable-NPUs/Huawei-Ascend/pdf/%E6%98%87%E8%85%BE950%20NPU%E6%9E%B6%E6%9E%84%E7%99%BD%E7%9A%AE%E4%B9%A6.pdf" target="_blank">《昇腾 950 NPU 架构白皮书》</a>（Cube/Vector 算力、144GB/4TB/s、HiLink 2TB/s、多档 SKU）· <a href="https://www.unifiedbus.com/zh/white-papers/UB-SuperPoD-Architecture-White-Paper-zh" target="_blank">灵衢《UB SuperPoD 架构白皮书》</a>（UB 2.0 / SuperPoD 组网）· <a href="https://www.amd.com/en/developer/resources/technical-articles/2026/tilert-agentx-on-amd-instinct-gpus.html" target="_blank">AMD 官方技术文章《TileRT AgentX on AMD Instinct GPUs》</a>（469 tok/s 配置、648→425 上下文曲线、BF16 KV、通信轮数论述）· <a href="https://www.tilert.ai/blog/speed-as-the-next-scaling-law-zh.html" target="_blank">TileRT：Speed as the Next Scaling Law（42 GB 口径）</a> · <a href="https://inferencex.semianalysis.com/glossary/memory-bandwidth" target="_blank">SemiAnalysis InferenceX 词汇表（decode 带宽受限与实效口径）</a> · <a href="https://www.nvidia.com/en-us/data-center/h200/" target="_blank">NVIDIA H200</a> · <a href="https://www.amd.com/en/products/accelerators/instinct/mi350/mi355x.html" target="_blank">AMD MI355X</a> · <a href="https://e.huawei.com/cn/products/computing/ascend/atlas-800i-a3" target="_blank">华为 Atlas 800I A3（单卡 560 TFLOPS 白皮书档）</a> · <a href="https://www.hiascend.com/hardware/ai-server" target="_blank">hiascend 硬件页（Atlas 650E）</a></p>
 </body>
 </html>
