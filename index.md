@@ -24,6 +24,9 @@ description: 面向大模型方向的完整技术知识目录，覆盖从数学�
 - [投机解码完全指南：从拒绝采样到并行草稿生成](docs/inference/speculative-decoding-complete-guide.html)
 - [TileRT 深度解构 —— 持久化引擎内核与 execution gap 的系统性消除](docs/inference/tilert-deep-analysis.html)
 
+### AI Infra 自优化（Agentic 优化）
+- [AI Infra 自优化洞察报告 —— 从 Megakernel 到推理系统的 Agentic 优化全景（六篇系列全量浓缩 + 20 余项公开来源交叉核验）](docs/aiinfra/aiinfra-agentic-optimization-insight.html)
+
 ### 并行与通信
 - [SP 与 CP 详解 — 序列并行 vs 上下文并行的来龙去脉与完整对比](docs/parallel/sp-vs-cp.html)
 - [注意力家族的张量并行（TP）拆解 — MHA · GQA · MLA · DSA 切分策略 × 完整前向 shape 走查](docs/parallel/attention-tp-shape-forward.html)
@@ -252,6 +255,7 @@ flowchart LR
 - [ ] SGLang、RadixAttention 与结构化生成
 - [ ] TensorRT-LLM（NVIDIA 优化栈）
 - [ ] TileRT：持久化引擎内核、tile 级流水线、execution gap、vLLM KVConnector PD 分离插件 — 📄 [TileRT 深度解构笔记](docs/inference/tilert-deep-analysis.html)
+- [ ] AI Infra 自优化：Megakernel / 设备端任务图、Agent 生成 kernel 与整模闭环、评测门禁、推理系统自治运维 — 📄 [AI Infra 自优化洞察报告](docs/aiinfra/aiinfra-agentic-optimization-insight.html)
 - [ ] TGI、llama.cpp、MLC-LLM、Ollama、Triton Inference Server
 - [ ] 昇腾引擎：MindIE、vLLM-Ascend、nano-vllm
 - [ ] 引擎横向对比：功能/性能/生态选型、主流引擎执行流水线对比

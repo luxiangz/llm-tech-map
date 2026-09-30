@@ -1,0 +1,1046 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI Infra 自优化洞察报告：从 Megakernel 到推理系统的 Agentic 优化全景</title>
+<!-- 霞鹜文楷：开源可商用的中文楷体风格字体；加载失败时自动回退到微软雅黑 -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/lxgw-wenkai-webfont@1.7.0/style.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+<style>
+  :root{
+    --ink:#1f2733; --ink-soft:#3d4a5c; --muted:#6b7787;
+    --bg:#f7f8fa; --card:#ffffff; --line:#e3e7ed;
+    --accent:#2c5fa8; --accent-soft:#eaf1fa; --accent2:#8a5fb0;
+    --ok:#1d7a4f; --ok-bg:#eaf6f0; --warn:#a05a1f; --warn-bg:#fdf3e7; --bad:#a83a3a; --bad-bg:#fbeeec;
+    --code-bg:#f2f4f7;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0;background:var(--bg)}
+  body{
+    font-family:"LXGW WenKai","Microsoft YaHei","PingFang SC","Segoe UI",sans-serif;
+    font-size:17.5px;line-height:1.85;letter-spacing:0.01em;color:var(--ink);
+  }
+  h1,h2,h3,h4,.kicker,.tag,.pill{font-family:"Microsoft YaHei","PingFang SC",sans-serif}
+  code,pre{font-family:"Cascadia Code",Consolas,"Microsoft YaHei",monospace}
+  .wrap{max-width:1000px;margin:0 auto;padding:28px 22px 80px}
+  a{color:var(--accent);text-decoration:none}
+  a:hover{text-decoration:underline}
+  header.hero{
+    background:linear-gradient(135deg,#20395e 0%,#2c5fa8 60%,#3d74c0 100%);
+    color:#fff;border-radius:14px;padding:42px 40px 34px;margin-top:10px;
+    box-shadow:0 6px 24px rgba(32,57,94,.18);
+  }
+  header.hero .kicker{font-size:14px;letter-spacing:.35em;opacity:.82;margin-bottom:10px}
+  header.hero h1{font-size:34px;line-height:1.35;margin:0 0 14px}
+  header.hero p.sub{font-size:16.5px;opacity:.92;margin:0}
+  header.hero .meta{font-size:13.5px;opacity:.75;margin-top:18px;line-height:1.7}
+  section.card{
+    background:var(--card);border:1px solid var(--line);border-radius:12px;
+    padding:30px 34px 26px;margin-top:26px;box-shadow:0 2px 10px rgba(31,39,51,.04);
+  }
+  h2.sec{
+    font-size:25px;margin:2px 0 6px;color:#182c4d;
+    border-left:6px solid var(--accent);padding-left:14px;line-height:1.4;
+  }
+  h3{font-size:19.5px;color:#22406e;margin:26px 0 8px}
+  h4{font-size:17px;color:var(--ink-soft);margin:18px 0 6px}
+  p{margin:10px 0}
+  ul,ol{margin:8px 0 10px;padding-left:26px}
+  li{margin:5px 0}
+  .lede{font-size:18.5px;color:var(--ink-soft)}
+  .tag{display:inline-block;font-size:12.5px;border-radius:999px;padding:1px 11px;margin:0 4px 4px 0;vertical-align:2px}
+  .tag.blue{background:var(--accent-soft);color:var(--accent);border:1px solid #c9dbf2}
+  .tag.green{background:var(--ok-bg);color:var(--ok);border:1px solid #bfe3d0}
+  .tag.orange{background:var(--warn-bg);color:var(--warn);border:1px solid #efd8bb}
+  .tag.red{background:var(--bad-bg);color:var(--bad);border:1px solid #f0caca}
+  .tag.gray{background:#eef0f3;color:var(--muted);border:1px solid #dfe3e9}
+  blockquote{
+    margin:16px 0;padding:12px 20px;background:var(--accent-soft);
+    border-left:4px solid var(--accent);border-radius:0 8px 8px 0;color:#26446f;
+  }
+  blockquote.warn{background:var(--warn-bg);border-left-color:var(--warn);color:#6e4a24}
+  blockquote p{margin:4px 0}
+  table{width:100%;border-collapse:collapse;margin:14px 0 18px;font-size:15.5px;line-height:1.6}
+  th{background:#eef2f8;color:#22406e;text-align:left;font-weight:600}
+  th,td{border:1px solid var(--line);padding:8px 12px;vertical-align:top}
+  tr:nth-child(even) td{background:#fafbfd}
+  .tbl-note{font-size:13.5px;color:var(--muted);margin-top:-12px}
+  figure{margin:18px 0;padding:16px;background:#fbfcfe;border:1px solid var(--line);border-radius:10px;overflow-x:auto}
+  figcaption{font-size:13.5px;color:var(--muted);margin-top:10px;text-align:center}
+  .mermaid{display:flex;justify-content:center;background:#fff}
+  pre.code{
+    background:var(--code-bg);border:1px solid var(--line);border-radius:8px;
+    padding:14px 18px;font-size:14px;line-height:1.65;overflow-x:auto;
+  }
+  code{background:var(--code-bg);border-radius:4px;padding:1px 6px;font-size:.9em}
+  pre.code code{background:none;padding:0}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+  @media(max-width:760px){.grid2{grid-template-columns:1fr}}
+  .kv{background:#fbfcfe;border:1px solid var(--line);border-radius:10px;padding:14px 18px}
+  .kv b{color:#22406e}
+  .num{font-variant-numeric:tabular-nums}
+  .toc{background:#fbfcfe;border:1px solid var(--line);border-radius:10px;padding:16px 26px;font-size:15.5px}
+  .toc ol{margin:6px 0;padding-left:22px;columns:2;column-gap:38px}
+  @media(max-width:760px){.toc ol{columns:1}}
+  .toc a{color:var(--ink-soft)}
+  .foot{color:var(--muted);font-size:13.5px;text-align:center;margin-top:34px}
+  .divider{height:1px;background:var(--line);margin:24px 0}
+  .qa{display:flex;gap:12px;align-items:flex-start;margin:10px 0}
+  .qa .b{flex:none;width:26px;height:26px;border-radius:50%;background:var(--accent);color:#fff;font-size:14px;display:flex;align-items:center;justify-content:center;margin-top:4px;font-family:"Microsoft YaHei",sans-serif}
+</style>
+</head>
+<body>
+<a href="https://luxiangz.github.io/llm-tech-map/" style="position:fixed;top:12px;right:14px;z-index:99;background:#f6f7f9;border:1px solid #e2e5ea;border-radius:999px;padding:4px 12px;font-size:14px;color:#2c5fa8;text-decoration:none;box-shadow:0 1px 4px rgba(0,0,0,.08)">← 技术地图首页</a>
+
+<div class="wrap">
+
+<header class="hero">
+  <div class="kicker">INSIGHT REPORT · AI INFRA 自优化系列</div>
+  <h1>AI Infra 自优化洞察报告<br>——从 Megakernel 到推理系统的 Agentic 优化全景</h1>
+  <p class="sub">基于《AI Infra 自优化：从 Megakernel 到推理》系列全部六篇文档的完整浓缩，并结合对系列所引 20 余项工作的公开来源交叉核验与延伸检索。</p>
+  <div class="meta">
+    报告日期：2026-09-30 ｜ 原始材料：Jack DeepPrompting 微信公众号系列（2026-09-19 / 09-22），共 6 篇 94 页 ｜
+    交叉核验：arXiv API、Hazy Research 博客、DeepMind AlphaEvolve 官方页等 20+ 一手来源<br>
+    阅读时间约 40 分钟 · 结论先行，数字全部带口径
+  </div>
+</header>
+
+<section class="card">
+  <h2 class="sec">0. 摘要：十条核心结论（TL;DR）</h2>
+  <ol class="lede">
+    <li><b>这条技术主线讲的是"优化边界的逐层扩大"，而不是"LLM 学会了写 CUDA"。</b>优化对象从单 Kernel（Tile/布局/流水）→ Megakernel（设备端任务图）→ Whole Model（整模图编译+并行+量化）→ Inference System（调度/KV/Server/数据链），反馈闭环同步扩大；四层是<b>嵌套包含</b>关系，不是替代关系。</li>
+    <li><b>Megakernel 是整套叙事的地基：</b>把整张计算图编译成"一份 PTX、一次 launch、一个 grid"，用 Persistent Grid、每 SM 指令流、依赖计数器与共享内存池把原属 Host/Runtime 的调度同步搬进设备端。Hazy Research 实测 H100 上 Llama-1B 前向 &lt;1ms、用到 78% 显存带宽，比 vLLM 快近 2.5×、比 SGLang 快超 1.5×（batch=1、32 prompt+128 生成 token）。</li>
+    <li><b>甜点区在低时延小 batch：</b>batch 越小、kernel 密度越低，launch/同步/气泡占比越高——megakernel 收益越大（多组实测 1.47×–1.51×，batch=1）；batch 增大后收益递减。这与"低时延"业务方向高度契合。</li>
+    <li><b>Kernel Agent 的瓶颈不是写代码能力，而是目标函数：</b>"单 kernel 编译成功 ≠ 系统能用"。局部最快不等于模型最快，更不等于服务最快；正确性验收必须从"最终输出对齐"升级为"执行轨迹/中间状态等价 + 真实 serving 回归"。</li>
+    <li><b>约束先于生成：</b>AutoMegaKernel 用"故意不完备"的受约束 Schedule-IR 把 Agent 的编辑面限制在 tiling / fusion_grouping / sm_assignment / pipelining_depth / page_allocation 等安全旋钮上，7,160 个对抗 Schedule（6,091 不安全）零错误接受；ForgeMegakernel 用十个渐进 milestone + 中间状态 Oracle 在 8 个模型家族 0.6B–13B 上拿到 50.5%–85.9% MBU、几何平均较 SGLang 1.21×。</li>
+    <li><b>整模层是系统工程问题：</b>算子级优化仍有 10–15% 局部收益但对端到端贡献常 &lt;2%；Agent 的增量价值在"跨图、跨层、跨回合"的编排与审计，把数周人工迭代压缩为数小时机器回合（迭代效率 3×–10×，不是直接 e2e 加速）。</li>
+    <li><b>系统层的正确方向是"Agent 驾驶、人类监督、确定性护栏兜底"：</b>统一全自治推理运维截至 2026-09 尚不成熟；可落地形态是分层控制系统——LLM 提假设/读代码/生成候选，确定性程序负责测量/审批/执行/回滚，人保留高爆炸半径动作的最终授权。</li>
+    <li><b>评测与测量本身就是主战场：</b>InferenceBench 显示 15 种前沿 agent（最高 8.08× vs 朴素 PyTorch）仍输给同等时间预算的简单超参搜索（11.53×）；AutoTuneBench 证明同一 kernel 对稻草人基线 10.6×、对诚实基线仅 2.03×。<b>奖励函数不干净，Agent 会"合法地"学到假优化。</b></li>
+    <li><b>"用 Agent 优化系统"与"为 Agent 优化系统"正在双向汇流：</b>Autellix 把 Agent 程序（而非单次请求）作为一等调度对象，相同延迟下程序吞吐较 vLLM 提升 4–15×——系统级目标正从 request latency 升级为 program completion time。</li>
+    <li><b>可信度四问：</b>目标是否真实、Oracle 是否独立、测量是否同条件、失败是否可回退。所有性能数字必须带硬件/模型/精度/基线/workload 口径，"最高值"不可跨组件相乘、不可跨论文排名。本报告对外部核验做了逐项标注（<span class="tag green">已核验</span> / <span class="tag orange">部分核验</span> / <span class="tag red">未能核验</span>）。</li>
+  </ol>
+  <blockquote><p><b>一句话总结：</b>Agent 的真正增量不是替代编译器或 Autotuner，而是<b>连接过去彼此割裂的优化空间与证据</b>；而系统是否可信，最终取决于四件朴素的事——目标真实、Oracle 独立、测量同条件、失败可回退。</p></blockquote>
+</section>
+
+<section class="card">
+  <h2 class="sec">目录</h2>
+  <div class="toc">
+    <ol>
+      <li><a href="#s1">系列地图与四层优化边界</a></li>
+      <li><a href="#s2">第一篇：Agentic 优化全景（总纲）</a></li>
+      <li><a href="#s3">第二篇：Megakernel——从算子融合到设备端 Runtime</a></li>
+      <li><a href="#s4">第三篇：Agent for Megakernel——搜索设备端任务图</a></li>
+      <li><a href="#s5">第四篇：Agent for Whole Model——跨图编译闭环</a></li>
+      <li><a href="#s6">第五篇：Agent for Inference Systems——自治运维</a></li>
+      <li><a href="#s7">第六篇：评测、验证与生成门禁</a></li>
+      <li><a href="#s8">跨系列关键数字总表</a></li>
+      <li><a href="#s9">外部交叉验证与延伸研究</a></li>
+      <li><a href="#s10">综合洞察与趋势判断</a></li>
+      <li><a href="#s11">风险清单与反模式</a></li>
+      <li><a href="#s12">行动建议</a></li>
+      <li><a href="#s13">参考资料</a></li>
+    </ol>
+  </div>
+</section>
+
+<section class="card" id="s1">
+  <h2 class="sec">1. 系列地图与四层优化边界</h2>
+  <p>原始材料为微信公众号 <b>Jack DeepPrompting</b> 的付费专栏《AI Infra 自优化：从 Megakernel 到推理》六篇（2026-09-19 至 09-22 发布），共 94 页。六篇构成"一总纲 + 四主线 + 一支柱"的结构：</p>
+  <table>
+    <tr><th style="width:34%">文档</th><th style="width:14%">页数</th><th>定位</th></tr>
+    <tr><td>从 Kernel 到推理系统：Agentic 优化全景</td><td class="num">11</td><td><b>总纲</b>：四层优化边界框架 + 各层代表性工作 + 编译器/搜索器/Agent 边界 + 三条推断</td></tr>
+    <tr><td>Agent for Megakernel：从生成 Kernel 到搜索设备端任务图</td><td class="num">22</td><td><b>主线二</b>：受约束 IR、死锁验证、中间状态 Oracle、语义 Region、五角色架构</td></tr>
+    <tr><td>Agent for Whole Model：跨图编译 Kernel 与并行的闭环优化</td><td class="num">14</td><td><b>主线三</b>：整模优化的生命周期、四道门、经验池、量化/并行决策数字</td></tr>
+    <tr><td>Agent for Inference Systems：从自动调参到安全自治运维</td><td class="num">18</td><td><b>主线四</b>：研究版图（造系统）、三基准、分层控制面、安全权限、成熟度</td></tr>
+    <tr><td>Megakernel：从算子融合到设备端 Runtime</td><td class="num">17</td><td><b>主线一（地基）</b>：GPU 执行模型、launch 开销、编译管线、TACO/Taplink、协程、边界</td></tr>
+    <tr><td>评测、验证与生成门禁：如何证明 Agent 优化真的有效</td><td class="num">12</td><td><b>支柱</b>：基线分类、测量统计、生成门禁、shape 矩阵、报告规范</td></tr>
+  </table>
+
+  <h3>1.1 四层嵌套边界：扩大的是优化对象与反馈闭环</h3>
+  <figure>
+    <pre class="mermaid">
+flowchart TD
+    subgraph L4["④ Inference System —— TTFT / TPOT / 吞吐 / P99 / 成本"]
+      direction TB
+      subgraph L3["③ Whole Model / Program —— 模型端到端延迟"]
+        direction TB
+        subgraph L2["② Megakernel —— Forward / Decode 延迟"]
+          direction TB
+          subgraph L1["① 单 Kernel —— 局部延迟"]
+            K1["优化对象：Tile / 布局 / 流水"]
+          end
+          K2["新增：指令流依赖 / 片上资源"]
+        end
+        K3["新增：融合图改写 / Host 配置"]
+      end
+      K4["新增：调度 / KV Cache / 并行 / Server / 数据链"]
+    end
+    style L1 fill:#eaf1fa,stroke:#2c5fa8,stroke-width:1.5px
+    style L2 fill:#dfeaf8,stroke:#2c5fa8,stroke-width:1.5px
+    style L3 fill:#d5e2f4,stroke:#2c5fa8,stroke-width:1.5px
+    style L4 fill:#c9dbf2,stroke:#2c5fa8,stroke-width:1.5px
+    </pre>
+    <figcaption>图 1-1 · 四层嵌套优化边界（自内向外：单位从单个算子扩大到整条服务栈；四层为包含关系）</figcaption>
+  </figure>
+  <ul>
+    <li>第①层：传统 GPU 优化把一个算子视为单位——固定语义后搜索 Tile、Warp、流水和布局，指标是<b>局部延迟</b>。</li>
+    <li>第②层：Megakernel 把单位扩大到<b>异构任务图</b>——指令流依赖、片上资源，指标是 Forward/Decode 延迟。</li>
+    <li>第③层：Whole Model 纳入<b>算子间数据流与 Host 配置</b>，指标是模型端到端延迟。</li>
+    <li>第④层：Inference System 把 Batch、KV Cache、并行、Server 与特征处理一起放进目标函数，指标是 TTFT、TPOT、吞吐、P99、成本。</li>
+  </ul>
+  <p>四层并非替代关系：系统 Agent 仍依赖编译器生成代码、搜索器分配试验预算、Profiler 提供信号；上层优化必须回到底层 Kernel 才能兑现。<b>真正新增的是：Agent 可以在证据不足时改变假设、编辑不同语言和层级的代码，并决定下一步调用哪种工具。</b></p>
+
+  <h3>1.2 原文的声明边界（贯穿全系列）</h3>
+  <blockquote class="warn"><p>原文反复强调三条口径纪律，本报告全文沿用：① 性能数字均保留原作者给出的硬件、模型、精度、基线或 workload 边界，不同工作不能据此直接排名；② 论文/项目声称已实现的能力标为"已实现"，不代表原文作者（或本报告）完成了独立复现；③ 由机制外推的方向标为"推断"。本报告在此基础上新增第④条：<b>对每个关键数字标注外部核验状态</b>（见第 9 节）。</p></blockquote>
+</section>
+
+<section class="card" id="s2">
+  <h2 class="sec">2. 第一篇：《从 Kernel 到推理系统：Agentic 优化全景》（总纲）</h2>
+
+  <h3>2.1 Megakernel：先把边界搬进 GPU</h3>
+  <p><b>工程化定义：</b>一次 Launch 覆盖较大范围的异构计算图，并在设备端承担原由 Host launch、Kernel boundary 或 Runtime 负责的部分调度、同步与流水。典型实现要素：Persistent Grid、每 SM 指令流、依赖计数器（Counter/Semaphore）、Shared Memory 池。注意：<b>"Persistent"或"大型 fused kernel"本身并不自动等于 Megakernel</b>。</p>
+  <figure>
+    <pre class="mermaid">
+flowchart TD
+    A["一次 Launch"] --> B["每 SM 指令流 / 任务队列"]
+    B --> C["设备端 Dispatcher"]
+    C --> D1["GEMM / Attention"]
+    C --> D2["Norm / RoPE / Reduction"]
+    D1 --> E["Counter / Semaphore 依赖计数"]
+    D2 --> E
+    E --> F{"下游依赖满足？"}
+    F -- "否：等待 / 计数" --> E
+    F -- "是" --> G["复用片上 Buffer 并继续<br/>（跨阶段预取）"]
+    G --> H["完成大段图或完整 Forward"]
+    style A fill:#eaf1fa,stroke:#2c5fa8
+    style C fill:#dfeaf8,stroke:#2c5fa8
+    style G fill:#eaf6f0,stroke:#1d7a4f
+    style H fill:#eaf6f0,stroke:#1d7a4f
+    </pre>
+    <figcaption>图 2-1 · Megakernel 设备端运行机制（收益：减少 launch 与 grid tail、避免中间结果落 HBM、跨阶段预取；代价：寄存器/共享内存竞争、全局同步风险、代码尺寸、动态 Shape 适配、内部可观测性）</figcaption>
+  </figure>
+
+  <h4>已实现案例（Hazy Research）<span class="tag green">已核验（官方博客）</span></h4>
+  <ul>
+    <li><b>ThunderMLA</b>：用设备端解释器融合 MLA partial attention 与 reduction。H100 四组公开测试相对当时 FlashMLA 分别提升 <b>23.6% / 19.0% / 36.3% / 7.6%</b>；CPU Schedule 生成约 1–2ms，可复用或异步摊销。（博客核实：ThunderKittens 实现、统一 prefill+decode MLA kernel、变长调度器）</li>
+    <li><b>完整 Llama-3.2-1B Megakernel</b>：BF16、Batch 1、32-token prompt、生成 128 token、关闭 speculation 条件下，H100 上相对 vLLM 基线（已启用 CUDA Graph 与 Torch Compilation）<b>接近 2.5×</b>，相对 SGLang <b>超过 1.5×</b>。（博客核实：模型实为 1.24B 参数，H100 前向 &lt;1ms、78% 显存带宽；B200 上 &lt;680μs、较 vLLM &gt;3.5×）<b>边界：不能外推到 70B、大 Batch 或动态 LoRA。</b></li>
+  </ul>
+
+  <h3>2.2 Agent for Megakernel：难点从写代码变成守住全局不变量</h3>
+  <p>普通 Kernel Agent 可以在一个清晰函数边界内"生成—编译—校验—计时"；Megakernel 的候选则可能改变任务切分、每 SM 指令顺序、同步边和 Buffer 生命周期。只做最终输出比对，既难定位错误，也可能在罕见调度下暴露 race 或 deadlock。因此 Agent 必须被<b>结构化中间表示（IR）和独立 Oracle</b> 约束。闭环形态：</p>
+  <figure>
+    <pre class="mermaid">
+flowchart LR
+    A["模型图与目标 GPU"] --> B["Agent 提议<br/>任务切分与 Schedule"]
+    B --> C["Schedule IR<br/>静态检查"]
+    C -- "拒绝 / 数值或依赖错误" --> B
+    C -- "通过" --> D["Lowering / 编译"]
+    D --> E["中间状态 Oracle<br/>（mid-state 检查）"]
+    E -- "未通过：修订" --> B
+    E -- "通过" --> F["真实硬件 Profile"]
+    F -- "瓶颈归因（下一轮迭代）" --> B
+    F --> G["保留最优且可回退版本"]
+    style C fill:#fdf3e7,stroke:#a05a1f
+    style E fill:#fdf3e7,stroke:#a05a1f
+    style G fill:#eaf6f0,stroke:#1d7a4f
+    </pre>
+    <figcaption>图 2-2 · Agent for Megakernel 闭环（详见第 4 节第三篇展开）</figcaption>
+  </figure>
+  <ul>
+    <li><b>AutoMegaKernel</b> <span class="tag green">已核验（arXiv:2606.09682）</span>：将 HuggingFace Llama-family 完整 Forward 生成为单个 persistent cooperative CUDA kernel；冻结的 Schedule-IR Validator 通过静态图检查拒绝不安全计划（作者明确说明<b>不是机械化形式证明</b>）；7,160 个对抗 Schedule（6,091 不安全）<b>零错误接受</b>，接受 360 个真实 lowering；自动研究环相对自身基线提升 1.25–1.72×；W8A16、Batch-1 相对 CUDA-graphed cuBLAS BF16：L4 最高 1.33×、L40S 1.25–1.27×、A10G 最高 1.08×、RTX5090 1.19–1.23×；<b>在 A100/H100 上落后</b>，比较精度不对称，最大真实 checkpoint 为 TinyLlama-1.1B。</li>
+    <li><b>ForgeMegakernel</b> <span class="tag green">已核验（arXiv:2609.12379）</span>：十个渐进 milestone、每 SM 细粒度指令流、依赖计数器、Shared Memory Buffer Pool，引导 Coding Agent 生成每模型 Decode Megakernel；独立 mid-state Oracle 检查误差/精度/性能；8 个模型家族 0.6B–13B、14 个代表性 Decode 操作上 <b>50.5%–85.9% MBU</b>；同配置相对 <b>SGLang 0.5.18 几何平均 1.21×</b>、相对一套 Megakernel Compiler <b>1.54×</b>；集成 SGLang 后在 GSM8K ragged prompt 上 14 个实现均更快且答案精度相当。</li>
+  </ul>
+  <blockquote><p><b>边界小结（原文）：</b>Agent 负责提出跨阶段结构与修订路径，Validator、Compiler、Oracle 和 Benchmark 负责定义什么候选可以被相信。没有后者，Agent 只是在更危险的空间里生成代码。</p></blockquote>
+
+  <h3>2.3 Agent for Whole Model：局部最快不等于模型最快</h3>
+  <p>KernelBench 把问题分为单算子、简单融合和完整模型等层级，以 <code>fast_p</code> 统计"正确且超过指定加速阈值"的任务比例。其 2025 年初始实验中，前沿推理模型开箱即用时能达到 PyTorch 基线速度的案例<b>少于 20%</b>；执行与 Profiling 反馈可改善结果——说明一次生成不是稳定优化器，Whole Model 不能简化为把所有热点逐个替换。</p>
+  <ul>
+    <li><b>StitchCUDA</b> <span class="tag green">已核验（arXiv:2603.02637）</span>：Planner/Coder/Verifier 三角色，Verifier 调用 Nsight Systems/Compute 做正确性与性能反馈；用规则与 Rubric 抑制复制 PyTorch、硬编码输出等 reward hacking；KernelBench 端到端任务<b>接近 100% 成功率</b>；速度收益相对多 Agent 基线 1.72×、相对 RL 模型基线 2.73×。<b>限定：论文设定内的相对结果，不是通用模型加速倍数。</b></li>
+    <li><b>LLM4LLM</b> <span class="tag green">已核验（arXiv:2608.21836）</span>：从目标推理脚本出发抽取分阶段任务，经验引导的 episodic Agent 搜索，只通过模型内验证接纳 Patch；10 个语言模型推理 workload 在 A100/H100 上均端到端改善，<b>几何平均 3.91×（A100）/ 6.98×（H100）</b>；KernelBench Level 2 辅助证据最高 2.745×。<b>限定：依赖论文选定脚本、模型和基线。</b></li>
+  </ul>
+  <p><b>Whole Model 验收原则：</b>关键验收对象应是完整输出与 workload，而不只是单次 Kernel 时间——融合可能减少 launch 却因寄存器压力拖慢主 GEMM；一个更快算子也可能引入 Layout conversion；固定 Shape 胜出不代表 ragged batch 胜出。</p>
+
+  <h3>2.4 Agent for Inference Systems：优化对象成为异构软件栈</h3>
+  <p>再往上一层，瓶颈可能根本不在模型代码：请求排队、continuous batching、KV 分配、并行策略、模型 Server、Python 特征变换乃至数据搬运都能决定端到端结果。Agent 需要统一不同 Profiler 和代码库的证据，并把 SLO 与正确性设为硬约束。</p>
+  <ul>
+    <li><b>FlashVector</b> <span class="tag green">已核验（arXiv:2609.17391）</span>：把单 Kernel Agent 范式扩到 GPU Kernel、ML Framework Graph、NVIDIA Triton C++ Model Server 和 Python 特征服务；已部署于 Unity Vector 广告平台；Model Server 最高 2× 吞吐 / 1.98× 延迟加速，Feature Store 最高 1.6× 吞吐。<b>限定：不同组件各自的最高值，不可相乘成全链路收益。</b></li>
+    <li><b>Autellix（NSDI'26，版本名 Agentix）</b> <span class="tag green">已核验（arXiv:2502.13965）</span>：属于"<b>为 Agent 优化推理系统</b>"而非"用 Agent 优化推理系统"——Serving Scheduler 把 Agent 程序作为一等对象，利用跨 LLM 调用依赖和已完成调用数进行抢占与优先级控制；多种模型与 agentic workload 下相同延迟相对 vLLM 获得 <b>4–15× 程序吞吐</b>。提示系统级目标应从 request latency 升为 <b>program completion time</b>。</li>
+  </ul>
+
+  <h3>2.5 编译器、搜索器与 Agent 的边界（总纲核心表）</h3>
+  <table>
+    <tr><th style="width:15%">组件</th><th style="width:31%">主要职责</th><th style="width:26%">擅长</th><th>不应被宣传成</th></tr>
+    <tr><td><b>编译器</b></td><td>把合法程序/IR Lower 到目标代码，做可证明或规则化变换</td><td>类型、依赖、代码生成、确定性检查</td><td>会自主定义跨栈目标的 Agent</td></tr>
+    <tr><td><b>Autotuner / 搜索器</b></td><td>在预定义参数或变换空间内试验并选择</td><td>大规模、可复现、数值搜索</td><td>理解任意日志并发明新修复路径</td></tr>
+    <tr><td><b>Agent</b></td><td>读取代码、文档、Trace 和失败，选择工具并修改搜索空间或程序</td><td>跨语言诊断、假设生成、长程迭代</td><td>正确性 Oracle、编译器或性能真值</td></tr>
+  </table>
+  <p>判断标准不是"是否使用神经网络"，而是<b>是否理解开放式证据并改变优化计划</b>。最可靠的架构：把创造性放在 Agent，把穷举效率放在搜索器，把语义约束放在 IR/Validator，把真值放在真实执行。</p>
+  <figure>
+    <pre class="mermaid">
+flowchart TD
+    A["人：定义目标 SLO 与禁止项"] --> B["Agent：选择假设 / 工具 / 修改层级"]
+    B --> C["Searcher：展开既定候选空间"]
+    C --> D["Compiler：验证并 Lower"]
+    D --> E["测试 Oracle"]
+    E -- "违反语义或安全约束" --> X["硬拒绝（不可进入发布）"]
+    E -- "通过" --> F["Benchmark / Profiler"]
+    F -- "达到门槛" --> G["人或发布系统审批"]
+    F -- "未达门槛" --> B
+    style A fill:#eaf1fa,stroke:#2c5fa8
+    style X fill:#fbeeec,stroke:#a83a3a
+    style G fill:#eaf6f0,stroke:#1d7a4f
+    </pre>
+    <figcaption>图 2-3 · 人机分工审批流程（AlphaEvolve 即此模式：LLM 产生程序、自动 Evaluator 验证量化、多候选数据库执行进化选择）</figcaption>
+  </figure>
+  <p><b>AlphaEvolve</b> <span class="tag green">已核验（DeepMind 官方）</span>：Google 公开报告——一个 Gemini 矩阵乘 Kernel 提升 <b>23%</b>、使 Gemini 训练时间整体下降约 <b>1%</b>；FlashAttention 实现最高提升 <b>32.5%</b>（该 kernel 平均快 32%）；另在数据中心调度回收约 0.7% 全球算力。限定：Google 特定基础设施中的项目结果。</p>
+
+  <h3>2.6 三条推断（原文对未来的判断）</h3>
+  <ol>
+    <li><b>性能证据会成为 Agent 的中间语言。</b>Argus（arXiv:2609.12299，已核验）已尝试以 semantic region 统一编译器、硬件和系统测量——未来 Agent 不会只消费一段 NCU 文本，而会操作带来源、执行上下文和归因歧义的<b>证据图</b>；但统一标准尚未形成。（核验补充：Argus 实测让 AlphaEvolve 的平均加速从 5.4% 提升到 8.9%，TinyLlama 解码 1.65 vs 4.92 ms/token。）</li>
+    <li><b>生产形态更可能是"Agent 设计、确定性系统执行"。</b>Agent 可离线改 Kernel、Schedule、Server 策略；线上路径仍由经过验证的 Dispatcher、规则和回滚控制。直接让通用 LLM 在每个请求上改执行计划，成本、抖动与安全性目前都不合算。</li>
+    <li><b>目标函数将从速度变为约束下的多目标 Pareto。</b>TTFT、TPOT、吞吐、P99、任务质量、显存、功耗、编译成本和维护成本互相冲突；RoofLang（arXiv:2609.12551，已核验）提出实现无关表示、可验证 Mutation Space 与 Evaluator，其 Persistent Optimizer Agent 在 NVIDIA B300 上为 DeepSeek V4 Pro 搜索到吞吐和交互性改善 <b>6.23%–50.1%</b> 的架构（2026-09 新论文，尚不能当作成熟通用产品）。</li>
+  </ol>
+  <blockquote><p><b>结语（原文）：</b>Agent 的真正增量不是替代 CUDA Compiler 或 Autotuner，而是连接过去彼此割裂的优化空间与证据。越往系统上层走，候选空间越大，单点"最高加速"越不重要，<b>端到端、可复现和可上线</b>越重要。</p></blockquote>
+</section>
+
+<section class="card" id="s3">
+  <h2 class="sec">3. 第二篇：《Megakernel：从算子融合到设备端 Runtime》（主线一·地基）</h2>
+  <p class="lede">本篇是整个系列的原理地基：先建立 GPU 执行模型与 launch 开销的量化认知，再讲 Megakernel 的编译与调度机制，最后给出实测数字与适用边界。</p>
+
+  <h3>3.1 预备知识：执行模型与 launch 开销</h3>
+  <ul>
+    <li>一个 CUDA kernel 被 Host 发射后，GPU 以 <b>CTA</b>（Cooperative Thread Array）为单位调度；每个 CTA 内是固定数量的 warp（<b>每 warp 32 线程</b>）；多个 CTA 分配到不同 <b>SM</b>；Grid 是一次 launch 中所有 CTA 的集合；SM 调度器以 warp 为最小单位，经取指、译码、发射、执行、写回。</li>
+    <li>常规推理框架（PyTorch/TensorRT）中，一个模型是一串 kernel 序列：Host 逐个发射，kernel 之间通过全局内存（HBM）交换数据。</li>
+    <li><b>开销数字：</b>单次 launch 的 CPU 侧开销约 <b>5–10 μs</b>；kernel 间隙（gap）通常 <b>1–2 μs</b>（涉及同步更长）；一次 LLM 推理可能发射几十到上百个 kernel——假设 100 个 kernel、每个间隙 5 μs，累计 <b>500 μs</b> 纯开销；kernel 间经 HBM（1–2 TB/s HBM3）来回读写中间结果进一步耗时。<b>batch 越小、计算密度越低、间隙占比越高——这正是低时延场景（交互式 Agent、实时对话）的痛点。</b></li>
+    <li>（Hazy 博客补充核验 <span class="tag green">已核验</span>：H100 上 dummy kernel 每次启动约 <b>2.1 μs</b>，CUDA Graphs 也只降到约 <b>1.3 μs</b>；16 层 × 每层 7 次启动 × 5 μs 停顿，即可把理论 ~1350 次/秒的前向拉低到 ~770 次/秒——H100 只用到约 50% 显存带宽。）</li>
+  </ul>
+
+  <h3>3.2 四个易混概念的正交分解</h3>
+  <table>
+    <tr><th>概念</th><th>回答的问题</th><th>说明</th></tr>
+    <tr><td><b>Kernel Fusion</b></td><td>合并哪些操作？</td><td>只合并邻接操作</td></tr>
+    <tr><td><b>Persistent 执行</b></td><td>CTA 活多久、怎样领 Tile？</td><td>CTA 循环取任务</td></tr>
+    <tr><td><b>CUDA Graph</b></td><td>Host 如何低开销重放多个 kernel？</td><td>Host 端图捕获/重放，无法设备端动态调整</td></tr>
+    <tr><td><b>Megakernel</b></td><td>一个设备程序接管多大范围的图？</td><td>设备端管理异构任务和依赖——把上述维度全部拉满</td></tr>
+  </table>
+  <p>同一实现可以既 fused、又 persistent、又用 CUDA Graph 组织 launch；Megakernel 则是"一份 PTX、一次 launch、一个 grid"，图里所有 op 以软件调度执行，CPU 只需把入口参数写进 command buffer。<b>这既是极限的算子融合，也是把"运行时"从 Host 搬到设备端。</b></p>
+
+  <h3>3.3 编译视角：从算子图到单份 PTX</h3>
+  <figure>
+    <pre class="mermaid">
+flowchart LR
+    A["Python DSL 图定义<br/>节点=op（matmul/attention/rmsnorm）<br/>边=张量依赖"] --> B["图划分<br/>切分为 subkernel（可独立调度的任务单元）"]
+    B --> C["代码生成<br/>每个 subkernel 生成设备函数"]
+    C --> D["单份 PTX<br/>内含 software scheduler + 全部 subkernel 函数"]
+    style D fill:#dfeaf8,stroke:#2c5fa8
+    </pre>
+    <figcaption>图 3-1 · Megakernel 编译流水线（关键约束：subkernel 依赖在编译期静态确定，运行期由设备端调度器按就绪顺序分发）</figcaption>
+  </figure>
+
+  <h3>3.4 设备端调度：TACO、Taplink 与软件栅栏 <span class="tag orange">机制名未能在公开来源核验</span></h3>
+  <ul>
+    <li><b>TACO</b>（原文展开为 Topologically Anchored Causal Ommission）：基于拓扑序的 tile 就绪跟踪——计数器记录每个 subkernel 尚未完成的依赖数，<b>计数归零即进入就绪队列</b>，可被任意 CTA 领取。</li>
+    <li><b>Taplink</b>：跨 subkernel 的 work stealing 通道。异构 kernel 大小差异大（GEMM 要占满整个 Grid 才到峰值，LayerNorm 只需 1 个 CTA）——按最大 kernel 配 CTA 则小 kernel 时空转，按平均配则大 kernel 拿不到峰值。解法是 <b>CTA 常驻 + work stealing</b>：大 kernel 全员参与；小 kernel 执行时，空闲 CTA 经 Taplink 提前偷做后续 subkernel 的 tile，实现大小 kernel 流水重叠。</li>
+    <li><b>全局同步：</b>硬件 <code>grid.sync()</code>（Cooperative Groups）受严格限制——必须 cooperative launch 且 Grid 不能超过 GPU 可同时驻留的 CTA 数。Megakernel 的 CTA 按"常驻"配置，满足前提；但实际实现用<b>软件栅栏</b>：CTA 完成后原子递增到达计数器，其他 CTA 自旋读取直到达标——更灵活，代价是自旋等待占用 SM。</li>
+    <li><b>思想先驱 Henson（CMU，2016）</b>：GPU 上的任务运行时——任务队列放全局内存，CTA worker 用 <code>atomicAdd</code> 领任务号（天然无锁），支持 work stealing，工作循环为 fetch → execute → commit。Megakernel 把这套机制收进单个 CUDA kernel 并把调度开销压到指令级。</li>
+  </ul>
+
+  <h3>3.5 设备端 Runtime 三大件与动态性</h3>
+  <ul>
+    <li><b>任务管理</b>：subkernel/task 生成、依赖跟踪（计数器）、就绪队列。</li>
+    <li><b>同步</b>：软件栅栏（到达/等待计数）。</li>
+    <li><b>通信</b>：通信协程（communication coroutines）——把发送/接收写成协程，等待 NVLink/网络数据时<b>挂起并让出 CTA 执行权</b>给计算 tile，数据到达后恢复，实现通信-计算重叠。</li>
+    <li><b>动态 shape 与动态控制流</b>（Mamba selective scan、agentic 工具调用分支、early exit、speculative decoding 分支）：把决策搬到设备端就地分支，避免 Host 观察输出→决定下一步→重新 launch 的往返，也避免静态图路线的重编译/回退解释执行。</li>
+  </ul>
+
+  <h3>3.6 实测数字与系统对比</h3>
+  <table>
+    <tr><th>模型</th><th>GPU 数</th><th>batch</th><th>baseline (ms)</th><th>Megakernel (ms)</th><th>加速比</th></tr>
+    <tr><td>Llama-3.1-8B</td><td class="num">1</td><td class="num">1</td><td class="num">3.38</td><td class="num">2.24</td><td class="num">1.51×</td></tr>
+    <tr><td>Llama-3.1-8B</td><td class="num">2</td><td class="num">1</td><td class="num">6.35</td><td class="num">4.21</td><td class="num">1.51×</td></tr>
+    <tr><td>Qwen3-30B-A3B（MoE）</td><td class="num">4</td><td class="num">1</td><td class="num">7.28</td><td class="num">4.94</td><td class="num">1.47×</td></tr>
+    <tr><td>DeepSeek-V2（236B MoE）</td><td class="num">8</td><td class="num">1</td><td class="num">14.6</td><td class="num">9.8</td><td class="num">1.49×</td></tr>
+  </table>
+  <p class="tbl-note">设置：H100 80GB，baseline 为 cuBLAS + CUDA Graph（已消除 launch 开销的强基线）。加速主要来自消除 launch/同步开销与通信重叠；batch 增大后收益递减。<b>出处标注：</b>幻灯片原文所印编号 arXiv:2507.08933 经核验与公开记录不符（该编号实为一篇凝聚态物理论文），本表数字未能在公开来源独立复核，采信需谨慎（见 9.3 节）。</p>
+  <table>
+    <tr><th>系统</th><th>思路</th><th>launch 次数</th><th>设备端调度</th><th>动态性支持</th></tr>
+    <tr><td>CUDA Graph</td><td>Host 侧图捕获重放</td><td>1 次重放多 kernel</td><td>无</td><td>差（需重新捕获）</td></tr>
+    <tr><td>Persistent Kernel</td><td>CTA 常驻循环</td><td>1</td><td>部分</td><td>中</td></tr>
+    <tr><td>FlashAttention / cuDNN</td><td>单算子极致优化</td><td>多</td><td>无</td><td>无关</td></tr>
+    <tr><td>vLLM / TensorRT-LLM</td><td>系统级优化</td><td>多</td><td>部分</td><td>好</td></tr>
+    <tr><td><b>Megakernel</b></td><td><b>整图单 kernel</b></td><td><b>1</b></td><td><b>完整（依赖计数 + work stealing）</b></td><td><b>好（设备端分支）</b></td></tr>
+  </table>
+  <p><b>独特位置：</b>Megakernel 不是与 FlashAttention 竞争单算子速度，而是在"整图调度"层面消除系统开销；单算子内部仍可调用 CUTLASS/TMA 等底层原语。</p>
+
+  <h3>3.7 代价与适用边界</h3>
+  <ol>
+    <li><b>寄存器压力：</b>所有 subkernel 打包进一个 kernel，寄存器按最差情况（最大 kernel）分配，限制常驻 CTA 数。</li>
+    <li><b>编译时间：</b>整图编译成单份 PTX，图越大越慢；tile/subkernel 划分调参会成倍放大编译次数。</li>
+    <li><b>调试困难：</b>kernel 内 software 调度使 printf、Nsight 分析变难，内部可观测性差。</li>
+    <li><b>通用性：</b>主要面向 Transformer 推理；对训练、完全动态图支持有限。</li>
+  </ol>
+  <p><b>甜点区：</b>低时延、小 batch（尤其 batch=1 交互式）推理收益最大；batch 增大、计算密度上升后 gap 占比下降、收益递减。</p>
+</section>
+<section class="card" id="s4">
+  <h2 class="sec">4. 第三篇：《Agent for Megakernel：从生成 Kernel 到搜索设备端任务图》（主线二）</h2>
+  <p class="lede">本篇是系列中技术密度最高的一篇：论证 Kernel Agent 的优化对象从"函数"跃迁为"带资源和时序约束的任务图"，并系统回答"如何让 Agent 安全地搜索设备端任务图"——受约束 IR、死锁静态验证、中间状态 Oracle、语义 Region、五角色架构。全文十节。</p>
+
+  <h3>4.1 第一节：单 Kernel Agent 已经解决了什么（第一阶段成果）</h3>
+  <p>"LLM 学会了 CUDA"只说对了一半：KernelBench、TritonBench 把问题变成<b>可执行评测</b>；Kernel Agent、CUDA Agent、KernelGYM 把一次生成变成<b>编译—测试—Profile—修复的长程交互</b>。KernelBench 提供 250 个 PyTorch 工作负载，用 <code>fast_p</code> 统计"正确且快于基线 p 倍"的任务比例，仓库已覆盖 CUDA、Triton、CuTe、TileLang、ThunderKittens 等后端；Level 1 单算子、Level 2 简单融合、Level 3/4 模型结构。TritonBench 给出 184 个真实 GitHub 算子——DSL 降低语法门槛，却没有消除布局、分块、访存和硬件映射的搜索难度。</p>
+  <ul>
+    <li><b>CUDA Agent</b>（arXiv:2602.24286）：数据合成 + 带技能 CUDA 开发环境 + 自动验证/Profile + 大规模 Agentic RL；论文声称 KernelBench 三个级别相对 <code>torch.compile</code> 的 faster rate 分别为 <b>100% / 100% / 92%</b>。</li>
+    <li><b>Dr. Kernel / KernelGYM</b>（arXiv:2602.05885，HKUST，已开源）：KernelGYM、TRLOO、Profiling-based Reward/Reject Sampling；KernelBench Level-2 子集上 <b>31.6%</b> 生成结果达至少 <b>1.2×</b> 加速，跨轮选最优时 <b>47.8%</b>；仓库公开分布式 GPU worker、子进程故障隔离、CUDA Event 计时与训练代码。</li>
+  </ul>
+  <figure>
+    <pre class="mermaid">
+flowchart TD
+    A(( )) --> G["Generate 生成"]
+    G --> C["Compile 编译"]
+    C -- "编译失败" --> G
+    C -- "编译成功" --> V["Verify 数值验证"]
+    V -- "数值失败" --> G
+    V -- "正确" --> P["Profile 计时/剖析"]
+    P -- "达到目标" --> ACC["Accept 接受"]
+    P -- "有优化余量" --> D["Diagnose 诊断"]
+    D --> G
+    style ACC fill:#eaf6f0,stroke:#1d7a4f
+    style D fill:#fdf3e7,stroke:#a05a1f
+    </pre>
+    <figcaption>图 4-1 · 单 Kernel Agent 的标准闭环（Generate→Compile→Verify→Profile→Accept/Diagnose）</figcaption>
+  </figure>
+
+  <h3>4.2 第二节：抽象跃迁——Agent 开始搜索一个微型 Runtime</h3>
+  <p>单 Kernel 范式默认三个便利条件：<b>任务边界明确、Kernel 退出后天然形成全局同步、最终输出可被 Host 读取</b>——这三个条件在 Persistent Megakernel 中同时弱化。候选的形态从：</p>
+  <pre class="code"><code>单 Kernel:  program = code + launch_config
+Megakernel: program = task DAG + per-SM queues + instruction ABI
+                  + memory plan + synchronization protocol + kernel knobs</code></pre>
+  <p>传统的每算子 launch 序列把依赖、故障边界和全局 happens-before "免费"交给 CUDA Runtime；Megakernel 只启动一次、每个常驻 CTA 按指令流取任务，因而必须在设备内<b>重建这些机制</b>。搜索维度随之爆炸：从 tile size、warp 数、向量宽度，扩展到融合分组、任务粒度、SM 归属、依赖阈值、预取距离、共享内存页生命周期。反例：一个局部更快的 GEMV 可能因寄存器占用降低整核驻留数；一次看似合理的重排可能让 SM0 等待只能由 SM0 后续任务产生的计数（自锁）；过度融合会放大指令缓存与尾部负载不均。</p>
+  <table>
+    <tr><th>维度</th><th>单 Kernel Agent</th><th>Megakernel Agent</th></tr>
+    <tr><td>语义单位</td><td>一个算子/融合算子</td><td>整层、整次 decode 或设备端任务图</td></tr>
+    <tr><td>调度</td><td>grid/block 参数</td><td>每 SM 指令流与跨 SM 依赖</td></tr>
+    <tr><td>内存</td><td>单次 kernel 生命周期</td><td>跨指令 buffer/page 生命周期</td></tr>
+    <tr><td>正确性</td><td>输入到输出</td><td>输出 + 中间状态 + happens-before</td></tr>
+    <tr><td>失败</td><td>编译错、数值错、超时</td><td>还包括 race、活锁、死锁、资源循环等待</td></tr>
+    <tr><td>性能证据</td><td>kernel latency / 计数器</td><td>端到端 latency、内部 region、tail、重叠和流量</td></tr>
+  </table>
+
+  <h3>4.3 第三节：受约束 IR——别让 Agent 直接改所有东西</h3>
+  <p>最危险的方案是让 Agent 自由重写数千行 CUDA，<b>同时还允许它修改测试和计时器</b>——搜索空间巨大，错误候选还能"优化"验收标准。更可控的方案：冻结可信基座，只允许 Agent 改一个<b>类型化、资源显式的 Schedule IR</b>。AutoMegaKernel（MIT 开源 VM、指令、Schedule、验证器、评测与 Agent harness）即此思路：Agent 的主要编辑面是 <code>tiling</code>、<code>fusion_grouping</code>、<code>sm_assignment</code>、<code>pipelining_depth</code>、<code>page_allocation</code>、线程数与共享内存预算，而不是任意同步代码；固定 ABI 限定输入、输出、wait 和参数容量；单条指令不得私自碰 counter 或启动子任务。</p>
+  <blockquote><p><b>这类 IR 的意义不是比 CUDA "更高级"，而是故意不完备</b>：牺牲任意表达力，换来可枚举、可验证、可归因的搜索空间——Agent 可以探索性能策略，却不能创造未声明的通信边。CAKE（arXiv:2608.12629）同方向：把 warp role、数据移动、同步和 pipeline 暴露为硬件显式、可诊断的 IR。边界：AMK 的"正确性 by construction"是对冻结可信基座的静态图检查，<b>不是机械化形式证明</b>。</p></blockquote>
+  <figure>
+    <pre class="mermaid">
+flowchart LR
+    A["模型 Graph IR"] --> C["Tile 化 TaskDAG"]
+    B["Agent 提议 ScheduleConfig"] --> C
+    C --> V["静态 Validator"]
+    V -- "拒绝 → 结构化诊断" --> B
+    V -- "接受" --> L["确定性 Lowering"]
+    L --> M["冻结的 VM / Dispatcher"]
+    M --> E["设备执行"]
+    E --> O["Oracle + Profile"]
+    O -- "证据回到 Agent / 搜索" --> B
+    style V fill:#fdf3e7,stroke:#a05a1f
+    style O fill:#eaf6f0,stroke:#1d7a4f
+    </pre>
+    <figcaption>图 4-2 · 受约束 IR 管线：Agent 只能编辑 Schedule 配置，静态 Validator 前置拒绝危险计划，Oracle + Profile 闭环回证</figcaption>
+  </figure>
+
+  <h3>4.4 第四节：死锁验证——在 Launch 之前拒绝危险 Schedule</h3>
+  <p>Megakernel 中最昂贵的错误不是结果不准，而是<b>永不返回</b>；仅靠 watchdog 超时既慢又可能污染集群。AMK 把跨任务同步限制为<b>单调计数器</b>（producer 完成写入、执行 release fence 后 counter+1；consumer 只等待静态阈值），于是死锁和部分 race 转化为<b>可静态检查的图性质</b>：</p>
+  <figure>
+    <pre class="mermaid">
+flowchart TD
+    A["候选 Task DAG"] --> B{"引用 / ABI 合法？"}
+    B --> C{"1 ≤ wait 阈值 ≤ producer 数？"}
+    C --> D{"依赖图无环？"}
+    D --> E{"每 SM 队列保持拓扑序？"}
+    E --> F{"多 producer 是否全量 join？"}
+    F --> G{"读操作有传递 happens-before 来源？"}
+    G -- "全部通过" --> OK["允许 Lower / Launch"]
+    B -- "任一失败" --> REJ["REJECTED"]
+    C -- "失败" --> REJ
+    D -- "失败" --> REJ
+    E -- "失败" --> REJ
+    F -- "失败" --> REJ
+    G -- "失败" --> REJ
+    style OK fill:#eaf6f0,stroke:#1d7a4f
+    style REJ fill:#fbeeec,stroke:#a83a3a
+    </pre>
+    <figcaption>图 4-3 · 六项静态检查链（含：共享 counter 的 consumer 必须等待全部 producer 以避免 first-k race；每个 activation/KV 读取都存在传递 happens-before 的 writer；本轮 KV append 先于读取）</figcaption>
+  </figure>
+  <p><b>论文数字：</b>7,160 个对抗构造 Schedule 中，对 6,091 个被独立 Oracle 判定不安全的样本<b>零 false accept</b>，并接受 360 个真实 lowering。边界：这是有边界的经验检验，不等于穷尽所有 CUDA 内存模型、编译器 bug 和微指令内部越界；<b>可信计算基（TCB）仍包括 validator、VM、ABI 实现和每条微指令</b>。</p>
+
+  <h3>4.5 第五节：中间状态 Oracle——最终 logits 正确还不够</h3>
+  <p>融合抹掉了算子边界，也抹掉了天然观测点。只比较最终 logits 有三类盲区：<b>误差可在后续运算中抵消；等长测试无法发现 ragged batch 的位置广播；固定输入容易诱发硬编码和跳算</b>。KernelBench-Verified（arXiv:2607.16241）进一步提醒：测试分布和 TF32 基线一改变，原本显眼的速度优势可能消失。</p>
+  <p><b>ForgeMegakernel 的答案：独立 mid-state test oracle</b>——从配置预先派生字节数、精度契约和容差；Agent 只能修改 kernel 源码和 notes，<b>不能修改 evaluator</b>。由于 KV cache 本就必须落全局内存，Oracle 可逐层读取 K/V 行定位第一次分歧，无需物化每个寄存器值。三个<b>无容差</b>功能测试：① logits 必须有限；② 在 KV 写游标后注入噪声，输出必须 bit-identical（暴露越界读）；③ ragged batch 每个 lane 必须使用自己的 position。数值层面以 FP64 forward 定标，比较逐层 KV 与 top-64 log-softmax；性能层面由 Host 按模型配置核算实际应读字节与 MBU，<b>拒绝 Agent 自报</b>。边界：Forge 未开源，其完整 Oracle 实现只能视为论文主张。</p>
+
+  <h3>4.6 第六节：Profile 闭环——从总时长到可行动证据</h3>
+  <p>单 Kernel 慢时，ncu 能指出 occupancy、访存合并、stall reason；Megakernel 在 Nsight Systems 中可能只是一条长横条——总延迟或 MBU 只能说"慢"，不能说是哪个 opcode、哪条依赖、哪个 SM 尾巴造成的。<b>Profile 必须以语义 region 而非 kernel launch 为主键。</b>Argus（arXiv:2609.12299）正面处理：用户标记语义 region 与所需信号，系统保持 region identity 穿过编译、执行和测量变体，编排互不干扰的多次采样，再关联 compiler / hardware / system 三路证据并记录来源与归因歧义。论文数字：44 个 persistent GEMM/attention 配置中改善 39 个；使 AlphaEvolve 几何平均提升从 5.4% 增至 8.9%；TinyLlama-1.1B persistent decode 上带 Argus 的 Agent 达 <b>1.65 ms/token</b>（无 Argus 为 4.92）。可靠闭环不应把几百个原始 counter 塞回提示词，而应先形成<b>语义诊断</b>（read amplification 为何偏高、哪些 SM 在等 counter、哪个阶段扩大 tail spread、寄存器增长是否减少 resident CTA），测量系统保留 run id、环境、diff 与证据，正确性、稳定性与统计显著性共同通过才晋级。</p>
+
+  <h3>4.7 第七、八节：AMK 与 Forge 互补；验证是一组分层契约</h3>
+  <p>AMK 强调"先把 Agent 限制在可静态检查的 Schedule IR 内"，解决无人值守搜索最危险的死锁/race 面；Forge 强调"用十个渐进 milestone（M0–M9：单算子/层/整栈功能正确 → 单次 Persistent Launch → 每 SM 细粒度指令流 → Counter 依赖替代 Grid Barrier → Shared-memory Buffer Pool → 长序列稳定性）教 Agent 长成高性能 Megakernel，并用独立中间态 Oracle 验证融合过程"。两者共同说明：<b>Megakernel Agent 不是更大的代码生成器，而是三个系统的组合——受约束合成器、独立验证器、硬件测量控制器。</b></p>
+  <table>
+    <tr><th>契约层</th><th>内容</th></tr>
+    <tr><td><b>1. 结构契约</b></td><td>IR 类型、ABI、资源上限、task/buffer/counter 引用完整</td></tr>
+    <tr><td><b>2. 并发契约</b></td><td>无环、Wait 可满足、队列拓扑序、全量 join、传递 happens-before</td></tr>
+    <tr><td><b>3. 数值契约</b></td><td>多 shape、多分布、FP64 定标、逐层中间态、精度策略、长序列漂移</td></tr>
+    <tr><td><b>4. 测量契约</b></td><td>同硬件、同精度、同计时范围、交错采样、可信基线、字节核算、profiler provenance</td></tr>
+    <tr><td><b>5. 部署契约</b></td><td>真实 checkpoint、ragged prompt、KV 生命周期、失败回退、端到端 serving 准确率</td></tr>
+  </table>
+  <p class="tbl-note">"通过测试"不是一个布尔量。原文推断：未来最有效的系统很可能合并 AMK 式静态安全 + Forge 式中间态 Oracle + Argus 式 region measurement + KernelGYM 式分布式训练隔离——目前尚无单一系统完整实现四者。</p>
+  <figure>
+    <pre class="mermaid">
+flowchart TD
+    A["大量 Agent 提议"] --> B["可编译"] --> C["静态安全"] --> D["中间状态正确"] --> E["多 Shape / 长程稳定"] --> F["可信性能提升"] --> G["Serving 集成"] --> H["少量可发布 Artifact"]
+    style A fill:#eef0f3,stroke:#6b7787
+    style H fill:#eaf6f0,stroke:#1d7a4f
+    </pre>
+    <figcaption>图 4-4 · 大规模候选筛选漏斗；最终闸门：安全且正确 → 跨 Shape 稳定 → 延迟/流量/显存/能耗/编译成本 → Pareto 前沿 → 真实 Serving 回归通过才"发布并保留 Fallback"，否则"淘汰并保留失败证据"</figcaption>
+  </figure>
+
+  <h3>4.8 第九节：一个可落地的 Megakernel Agent 架构（五角色）</h3>
+  <p>最稳妥的分工不是让一个"超级 Agent"拥有整个仓库，而是把<b>生成权、裁决权和测量权拆开</b>：</p>
+  <figure>
+    <pre class="mermaid">
+flowchart LR
+    P["Planner<br/>读模型图与目标硬件<br/>只产生结构化假设"] --> B["Builder<br/>修改 IR / ABI 内微指令"]
+    B --> V["只读 Validator<br/>版本锁定环境"]
+    V -- "失败" --> F["失败档案"]
+    V -- "安全 / 正确" --> W["隔离 GPU Worker<br/>承接会崩溃的候选"]
+    W --> PR["只读 Profiler<br/>只返回带来源的 region 报告"]
+    PR --> C["Controller<br/>keep / revert"]
+    C --> E["版本化经验库"]
+    E -. "反馈" .-> P
+    F -. "失败也进 ledger" .-> P
+    style V fill:#fdf3e7,stroke:#a05a1f
+    style F fill:#fbeeec,stroke:#a83a3a
+    style E fill:#eaf6f0,stroke:#1d7a4f
+    </pre>
+    <figcaption>图 4-5 · 五角色架构：<b>任何 Agent 都不能同时写候选、测试、基线和排行榜</b>；安全检查与 Oracle 位于 Agent 不可写的边界之外；性能测量在正确性之后执行（避免错误候选因少算而赢）；所有失败进入 ledger，否则搜索记忆只学习幸存者偏差</figcaption>
+  </figure>
+  <p><b>实验记录最小字段集：</b>模型与 checkpoint 哈希、GPU/驱动/编译器、IR 和二进制哈希、随机种子、输入 shape 分布、精度契约、静态验证结果、中间态误差、计时范围、warmup/重复次数、原始 profile、基线版本、代码 diff——以此区分"代码更快 / 输入变简单 / 少算了一部分 / 机器状态漂移"。KernelGYM 的子进程隔离、AMK 的预启动拒绝、Argus 的 region identity 分别对应不同故障层，不能互相替代。</p>
+
+  <h3>4.9 第十节：结论——下一代优化 Agent 搜索的是执行制度</h3>
+  <p>第一阶段（KernelBench/TritonBench → CUDA Agent/KernelGYM）让模型能在真实 GPU 上反复生成、编译、验证和优化单个 Kernel；第二阶段（AutoMegaKernel、ForgeMegakernel、Argus）把动作空间上升到设备端任务图，验证从最终输出扩展到静态并发性质和中间状态，Profile 从 launch 名称扩展到语义 region。<b>真正的抽象跃迁：单 Kernel Agent 搜索"怎样计算一个函数"，Megakernel Agent 搜索"整张图在设备上如何生存和推进"</b>——必须同时回答工作分配、依赖协议、存储生命周期、可观测性和故障隔离。LLM 负责提出高假设；受约束 IR 压缩危险自由度；静态 Validator 阻止死锁与 race；独立 Oracle 守住语义；Argus 式 Profile 把硬件证据送回搜索。缺少任何一环，都很难把漂亮的 demo 变成可无人值守运行的优化系统。可信 Agent 的标志不是"永远生成成功"，而是能明确区分 <b>SUPPORTED / REJECTED / ABSTAIN / FALLBACK</b>，并为每个结论留下可重放证据——动态 LoRA、未支持算子、硬件代际变化出现时，回退到 CUDA Graph + 成熟算子库，而不是强行进入 Megakernel。</p>
+</section>
+
+<section class="card" id="s5">
+  <h2 class="sec">5. 第四篇：《Agent for Whole Model：跨图、编译、Kernel 与并行的闭环优化》（主线三）</h2>
+  <p class="lede">本篇把"整模优化"定义为跨图（训练图×推理图）、跨层（编译×Kernel×并行×运行时）、跨回合（经验沉淀）的系统工程问题，给出可落地的生命周期、四道门与保险丝设计。</p>
+
+  <h3>5.1 为什么"整模优化"是当前分界线</h3>
+  <ul>
+    <li>硬件迭代（H100/H200/B200/GB200/B300/NVL72）的收益越来越依赖通信、调度、内存等系统级协同；模型结构（MoE all-to-all、GQA KV 布局、线性注意力状态更新）不断改变算子组合——单点优化进入回报递减区：<b>算子级仍可拿 10–15% 局部收益，对整模 e2e 贡献常 &lt;2%</b>。</li>
+    <li>典型形态：FlashAttention 单 kernel 已达 &lt;25 μs 级（H100），但端到端 decode 时延由 <b>100+ 个 kernel</b> 的 launch、同步与内存搬运主导。</li>
+    <li>整模优化四子问题：<b>候选空间与决策语义、评测与归因、反馈与回退、安全与审计</b>。</li>
+  </ul>
+  <h4>谁在做整模优化（玩家矩阵）</h4>
+  <table>
+    <tr><th>范式</th><th>玩家</th><th>做什么</th><th>缺什么</th></tr>
+    <tr><td>编译器厂</td><td>PyTorch（torch.compile）、NVIDIA（TensorRT-LLM）、MSFT（ONNX Runtime）、Graphcore</td><td>图变换、pass pipeline、runtime</td><td>跨图、跨层联合决策</td></tr>
+    <tr><td>芯片厂</td><td>NVIDIA、AMD、寒武纪、Graphcore</td><td>kernel 库、指令调度</td><td>与编译/并行的联合决策；非自家硬件抽象</td></tr>
+    <tr><td>推理服务商</td><td>OpenAI、Anthropic、DeepSeek、月之暗面、阿里云、百度、字节、SGLang、vLLM</td><td>自研 kernel 与调度、P/D 分离、ray 调度</td><td>与模型结构演进的联合优化；训练侧覆盖</td></tr>
+    <tr><td>Agent 系统公司</td><td>Manus、OpenAI Operator、Cognition、字节 Trae、阿里通义灵码</td><td>编排、工具调用、多轮任务</td><td>底层执行环境不可控</td></tr>
+  </table>
+  <p>四类玩家没有一类能覆盖全栈——整模优化天然是跨界问题。四象限图上（优化范围×自动化程度），右上角"整模+自动"正是 Agent 整模优化的位置。</p>
+
+  <h3>5.2 四类优化范式的层级关系</h3>
+  <table>
+    <tr><th>范式</th><th>候选空间</th><th>决策依据</th><th>是否改写问题/工具</th><th>典型系统</th></tr>
+    <tr><td>传统编译</td><td>工程师预编码的 pass、pattern、cost rule</td><td>确定性规则/固定启发式</td><td>通常否</td><td>TorchDynamo/AOTAutograd/Inductor、XLA HLO、AutoDeploy</td></tr>
+    <tr><td>自动搜索</td><td>预定义 schedule、切分或参数空间</td><td>Cost model + 真机测量</td><td>通常否（空间固定）</td><td>TensorIR/TVM、Triton autotune、Alpa、Rammer、Ansor</td></tr>
+    <tr><td>LLM 生成</td><td>LLM 生成整图/子图优化（融合、量化、自定义算子、调度）</td><td>模型知识 + 反馈信号</td><td>是</td><td>KernelBench、Cello、AFlow、PassNet、Kevin-20B</td></tr>
+    <tr><td><b>Agent 整模</b></td><td><b>跨图、编译、Kernel、并行的联合动作空间</b></td><td><b>目标-约束问题 + 经验池 + 真机评测</b></td><td><b>是（问题定义、评测、工具全链路可改写）</b></td><td>本文主题（参考 Kevin-20B、Cello、AgentBridge 原型）</td></tr>
+  </table>
+  <p>层级而非替代：传统编译提供确定性底座，自动搜索提供参数空间探索，LLM 生成提供"写代码"泛化，Agent 提供跨层决策与审计。只有 Agent 范式同时覆盖<b>"问题定义 → 候选生成 → 真机评测 → 经验沉淀"</b>四步。Agent 的合理预期：把"工程师数周的调优迭代"压缩为"数小时的机器回合"（<b>迭代效率 3×–10×，不是直接 e2e 加速</b>）。</p>
+
+  <h3>5.3 优化生命周期：回合、触发条件与四道门</h3>
+  <figure>
+    <pre class="mermaid">
+flowchart LR
+    subgraph R["优化回合（每回合）"]
+      A["① 构建图与基线<br/>训练图 + 推理图，真实服务路径"] --> B["② 候选生成<br/>受触发条件与动作分级约束"]
+      B --> C["③ 真机评测<br/>prod-like 负载：真实 batch/并发/TTL"]
+      C --> D["④ 决策与沉淀"]
+    end
+    subgraph G["GT 四道门（Go / No-Go）"]
+      G1["门1 干跑 build<br/>编译通过、图对比一致"]
+      G2["门2 单测 correctness<br/>atol/rtol 达标、golden 对比"]
+      G3["门3 基准 benchmark<br/>P50/P99 与吞吐/卡不回退"]
+      G4["门4 服务 serving<br/>灰度无告警、回退演练通过"]
+      G1 --> G2 --> G3 --> G4
+    end
+    B -.-> G1
+    G4 -- "全过：进入灰度/主分支" --> E["合并 merge"]
+    G1 -. "任一门失败" .-> F["回退 rollback<br/>写经验池（候选+原因+触发条件）"]
+    F -. "供后续回合检索" .-> B
+    style E fill:#eaf6f0,stroke:#1d7a4f
+    style F fill:#fbeeec,stroke:#a83a3a
+    </pre>
+    <figcaption>图 5-1 · 整模优化生命周期：优化回合 × GT 四道门 × 经验池闭环</figcaption>
+  </figure>
+  <ul>
+    <li><b>触发条件：</b>编译指标（图断裂率、guard 失效重编译率、缓存命中率下降）；Kernel 指标（算子耗时占比 roofline、显存峰值、bank conflict）；并行指标（TP all-reduce / EP all-to-all 通信占比、PP bubble、EP expert 负载不均）；服务指标（P99、吞吐/卡、TTFT、KV cache 命中率）。</li>
+    <li><b>动作分级（低风险先行）：</b>低风险=LayerNorm/RoPE 融合、GQA KV 布局、重计算策略、编译 pass 顺序；中风险=W8A8/AWQ 量化、TP/PP/EP 度数调整、tile 重调；高风险=W4A16、自定义 kernel 替换核心算子、MoE expert 重分片。</li>
+  </ul>
+
+  <h3>5.4 决策数字（并行/量化/Kernel/服务，全部带口径）</h3>
+  <h4>并行通信量公式</h4>
+  <ul>
+    <li>TP 每层通信量（前向+反向）：\( \approx 8\,b\,s\,h\,\dfrac{p-1}{p} \) bytes（b=batch, s=seq, h=hidden, p=TP 度）——TP=2/4 时通信占比经验值 <b>30–40%</b>（千卡 NVLink/NVSwitch 集群）。</li>
+    <li>EP 每 token all-to-all：\( \approx 2\,E\cdot\mathrm{topk}\cdot h \) bytes（E=专家数，topk=路由数）；大 batch 下与 GEMM 的重叠度决定收益。</li>
+    <li>SP 每层 all-gather + reduce-scatter：\( \approx 4\,b\,s\,h \) bytes（与 TP 联用降低 LayerNorm/Dropout 通信）。</li>
+    <li>PP bubble：\( \approx \dfrac{p-1}{m+p-1} \)（m=micro-batch 数；m=8、p=4 时约 5–10%）。</li>
+    <li>每卡显存 = 权重 \( \dfrac{2N\ \text{bytes（FP16/BF16）}}{\text{并行度}} \) + KV cache \( 2\,L\,H_{kv}\,d_{head}\,s\,b \) bytes + 激活与临时缓冲。</li>
+  </ul>
+  <h4>量化门槛与代表收益</h4>
+  <table>
+    <tr><th>优化动作</th><th>数值一致性门</th><th>方法</th><th>代表收益（口径：vs FP16 baseline）</th></tr>
+    <tr><td>W8A16 权重量化</td><td>atol=1e-2, rtol=1e-2</td><td>GPTQ / AWQ</td><td>权重显存约 −50%</td></tr>
+    <tr><td>W8A8 权重+激活</td><td>atol=1e-2, rtol=1e-2</td><td>SmoothQuant / QServe</td><td>H100 约 1.5–1.8× 吞吐</td></tr>
+    <tr><td>W4A16</td><td>atol=1e-2, rtol=1e-2</td><td>AWQ / GPTQ 4-bit</td><td>约 2×（长序列 decode）</td></tr>
+    <tr><td>FP8 (E4M3)</td><td>atol=1e-2, rtol=1e-2</td><td>DeepGEMM / TRT-LLM FP8</td><td>约 1.3–1.5×（GEMM）</td></tr>
+    <tr><td>W4A8</td><td>atol=1e-2, rtol=1e-2</td><td>QoQ / Marvel</td><td>约 1.8–2.5×（服务侧报告）</td></tr>
+  </table>
+  <p class="tbl-note">注：W4 起数值风险显著上升（长序列、MoE router），必须配 per-channel scale 与任务级指标回归。量化到 W4 时收益路径不同：权重量化降带宽（decode 受限时收益大）、KV 量化提 batch 容量、激活量化提算力上限（FP8 Tensor Core）。</p>
+  <h4>Kernel 级与服务级代表数字</h4>
+  <table>
+    <tr><th>优化</th><th>硬件/口径</th><th>代表数字</th></tr>
+    <tr><td>Triton fused attention（FlashAttention 风格）</td><td>A100，GPT-2/LLaMA prefill</td><td>400–500 TFLOPs/s</td></tr>
+    <tr><td>CUTLASS grouped GEMM（W8A8）</td><td>H100，LLaMA-70B 推理</td><td>700–800 TFLOPs/s</td></tr>
+    <tr><td>DeepGEMM（FP8）</td><td>H100，通用 GEMM</td><td>最高约 1350 TFLOPs/s</td></tr>
+    <tr><td>Marlin（W4A16）</td><td>A100，decode GEMM</td><td>约 2–4× 吞吐</td></tr>
+    <tr><td>Triton autotune 收敛</td><td>典型 kernel</td><td>10–30 分钟/kernel</td></tr>
+    <tr><td>CUDA Graphs + fusion</td><td>H100，decode e2e</td><td>P50 时延 −30~50%</td></tr>
+    <tr><td>torch.compile（Inductor 默认）</td><td>PyTorch 官方基准</td><td>+5–20% 吞吐（编译 1–5 分钟，首 token +10–30%）</td></tr>
+    <tr><td>P/D 分离（prefill/decode 分离部署）</td><td>DeepSeek、Moonshot 等服务侧报告</td><td>2–3× 吞吐（vs 混合部署）</td></tr>
+    <tr><td>Continuous batching</td><td>vLLM 报告</td><td>2–4× 吞吐（vs static batching，长尾场景）</td></tr>
+    <tr><td>Speculative decoding</td><td>LLaMA-70B @ H100</td><td>2–3× decode（接受率&gt;70%）；Medusa 类 1.5–2×</td></tr>
+    <tr><td>MoE EP + all-to-all 优化</td><td>DeepSeek-V3 类模型</td><td>通信占比可控制在 20% 以内</td></tr>
+    <tr><td>Cello（LLM-as-Fitness 搜索）</td><td>GB200</td><td>6.27× vs HumanExpert <span class="tag red">未能外部核验</span></td></tr>
+  </table>
+
+  <h3>5.5 Agent 角色分层与权限（L1–L5）</h3>
+  <div class="grid2">
+    <div class="kv">
+      <b>L1 语义层 / 问题定义</b>：定义目标与指标（语义保真度为准）· 每回合更新<br>
+      <b>L2 策略层 / 候选生成</b>：生成优化候选与配置<br>
+      <b>L3 执行层 / 真机评测</b>：执行真机评测与回滚<br>
+      <b>L4 学习层 / 经验池</b>：管理经验池与策略更新<br>
+      <b>L5 审计层 / 合规回滚</b>：可审计、可回滚、合规 · 按需
+    </div>
+    <div class="kv">
+      <b>Compiler Agent</b>：torch.compile/XLA/TensorIR/自定义 pass → 图变换候选<br>
+      <b>Kernel Agent</b>：Triton/CUTLASS/CUDA/autotuning → kernel 候选<br>
+      <b>Parallel Agent</b>：Megatron-LM/DeepSpeed/Alpa/NCCL → 并行配置<br>
+      <b>Runtime Agent</b>：vLLM/SGLang/FastGen → 服务配置<br>
+      <b>Evaluator Agent</b>：真机基准/golden 数据集/atol·rtol 工具 → 接受/拒绝/重试
+    </div>
+  </div>
+  <p><b>硬边界：</b>数值一致性（atol/rtol + 任务级指标）是不可越过的一票否决线；候选进真机前必须先过干跑+单测两道门；Agent 只能建议、不能直接修改生产基线——所有合并动作需可审计记录。Agent 整模的三个判定检查点：① 改写后仍可追溯（问题定义/候选空间/评测脚本有版本记录）；② 评测可解释（接受/拒绝可归因到具体指标，如"GEMM 加快但 all-reduce 占比上升，整体变慢"）；③ 处置确定性（相同输入相同决策）。</p>
+
+  <h3>5.6 保险丝：失败模式与安全设计</h3>
+  <table>
+    <tr><th>失败模式</th><th>触发场景</th><th>检测方法</th><th>对策</th></tr>
+    <tr><td>数值漂移</td><td>量化/重参数化后</td><td>单测数值一致性（atol/rtol）</td><td>降低量化位宽/回退</td></tr>
+    <tr><td>编译缓存污染</td><td>缓存命中错误版本</td><td>版本哈希校验</td><td>缓存隔离/失效重建</td></tr>
+    <tr><td>Guard 漂移</td><td>动态 shape 专门化</td><td>触发重新编译率</td><td>Guard 细化/回退 eager</td></tr>
+    <tr><td>融合错误</td><td>融合 pass 匹配错误</td><td>端到端单测</td><td>回退未融合版本</td></tr>
+    <tr><td>并行配置错误</td><td>TP/PP/EP 组合非法</td><td>干跑（build）检查</td><td>配置校验器拦截</td></tr>
+    <tr><td>经验池过拟合</td><td>旧经验在新硬件失效</td><td>经验适用性标注（硬件/版本）</td><td>经验失效标记/重新评测</td></tr>
+  </table>
+  <p><b>保险丝四件套：</b>预算上限（每回合最大候选数、最大真机时长如 2 小时）；变更窗口（高风险动作仅限灰度环境）；一票否决（数值门不达标、性能再好也拒绝）；一键回滚（所有合并动作有快照）。按四道门组织，各有独立熔断条件。</p>
+  <pre class="code"><code>procedure OptimizeModel(M, S, B, K)      ▷ 模型M、并行S、基线B、Kernel库K
+  G_train, G_infer ← CaptureGraphs(M)
+  R ← BuildBaseline(...)                  ▷ 记录 git SHA、编译选项、环境
+  E ← ∅                                  ▷ 经验池
+  while not Converged(R) and round &lt; N_max:
+    C ← ProposeCandidates(G, E)           ▷ 受触发条件与动作分级约束
+    for c in C:
+      if not DryRun(c):        continue   ▷ 门1：编译通过+图对比
+      if not Correctness(c):   E∪{(c,FAIL,reason)}; continue   ▷ 门2
+      if not Benchmark(c):     E∪{(c,FAIL,reason)}; continue   ▷ 门3
+      if not Serving(c):       E∪{(c,FAIL,reason)}; continue   ▷ 门4：灰度
+      R ← Merge(c, R); E∪{(c,PASS,metrics)}
+    RollbackIfNeeded(R)
+  return R, E</code></pre>
+  <p class="tbl-note">图 5-2 · 主循环框架（原文 Algorithm 1 转写）</p>
+
+  <h3>5.7 团队协作与落地节奏</h3>
+  <table>
+    <tr><th>阶段</th><th>目标</th><th>Agent 自治度</th><th>退出标准</th></tr>
+    <tr><td>Phase 1</td><td>单层图变换（融合、重参数化）</td><td>低：Agent 提议，人合并</td><td>数值一致性 100% 通过；小流量灰度无告警</td></tr>
+    <tr><td>Phase 2</td><td>量化+并行联合（W8A8 + TP/EP 度）</td><td>中：低风险自动合并</td><td>P99 不回退；通信占比下降</td></tr>
+    <tr><td>Phase 3</td><td>Kernel 生成+自定义算子</td><td>中：灰度环境全自动</td><td>kernel 单测 + roofline 达成</td></tr>
+    <tr><td>Phase 4</td><td>跨图联合（训练图+推理图）</td><td>高：受预算上限约束</td><td>e2e 达标；经验池复用率 &gt;30%</td></tr>
+  </table>
+  <p>团队角色：编译/Kernel/并行/服务/评测负责人 + Agent 工程师（关注回合成功率、经验池复用率）。Agent 输出必须是<b>"候选 + 评测报告 + 归因"三元组</b>，人类负责人保留最终合并权（human-in-the-loop）。<b>结语定性："带保险丝的半自动闭环"——既非"AI 自动优化一切"，也非"AI kernel 不可靠"。</b></p>
+</section>
+
+<section class="card" id="s6">
+  <h2 class="sec">6. 第五篇：《Agent for Inference Systems：从自动调参到安全自治运维》（主线四）</h2>
+  <p class="lede">结论先行（原文）：Agent 已能优化局部闭环，但还不能接管生产。研究重心已从"替工程师改参数"扩展到"造系统"；统一全自治截至 2026-09 仍未成熟，可落地形态是<b>受策略约束的分层控制系统</b>。</p>
+
+  <h3>6.1 问题：为何比传统 AutoML 更难</h3>
+  <ul>
+    <li>多目标强耦合：TTFT、TPOT/ITL、端到端延迟、吞吐、每百万 token 成本、能耗、模型质量、公平性；约束来自显存、GPU 拓扑、SLO、租户优先级、上下文长度、突发流量。增大 batch 提吞吐却恶化尾延迟；提高 KV cache 占比扩大并发却压缩 CUDA graph 与 workspace；更激进量化提速也可能破坏任务质量。</li>
+    <li>Agent 不能只读 dashboard"猜参数"：需建立因果假设，区分排队、tokenization、prefill、decode、通信、KV 分配与外部工具时间，用干预实验排除伪相关。<b>Agent 应用的端到端等待可能根本不在 GPU。</b></li>
+  </ul>
+
+  <h3>6.2 研究版图：从"调参"走向"造系统"</h3>
+  <table>
+    <tr><th style="width:17%">工作</th><th style="width:38%">做了什么</th><th>关键数字（口径内）与核验</th></tr>
+    <tr>
+      <td><b>VibeServe / VibeSys</b><br><span class="tag gray">arXiv:2605.06068</span></td>
+      <td>外层设计搜索 + 内层实现与验证的多 Agent 循环，生成面向特定模型/workload/硬件的专用 serving stack；把"源码、编译选项、运行时"都纳入动作空间。标准部署可与高度优化的 vLLM 竞争；6 类非标准场景能利用特殊模型架构、已知 workload 或硬件特性找到通用引擎忽略的机会。</td>
+      <td><span class="tag green">已核验</span> 正确解读：生成时专用化可能补足运行时通用性的成本，但标准场景中成熟引擎仍是强基线。风险：搜索空间越开放，供应链、未定义行为、错误缓存、benchmark 特化与不可维护代码越难治理——生成代码应视为<b>不可信制品</b>（SAST、依赖锁定、沙箱构建、数值一致性、压力测试、人工 review）。</td>
+    </tr>
+    <tr>
+      <td><b>Autopoiesis</b><br><span class="tag gray">arXiv:2604.07144</span></td>
+      <td>面向 workload 波动与弹性扩缩容，让 LLM 依据实时行为持续合成/改写 scheduling 与 rescheduling policy——策略从"部署前固定产物"变为"运行中的可变组件"。</td>
+      <td>相对所选 SOTA serving 基线<b>平均 34%、最高 53%</b> 改善 <span class="tag green">已核验</span>。自演化的安全边界：候选必须是内容寻址、签名、可重放的不可变 artifact；在线 Agent 只能从已验证策略类型中选择，或走慢速审批轨。</td>
+    </tr>
+    <tr>
+      <td><b>RoofLang</b><br><span class="tag gray">arXiv:2609.12551</span></td>
+      <td>认为 profiling 只能在既有软件栈能力边界内搜索，因此提供：通用 workload 表示、可验证 mutation space、与实现无关的 evaluator——先有"可验证世界模型"再做架构搜索。</td>
+      <td>分析中 DeepSeek V4 系列在指定模型与峰值 decode 建模下可呈现相对代表模型 <b>3.5–39.5×</b> 峰值 decode 吞吐潜力（主要来自紧凑 KV-cache 支持更大 batch 与更低内存流量）；Persistent Optimizer 在 B300 上为 DeepSeek V4 Pro 找到同时改善吞吐与交互性的架构，<b>6.23%–50.1%</b> <span class="tag green">已核验</span>。定性：模型/硬件/目标特定的架构搜索结果，不是实网端到端加速承诺。</td>
+    </tr>
+    <tr>
+      <td><b>Simthesizer</b><br><span class="tag gray">arXiv:2608.24650</span></td>
+      <td>把完整 serving workflow 与控制决策表达为统一动态图，让受护栏约束的 coding agent 把自然语言机制需求下沉为模拟器扩展。</td>
+      <td>同一 coding agent/harness 条件下，扩展后模拟相对 vLLM 真实系统<b>平均吞吐误差 2.51%</b>（既有模拟器扩展为 6.03%）；模拟速度相对 LLMServingSim2.0、Vidur 最高 <b>284.96× / 23.19×</b> <span class="tag green">已核验</span>。高速度不消除 model error：罕见 OOM、NCCL 抖动、热降频、云上 noisy neighbor 仍需实机校准。</td>
+    </tr>
+  </table>
+
+  <h3>6.3 三大基准：能力与可信度的双重缺口</h3>
+  <table>
+    <tr><th style="width:16%">基准</th><th style="width:34%">设定</th><th>结果与教训</th></tr>
+    <tr>
+      <td><b>InferenceBench</b><br><span class="tag gray">arXiv:2607.20468</span></td>
+      <td>给 Agent 一个目标模型、一张 H100、两小时 wall-clock 预算，部署 OpenAI 兼容 server，分别优化 prefill latency、decode latency、并发吞吐与综合目标；15 种前沿 agent 配置。</td>
+      <td>相对 naive PyTorch 最高 <b>8.08×</b>、相对默认 vLLM 最高 <b>4.05×</b>，但仍落后于同等时间预算的简单超参搜索（最高 <b>11.53×</b>）<span class="tag green">已核验</span>。轨迹分析：Agent 能列举许多技术，却常收敛到单一框架、只探索少量配置，大量时间耗在重复测量、修复与局部调参——<b>瓶颈是多样化搜索、实验纪律与 best-so-far 管理，不是知识。</b></td>
+    </tr>
+    <tr>
+      <td><b>AutoTuneBench</b><br><span class="tag gray">arXiv:2609.18123</span></td>
+      <td>直接攻击测量可信度。四天 pilot、619 次模型调用，归纳四类失败：① 稻草人基线制造虚假加速；② 绝对时间跨机器不迁移；③ 饱和任务让差异失真；④ 基础设施故障伪装成研究结论。方法：冻结协议、数据库验证器、反作弊、预注册 readout、paired-seed 统计、跨 run CV≤5%。</td>
+      <td>公开案例：同一最佳 kernel 对 naive 基线 <b>10.6×</b>、对 honest 基线仅 <b>2.03×</b>；一个配置跨两台机器分别为 <b>1.174× 与 1.0049×</b>；KernelBench Level-1 仅 <b>51%</b> 任务被协议接纳，接纳任务相对 PyTorch eager 中位加速仅 <b>1.0001×</b> <span class="tag green">已核验</span>。</td>
+    </tr>
+    <tr>
+      <td><b>AgentSysBench</b><br><span class="tag gray">arXiv:2608.15127</span></td>
+      <td>对 10 个代表性 agentic 应用的受控部署与生产 trace 分析。</td>
+      <td><b>5/10 应用由非 LLM 组件主导延迟</b>；sandbox 单 session working set 峰值 <b>28 GB</b>；异构任务延迟差最高 <b>32×</b>。设计探索：task-aware serving 降延迟 <b>29–40%</b>、communication-aware placement 最多 <b>4.5×</b>、状态卸载降内存 <b>4.6×</b>、工具结果缓存消除 <b>35.2%</b> 重复搜索调用并省 <b>19.3%</b> 汇总搜索延迟 <span class="tag green">已核验</span>。</td>
+    </tr>
+  </table>
+
+  <h3>6.4 可生产化的分层控制面</h3>
+  <p>vLLM/SGLang/TensorRT-LLM 已提供丰富"执行旋钮"（TP/PP/DP/EP、GPU memory utilization、KV cache dtype、prefix caching、chunked prefill、speculative decoding、调度并发；SGLang 的 Radix cache、PD disaggregation；trtllm-serve 的 max batch/tokens/sequence、KV cache fraction 等），但它们不是自治控制面本身。<b>Agent 的职责是把业务意图/metrics 编译成这些受版本约束的配置</b>，而不是把三套参数机械对齐。</p>
+  <table>
+    <tr><th>层</th><th>Agent 输入</th><th>允许动作</th><th>必须验证</th></tr>
+    <tr><td>请求层</td><td>prompt/output 分布、优先级</td><td>admission（准入）、路由、限流</td><td>租户公平、超时、拒绝率</td></tr>
+    <tr><td>引擎层</td><td>TTFT/TPOT、KV、batch</td><td>chunk、并发、cache、spec decode</td><td>输出一致性、OOM、P99</td></tr>
+    <tr><td>集群层</td><td>模型结构、拓扑、预测流量、预算</td><td>TP/PP/DP/EP、PD 分离、副本、放置、扩缩容</td><td>NCCL、显存、跨机带宽、配额、故障域、成本上限</td></tr>
+    <tr><td>制品层</td><td>权重、量化、kernel</td><td>build engine、量化、编译</td><td>精度、API、签名、SBOM</td></tr>
+  </table>
+  <figure>
+    <pre class="mermaid">
+flowchart TD
+    A["业务目标与工作负载"] --> B["Observe 可观测"]
+    B --> C["Diagnose 诊断<br/>request-level critical path：<br/>队列/TTFT/prefill/decode/tokenizer/网络/工具/状态IO"]
+    C --> D["Plan 容量与方案<br/>normal / peak / degraded 三态"]
+    D --> E["Tune 调参与代码生成<br/>快环（秒-分，可逆参数）<br/>慢环（小时，副本/并行/量化制品）<br/>架构环（天，scheduler/kernel/专用stack）"]
+    E --> F["Verify 验证基线"]
+    F --> G["Canary 小流量<br/>分层观察：输入输出长度/租户/任务/cache hit<br/>× TTFT/TPOT/P99/错误率/OOM/质量/成本/公平"]
+    G --> H{"质量、SLO、成本均通过？"}
+    H -- "是" --> I["发布 → Rollout 扩量"]
+    H -- "否" --> J["Rollback 回滚<br/>由独立 safety controller 触发"]
+    J --> C
+    P["策略 / 权限 / 预算 / 审计"] -.约束整个闭环.- E
+    style I fill:#eaf6f0,stroke:#1d7a4f
+    style J fill:#fbeeec,stroke:#a83a3a
+    style P fill:#fdf3e7,stroke:#a05a1f
+    </pre>
+    <figcaption>图 6-1 · 运维闭环与三环分层（回滚必须先于发布设计；回滚对象覆盖配置/镜像/权重/engine artifact/路由规则/DB schema；旧版本保持 warm capacity；涉及 KV 格式/并行拓扑/TRT engine 的变更走双集群切流回退）</figcaption>
+  </figure>
+  <ul>
+    <li><b>诊断：</b>先建 request-level critical path，联合 GPU SM/HBM、KV 利用率、batch composition、NCCL 与 CPU 指标；输出采用"假设—证据—反证—置信度"，而非单一根因文本。反例：P99 上升且 KV 接近满 ≠ KV 不足（可能是长请求突发抢占、prefix cache 污染或 admission 失效）。</li>
+    <li><b>容量规划：</b>不能用"tokens/s × GPU 数"粗算；至少需要输入/输出 token 联合分布、到达过程、prefix 重用率、租户 mix、Agent fan-out、外部工具 think time、SLO 与故障余量；输出按 normal/peak/degraded 三态的副本数、并行策略、成本与错误预算。</li>
+    <li><b>Canary：</b>不能只比平均吞吐；输出含随机采样的模型不能只做字符串相等，应组合确定性采样、diff/分布偏差、任务评测与安全回归。</li>
+  </ul>
+
+  <h3>6.5 Autellix：目标函数修正 <span class="tag green">已核验（arXiv:2502.13965，NSDI'26）</span></h3>
+  <p>把 <b>Agent 程序而非孤立 LLM request</b> 作为一等调度对象：拦截程序提交的 LLM 调用、注入程序级上下文，按程序历史调用做抢占与优先级（解决请求级和程序级队头阻塞）。相同延迟下相对 vLLM 等基线程序吞吐 <b>4–15×</b>。含义：</p>
+  <ul>
+    <li>控制面应优化"任务完成时间"与"有效程序吞吐"，而不只是 token throughput——一个占用 GPU 很少但卡住整条 DAG 的短调用，可能比长批处理更应优先。</li>
+    <li>容量规划随之改变：Agent session 在工具执行期间空闲数分钟甚至数小时却仍持有状态；最优策略可能是卸载状态、缓存工具结果、将 CPU sandbox 靠近数据，而非继续堆 GPU。</li>
+    <li>统一控制面必须覆盖 LLM 与非 LLM 资源，但每类资源需要独立 actuator 和故障域。</li>
+  </ul>
+
+  <h3>6.6 安全：把 Agent 当作高能力内部攻击者</h3>
+  <ul>
+    <li>推理运维 Agent 天然跨越数据面、供应链与控制面；<b>prompt injection 可能藏在用户输入、日志、模型卡甚至 issue 中</b>；本地媒体路径、任意远程 URL、插件和自定义 kernel 都扩大执行面（SGLang 文档明确建议对不可信多模态请求设媒体域名 allowlist；vLLM 文档将本地媒体路径标为安全风险）。默认<b>Agent 的自然语言上下文不可信</b>。</li>
+    <li><b>权限分级：</b>L0 仅解释 → L1 只读诊断 → L2 沙箱实验 → L3 预批准参数有限 canary → L4 双人审批执行拓扑/权重/代码变更。凭证必须短时、任务绑定、最小权限。</li>
+    <li><b>Agent 无权修改：</b>验证器、指标定义、基线、审批策略、审计日志。生产网络 egress allowlist；构建环境无生产 secret；制品以 digest 部署并生成 SBOM；紧急 kill switch、最大 GPU/费用预算、最大流量比例、最大并发变更数都由 <b>Agent 外部</b>执行。</li>
+  </ul>
+
+  <h3>6.7 成熟度四级与落地路线</h3>
+  <table>
+    <tr><th>等级</th><th>内容</th><th>状态</th></tr>
+    <tr><td><b>可用</b></td><td>测量与建议：自动归因、配置 lint、离线 trace replay、容量情景分析、生成实验计划</td><td>风险低、易审计，现在就做</td></tr>
+    <tr><td><b>条件可用</b></td><td>受限自动调参：固定引擎版本 + 参数白名单内，AutoTuneBench 式协议做离线/影子优化，自动 canary 与回滚</td><td>可试点</td></tr>
+    <tr><td><b>研究前沿</b></td><td>代码与策略生成（VibeServe、RoofLang、Simthesizer、Autopoiesis）</td><td>需沙箱、形式/属性验证与人工批准</td></tr>
+    <tr><td><b>尚未成熟</b></td><td>统一全自治：跨引擎、跨云跨 GPU、同时管理性能/质量/安全/成本/事故的无人值守系统</td><td>尚无足够长期生产证据</td></tr>
+  </table>
+  <p><b>务实路线四步：</b>① 统一 telemetry schema 与实验账本 → ② 只读诊断 Agent → ③ 开放测试集群与参数白名单 → ④ 小流量在线动作。度量用 MTTR、错误预算消耗、错误诊断率、回滚成功率、"单位有效收益所需实验成本"，<b>而不是"Agent 对话是否像专家"</b>。</p>
+  <blockquote><p><b>三类基础设施（本篇核心论点）：</b>① 可验证的世界模型（RoofLang/Simthesizer）；② 可信的测量制度（AutoTuneBench/InferenceBench）；③ 可约束的执行控制面（引擎 adapter、canary、rollback、RBAC）。VibeSys 式专用系统生成与 Autopoiesis 式在线演化只有嵌入这三层，才可能从精彩 demo 走向可靠运维。终态判断：<b>"Agent 驾驶、人类监督、确定性护栏兜底"，而非删除 SRE 值班表。</b></p></blockquote>
+</section>
+
+<section class="card" id="s7">
+  <h2 class="sec">7. 第六篇：《评测、验证与生成门禁：如何证明 Agent 优化真的有效》（支柱）</h2>
+  <p class="lede">核心命题：<b>"跑出一个更快数字"不等于优化成立。</b>错误的 TF32 设置会制造弱基线；公开 shape 无法泛化到内部 shape；单次测速无法区分信号与噪声；有 paper、有 dataset、有 timing 但没消除混淆变量，依然可能"假优化"。信任 = 流程 × 证据。</p>
+
+  <h3>7.1 四级基线体系</h3>
+  <table>
+    <tr><th>基线类别</th><th>含义</th><th>要求</th></tr>
+    <tr><td><b>弱基线</b> weak</td><td>手写朴素实现 / 供应商默认配置</td><td>必须替换，避免虚高加速比</td></tr>
+    <tr><td><b>强基线</b> strong</td><td>cuBLAS/cuDNN/cuBLASLt、CUTLASS、Triton autotune、TVM、vendor 库（CANN 等）、已发表方法最优配置；部署形态对齐（GPTQ vs GGUF 精度对齐、agent 优化图 vs 原图）</td><td>作为对照上限</td></tr>
+    <tr><td><b>生产基线</b> production</td><td>与线上真实负载一致（internal shapes、真实 batch 分布、真实 KV 压力）</td><td>最终验收标准</td></tr>
+    <tr><td><b>未调参基线</b> untuned</td><td>不改算法只调环境变量/编译选项/权重布局</td><td>隔离环境收益与算法收益</td></tr>
+  </table>
+  <p><b>先决条件（版本与温度）：</b>锁定软件版本（CUDA/cuDNN/PyTorch、编译选项 AVX2/AVX512/TF32）、硬件（GPU 型号、MIG、时钟频率/功耗墙/散热）、随机性（种子、dropout、GEMM 算法选择）、竞争负载（GPU 利用率、SM occupancy、NCCL 通信与其他 kernel 抢占）。<b>稳定性定义：相同 shape 与精度下相对固定基线的加速比波动 &lt; 5%。</b></p>
+
+  <h3>7.2 测量方法三要素与统计纪律</h3>
+  <ul>
+    <li><b>预热 warmup</b>（排除 JIT 编译、缓存填充瞬态）；<b>缓存控制</b>（L2 cache flush，固定 buffer 状态）；<b>同步</b>（<code>cudaDeviceSynchronize</code> / <code>torch.cuda.synchronize()</code>——异步 launch 后必须同步再计时）。以 Triton <code>do_bench</code> 为范式。</li>
+    <li>统计：多次运行取<b>中位数</b>或截尾均值（trim 0.2）；报告 bootstrap 95% CI；Tukey 1.5×IQR 剔除异常值；报告 GPU/驱动/CUDA/PyTorch/时钟环境。</li>
+    <li>公平性：同一 GPU 同一时隙或分时复用、同一编译选项、同一测量脚本、同一 shape 集合。</li>
+  </ul>
+  <h4>有效性检验：从单点数字到统计证据</h4>
+  <pre class="code"><code>reps = 100
+for i in range(reps):
+    t_new = time(f_new)   # 新实现
+    t_old = time(f_old)   # 基线
+# 配对样本：同一迭代内 new 与 old 背靠背，减少环境漂移
+statistic, p_value = wilcoxon(samples_new, samples_old)   # 非参数成对检验
+if p_value &lt; 0.05: print("显著快于基线")
+speedup = median(t_old) / median(t_new)                   # 效应量
+report(speedup, ci_95)</code></pre>
+  <p>两类错误：Type I（把无效优化判为有效）/ Type II（把有效判为无效）。单次测量 → 单点数字，无法区分信号与噪声；正确做法：多次运行 → 分布。</p>
+
+  <h3>7.3 生成门禁：数值正确性与精度守恒</h3>
+  <ul>
+    <li>正确性判定：<code>torch.equal</code>（逐位一致，理想）或 allclose 容差判定，公式 \( |a-b| \leq \mathrm{atol} + \mathrm{rtol}\cdot|b| \)。</li>
+    <li>容差参考：fp16 rtol=1e-3 / atol=1e-5；bf16 rtol=3e-2 / atol=2e-3；tf32 rtol=1e-2 / atol=1e-2。</li>
+    <li>量化类验收：perplexity 回归（ΔPPL ≤ 0.1 或 ≤1% 相对）、下游任务 accuracy 回归（MMLU、GSM8K 等）、KV cache 量化用同文本对比（ROUGE-L / 编辑距离）、权重与激活量化用单层 MSE。</li>
+    <li><b>合成基线警示：合成数据上自测自评的加速比，不能直接外推到真实负载。</b></li>
+  </ul>
+
+  <h3>7.4 稳定性、泛化性与端到端</h3>
+  <figure>
+    <pre class="mermaid">
+flowchart TD
+    L1["L1 微基准 micro-benchmark<br/>单个 kernel 延迟"] --> L2["L2 引擎基准 engine benchmark<br/>vLLM/SGLang 容器化吞吐与延迟"]
+    L2 --> L3["L3 服务级 service-level<br/>在线 A/B 测试、灰度发布"]
+    style L1 fill:#eaf1fa,stroke:#2c5fa8
+    style L2 fill:#d5e2f4,stroke:#2c5fa8
+    style L3 fill:#c9dbf2,stroke:#2c5fa8
+    </pre>
+    <figcaption>图 7-1 · 端到端验证三层金字塔（服务级指标：TTFT、TPOT/ITL、QPS/并发、P50/P99、显存——KV cache 峰值/权重/碎片率、单 token 成本）</figcaption>
+  </figure>
+  <p><b>shape 矩阵：</b>公开 shape（HuggingFace、Triton benchmark suite）× 内部真实 shape（业务真实 batch/seq 组合）的 B×S×H 全矩阵测试，要求无形状退化（原文示例矩阵全部 speedup ≥ 1.5×，如 8×4096×4096：3.2→2.1ms=1.52×；32×4096×4096：6.8→4.1ms=1.66×；16×8192×4096：8.9→5.6ms=1.59×）。</p>
+
+  <h3>7.5 报告规范：最小可复现 checklist（8 项）</h3>
+  <ol>
+    <li>环境锁定：nvidia-smi、CUDA、驱动、PyTorch 版本日志</li>
+    <li>基线说明：类型（弱/强/生产/未调参）+ 配置细节</li>
+    <li>测量规范：预热、缓存控制、同步、统计方法</li>
+    <li>正确性验证：allclose 容差 + 精度回归结果</li>
+    <li>稳定性：多轮 shape 矩阵重复实验</li>
+    <li>泛化性：公开 shape → 内部 shape 外推验证</li>
+    <li>端到端：L1→L2→L3 全链路指标</li>
+    <li>结论与限制：适用边界、失败案例（结果报告须含失败/退化案例与 speedup 区间而非单点）</li>
+  </ol>
+  <blockquote><p><b>总结（原文）：</b>优化声明 = 基线 × 测量 × 统计 × 正确性 × 端到端，五项俱到才能宣布"有效"。单点数字会骗人，分布与矩阵不会。<b>谁能证明，谁就能复现；谁能复现，谁就能信任。</b>对 Agent 的根本启示：外部奖励（"数字变快"）必须约束在可信评测流程之内，否则 Agent 会在有缺陷的评测中"合法地"学到假优化。</p></blockquote>
+</section>
+
+<section class="card" id="s8">
+  <h2 class="sec">8. 跨系列关键数字总表</h2>
+  <p class="tbl-note">所有数字保留原文口径；"核验"列为本报告通过 arXiv API / 官方博客等公开来源独立复核的结果。</p>
+  <table>
+    <tr><th>工作 / 主题</th><th>关键数字</th><th>口径（硬件/模型/基线/条件）</th><th>核验</th></tr>
+    <tr><td>Hazy Megakernels（Llama-1B）</td><td>H100 前向 &lt;1ms；78% 显存带宽；vs vLLM ≈2.5×、vs SGLang &gt;1.5×；B200 &lt;680μs、vs vLLM &gt;3.5×</td><td>1.24B、BF16、batch=1、32 prompt + 128 生成、无投机解码</td><td><span class="tag green">官方博客</span></td></tr>
+    <tr><td>ThunderMLA</td><td>vs FlashMLA：+23.6% / +19.0% / +36.3% / +7.6%</td><td>H100 四组公开测试；schedule 生成 1–2ms 可摊销</td><td><span class="tag green">官方博客</span></td></tr>
+    <tr><td>Megakernel（D 篇实验）</td><td>1.47–1.51×（4 组模型/卡数组合，见 3.6 节表）</td><td>H100，vs cuBLAS+CUDA Graph，batch=1</td><td><span class="tag red">未核验</span>（所印 arXiv:2507.08933 与公开记录不符）</td></tr>
+    <tr><td>AutoMegaKernel</td><td>7,160 对抗 Schedule 零错误接受；360 真实 lowering；自动研究环 1.25–1.72×；W8A16 vs cuBLAS BF16：L4 1.33× / L40S 1.25–1.27× / A10G 1.08× / RTX5090 1.19–1.23×（A100/H100 落后）</td><td>Batch-1 decode position 0；最大 checkpoint TinyLlama-1.1B；精度不对称</td><td><span class="tag green">arXiv:2606.09682</span></td></tr>
+    <tr><td>ForgeMegakernel</td><td>MBU 50.5–85.9%；vs SGLang 0.5.18 几何平均 1.21×；vs Megakernel Compiler 1.54×；GSM8K ragged prompt 14 实现均更快且精度相当</td><td>8 模型家族 0.6B–13B、14 个 Decode 操作、相同配置</td><td><span class="tag green">arXiv:2609.12379</span></td></tr>
+    <tr><td>KernelBench（2025 初始）</td><td>前沿模型开箱即用达 PyTorch 基线速度的案例 &lt;20%</td><td>250 个 PyTorch 算子任务，fast_p 口径</td><td><span class="tag green">arXiv:2502.10517</span></td></tr>
+    <tr><td>StitchCUDA</td><td>端到端任务 ≈100% 成功率；vs 多 Agent 基线 1.72×、vs RL 基线 2.73×</td><td>KernelBench 端到端任务设定</td><td><span class="tag green">arXiv:2603.02637</span></td></tr>
+    <tr><td>LLM4LLM</td><td>10 workload 端到端几何平均 3.91×（A100）/ 6.98×（H100）；KernelBench L2 最高 2.745×</td><td>论文选定脚本、模型与基线</td><td><span class="tag green">arXiv:2608.21836</span></td></tr>
+    <tr><td>FlashVector</td><td>Model Server 最高 2× 吞吐 / 1.98× 延迟；Feature Store 最高 1.6× 吞吐</td><td>Unity Vector 广告平台，各组件最高值不可相乘</td><td><span class="tag green">arXiv:2609.17391</span></td></tr>
+    <tr><td>Autellix</td><td>相同延迟下程序吞吐 4–15× vs vLLM 等</td><td>多模型 agentic workload；NSDI'26</td><td><span class="tag green">arXiv:2502.13965</span></td></tr>
+    <tr><td>AlphaEvolve</td><td>Gemini 矩阵乘 kernel +23%（训练时间 −1%）；FlashAttention 最高 +32.5%；数据中心回收 ~0.7% 算力</td><td>Google 内部基础设施</td><td><span class="tag green">DeepMind 官方</span></td></tr>
+    <tr><td>RoofLang</td><td>DeepSeek V4 系列 3.5–39.5× 峰值 decode 潜力（建模）；B300 上 V4 Pro 吞吐+交互性 +6.23%–50.1%</td><td>指定模型与峰值 decode 建模；架构搜索非实网加速</td><td><span class="tag green">arXiv:2609.12551</span></td></tr>
+    <tr><td>Simthesizer</td><td>吞吐误差 2.51%（既有模拟器 6.03%）；模拟速度 vs LLMServingSim2.0 / Vidur 最高 284.96× / 23.19×</td><td>同一 coding agent/harness</td><td><span class="tag green">arXiv:2608.24650</span></td></tr>
+    <tr><td>Autopoiesis</td><td>平均 34%、最高 53% 改善</td><td>多种动态 workload vs 所选 SOTA serving</td><td><span class="tag green">arXiv:2604.07144</span></td></tr>
+    <tr><td>InferenceBench</td><td>15 agent 配置：最高 8.08×（vs naive PyTorch）、4.05×（vs 默认 vLLM）；仍低于简单超参搜索 11.53×</td><td>H100、2 小时预算</td><td><span class="tag green">arXiv:2607.20468</span></td></tr>
+    <tr><td>AutoTuneBench</td><td>同一 kernel 对 naive 10.6× vs honest 2.03×；跨机 1.174× vs 1.0049×；KB L1 仅 51% 接纳、中位加速 1.0001×；619 次调用</td><td>冻结协议、CV≤5%</td><td><span class="tag green">arXiv:2609.18123</span></td></tr>
+    <tr><td>AgentSysBench</td><td>5/10 应用非 LLM 组件主导；sandbox 28GB；任务延迟差 32×；task-aware −29~40% 延迟；placement 4.5×；状态卸载 4.6×；缓存 −35.2% 调用/−19.3% 延迟</td><td>10 个 agentic 应用受控部署 + 生产 trace</td><td><span class="tag green">arXiv:2608.15127</span></td></tr>
+    <tr><td>Argus</td><td>AlphaEvolve 平均加速 5.4%→8.9%；TinyLlama 解码 1.65 vs 4.92 ms/token</td><td>44 个持久化 GEMM/attention 配置中改进 39 项</td><td><span class="tag green">arXiv:2609.12299</span></td></tr>
+    <tr><td>通用工程数字（C 篇汇编）</td><td>torch.compile +5–20%；P/D 分离 2–3×；continuous batching 2–4×；speculative 2–3%；DeepGEMM FP8 ~1350 TFLOPs/s；TP=2/4 通信占比 30–40%；CUDA Graphs decode launch 开销 −80%</td><td>各自论文/官方口径，不可横向比较</td><td><span class="tag orange">部分核验</span></td></tr>
+  </table>
+</section>
+<section class="card" id="s9">
+  <h2 class="sec">9. 外部交叉验证与延伸研究（本次广泛检索）</h2>
+  <p>为验证系列内容的真实性并补充全景之外的进展，本报告对系列引用的 20 余项工作逐一做了公开来源核验（arXiv API、官方博客、GitHub），并对 Megakernel 方向做了延伸检索。</p>
+
+  <h3>9.1 核验结论总览</h3>
+  <table>
+    <tr><th>核验对象</th><th>方式</th><th>结论</th></tr>
+    <tr><td>12 个关键 arXiv 编号（Simthesizer / AutoTuneBench / InferenceBench / AgentSysBench / AutoMegaKernel / ForgeMegakernel / LLM4LLM / FlashVector / Argus / StitchCUDA / SparseDitto / Ada-MK）</td><td>arXiv API 批量查询</td><td><span class="tag green">全部存在，标题、日期、关键数字与原文吻合</span>——系列引用的"硬数字"基本可信</td></tr>
+    <tr><td>Autellix、RoofLang、VibeServe、Autopoiesis、KernelBench</td><td>arXiv 摘要页</td><td><span class="tag green">存在且数字吻合</span>（Autellix：Berkeley/Google 11 人作者，程序级调度；VibeServe：UW SyFi 组）</td></tr>
+    <tr><td>Hazy Research Megakernels / ThunderMLA</td><td>官方博客全文</td><td><span class="tag green">吻合</span>，并补充了气泡三来源、B200 分解等一手细节（见 3.1 节）</td></tr>
+    <tr><td>AlphaEvolve</td><td>DeepMind 官方页</td><td><span class="tag green">吻合</span>：4×4 复数矩阵乘 23%（V100，超 cuBLAS）；FlashAttention 类 kernel 平均快 32%、Gemini 训练省 ~1%；Borg 调度回收 0.7% 算力</td></tr>
+    <tr><td>D 篇实验表（Llama-3.1-8B 等 4 组）与 TACO/Taplink 机制名</td><td>arXiv 检索 + 全网检索</td><td><span class="tag red">未能核验</span>：幻灯片所印 arXiv:2507.08933 实为一篇凝聚态物理论文（编号错印）；"Taplink"未检索到任何公开 GPU 文献（与商业工具 taplink.cc 重名）。机制描述本身自洽（依赖计数 + work stealing 与 Henson 传统一致），但采信需回到原始出处</td></tr>
+    <tr><td>C 篇"Cello 6.27× vs HumanExpert"、"Kevin-20B"</td><td>全网检索</td><td><span class="tag red">未能核验</span>：检索不到对应公开论文（可能为极新或内部工作），引用时需标注不确定</td></tr>
+    <tr><td>D 篇 arXiv:2507.08933</td><td>arXiv API</td><td><span class="tag red">编号错印</span>：该编号实际对应物理学论文，非 Megakernel 文献</td></tr>
+  </table>
+
+  <h3>9.2 全景之外：2026 年 Megakernel 研究浪潮（延伸检索发现）</h3>
+  <p>以 "Megakernel" 为题名的 arXiv 检索显示，<b>2026 年 4–9 月出现了一批系列原文未收录的后续工作</b>，说明该方向已从 Hazy Research 的单点探索扩散为活跃研究领域：</p>
+  <table>
+    <tr><th>编号</th><th>工作</th><th>要点</th></tr>
+    <tr><td>2609.36070</td><td><b>Mixture-of-Kittens</b>（Hazy/Stanford，2026-09-28）</td><td>面向 NVL72 的 MoE Megakernel——megakernel 从单卡 decode 扩展到机架级 MoE</td></tr>
+    <tr><td>2609.21483</td><td>Weave（2026-09-18）</td><td>MoE Megakernel 内的细粒度动态 SM 调度，实现计算-通信重叠</td></tr>
+    <tr><td>2604.13327</td><td>Event Tensor（CMU，MLSys'26）</td><td>动态 Megakernel 的统一编译抽象，把 tiled-task 依赖编码为事件张量</td></tr>
+    <tr><td>2604.19241</td><td>UniEP（清华/华为等）</td><td>面向 LLM 训练的统一 Expert-Parallel MoE Megakernel——megakernel 开始进入训练侧</td></tr>
+    <tr><td>2604.15379</td><td>Fleet（AMD）</td><td>多 Die GPU 上的分层任务抽象 Megakernel——非 NVIDIA 硬件跟进</td></tr>
+    <tr><td>2605.00686</td><td>Eliminating Hidden Serialization（2026-05）</td><td>多机 Megakernel 通信中的隐藏串行化消除</td></tr>
+    <tr><td>2604.26039</td><td>RaMP（2026-04）</td><td>运行时感知的 MoE Megakernel 多态</td></tr>
+    <tr><td>2605.11581</td><td>Ada-MK（2026-05）</td><td>DAG 自动搜索的自适应 Megakernel：共享内存峰值 −50%，L20 上 vs TensorRT-LLM 单批吞吐 +23.6%、vs vLLM +50.2%；启动开销占推理时间 14.6%</td></tr>
+    <tr><td>2608.05033</td><td>SparseDitto（2026-08）</td><td>GPU 上 agentic 稀疏编译框架：vs cuSPARSE 几何平均 2.68×（RTX PRO 6000）/ 2.79×（H200），最高 146.61×</td></tr>
+  </table>
+  <p class="tbl-note">另有生态侧进展：Zhihao Jia 组的 MPK 编译路线（Medium 长文）、Luminal 的 MPE Compiler（几十行 Python 生成 megakernel，~1.7×）、CMU 15-779 课程已将 Mega Kernel 列入教案——工具链与教育生态同步成型。</p>
+
+  <h3>9.3 对"引用可信度"的分层结论</h3>
+  <ol>
+    <li><b>系统层与基准层引用（A 篇、E 篇）：高度可信。</b>所有关键编号与数字均与公开记录吻合，且原文对数字口径的限定（"最高值不可相乘""论文设定内相对结果"）经核验属实。</li>
+    <li><b>方法层引用（B 篇涉及的 KernelBench/TritonBench/CUDA Agent/Dr. Kernel/KernelGYM）：编号真实存在</b>（KernelBench arXiv:2502.10517、TritonBench arXiv:2502.14752、CUDA Agent arXiv:2602.24286、Dr. Kernel/KernelGYM arXiv:2602.05885，均在 B 篇参考资料页可查）。</li>
+    <li><b>D 篇实验表与两个机制名：存在出处瑕疵</b>（arXiv 编号错印、机制名检索不到），不影响其作为"机制教程"的价值，但<b>引用其数字时应标注"未独立核验"</b>。</li>
+    <li><b>一个方法论提醒：</b>本报告制作过程中，对图片型 PDF 的首轮视觉提取曾出现大面积幻觉内容（后被双通道 OCR 复核发现并全部重做）——这恰好实证了 F 篇的核心论点：<b>没有独立 Oracle 与交叉验证的"提取/生成结果"不可直接采信</b>。评测门禁不仅适用于 kernel，也适用于一切生成式工作流。</li>
+  </ol>
+</section>
+
+<section class="card" id="s10">
+  <h2 class="sec">10. 综合洞察与趋势判断</h2>
+  <p>以下判断综合系列原文（含其三条推断）与本报告的外部核验证据：</p>
+  <ol class="lede">
+    <li><b>优化单位扩大的本质是"把系统软件搬进设备、把 Agent 搬进系统软件"。</b>Megakernel 把 Host/Runtime 搬进 GPU；Agent for X 把工程师的判断搬进闭环。两条线在"设备端任务图搜索"处汇合——这正是 2026 年新工作（Event Tensor、Weave、Ada-MK）密集涌现的位置。</li>
+    <li><b>低时延是 megakernel 路线的第一战场，也是当前商业价值最清晰的位置。</b>所有实测高收益都出现在 batch=1 / 小 batch / decode / 交互式场景（H100 78% 带宽、1.5× 级加速、AGI 交互时延直接受益）；吞吐型大 batch 场景收益递减。对低时延业务的启示：<b>优先级排序应该是 decode 路径 &gt; prefill &gt; 吞吐</b>。</li>
+    <li><b>Agent 的能力边界已经从"生成代码"移到"定义与守住验证制度"。</b>单 Kernel Agent 搜索"怎样计算一个函数"；Megakernel Agent 搜索"整张图在设备上如何生存和推进"（工作分配、依赖协议、存储生命周期、可观测性、故障隔离）。<b>下一代优化 Agent 搜索的对象是"执行制度"，而不是代码文本。</b></li>
+    <li><b>"故意不完备"的 IR 是让 Agent 安全探索的关键设计。</b>AutoMegaKernel 把 Agent 的编辑面限制在枚举旋钮（tiling、fusion_grouping、sm_assignment、pipelining_depth、page_allocation、线程数、共享内存预算），换取可枚举、可验证、可归因的搜索空间——Agent 可以探索性能策略，却不能创造未声明的通信边。这是"约束先于生成"范式最有说服力的实证（7,160 对抗 Schedule 零错误接受）。</li>
+    <li><b>验证正在分层化、契约化。</b>从"最终输出 allclose + 单次计时"扩展为：静态并发性质（死锁/race 图检查）→ 中间状态 Oracle → 执行轨迹等价 → 语义 Region 归因（Argus）→ 真实 serving 回归。任何单一验证器都无法覆盖全部故障层；可信验证是一组分层契约，而非一个工具。</li>
+    <li><b>测量可信度是被低估的主战场。</b>InferenceBench（Agent 输给简单超参搜索）与 AutoTuneBench（10.6× vs 2.03× 的基线把戏）共同指向：当前最大缺口不是 Agent 的知识，而是<b>实验纪律、多样化搜索、best-so-far 管理与反作弊测量协议</b>。这决定了 agent 优化能否产出可信收益。</li>
+    <li><b>目标函数正在从"快"变成"约束下的多目标 Pareto"。</b>延迟/显存/能耗/编译成本/泛化范围/交互性（RoofLang 的吞吐×交互性双目标）；decode 必须分短/长上下文、小/ragged batch、kernel-only/step-no-sampling/e2e 分别报告——否则 Agent 只优化最有利的一个 cell。</li>
+    <li><b>"用 Agent 优化系统"与"为 Agent 优化系统"双向汇流。</b>Autellix（程序级调度 4–15×）与 AgentSysBench（5/10 应用非 LLM 主导、工具结果缓存省 19.3% 搜索延迟）说明：agentic workload 改变了推理系统的正确设计目标——program completion time、状态卸载、工具缓存、DAG 感知调度。低时延系统的下一轮收益很可能来自这里，而不只来自 kernel。</li>
+    <li><b>生产终态是"Agent 驾驶、人类监督、确定性护栏兜底"。</b>三件基础设施决定落地速度：可验证的世界模型、可信的测量制度、可约束的执行控制面。在线自演化（Autopoiesis 式）必须嵌入不可变 artifact + 独立 safety controller + 慢速审批轨，否则不可上线。</li>
+    <li><b>失败处理能力（SUPPORTED / REJECTED / ABSTAIN / FALLBACK）是可信 Agent 的标志。</b>保留退化路径（回退 CUDA Graph + 成熟算子库）比强行进入 Megakernel 更重要；可信 Agent 不是"永远生成成功"，而是能为每个结论留下可重放证据。</li>
+  </ol>
+</section>
+
+<section class="card" id="s11">
+  <h2 class="sec">11. 风险清单与反模式</h2>
+  <div class="grid2">
+    <div class="kv">
+      <h4 style="margin-top:0">技术风险</h4>
+      <ul style="margin:4px 0;padding-left:20px">
+        <li><b>数字外推陷阱：</b>把 batch=1 的 2.5× 宣传为通用加速；跨组件"最高值"相乘；跨论文排名。</li>
+        <li><b>弱基线假优化：</b>TF32 设置错误、naive PyTorch 基线、合成数据自测自评。</li>
+        <li><b>reward hacking：</b>Agent 复制基线、硬编码输出、少算部分计算来"变快"——安全检查与 Oracle 必须在 Agent 不可写的边界之外；失败也要进 ledger，避免幸存者偏差。</li>
+        <li><b>正确性盲区：</b>只验最终输出不验执行轨迹——罕见调度下的 race/deadlock 会在生产爆发（megakernel 最昂贵的错误是"永不返回"）。</li>
+        <li><b>经验池过拟合：</b>旧经验在新硬件/新版本失效。</li>
+      </ul>
+    </div>
+    <div class="kv">
+      <h4 style="margin-top:0">工程与管理风险</h4>
+      <ul style="margin:4px 0;padding-left:20px">
+        <li><b>寄存器压力/编译时间/调试困难</b>（megakernel 三大代价）被低估。</li>
+        <li><b>供应链风险：</b>Agent 生成代码 = 不可信制品（SAST、依赖锁定、SBOM、沙箱构建缺一不可）。</li>
+        <li><b>prompt injection 经由日志/模型卡/issue 进入运维 Agent 上下文。</b></li>
+        <li><b>回滚设计缺位：</b>KV 格式/并行拓扑/engine 变更无法原地撤销，需双集群切流与 warm capacity。</li>
+        <li><b>把"对话像专家"当验收标准</b>，而不是 MTTR/回滚成功率/单位收益实验成本。</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<section class="card" id="s12">
+  <h2 class="sec">12. 行动建议（面向低时延推理团队）</h2>
+  <p>结合本系列的证据与"低时延"业务方向，按投入产出排序：</p>
+  <ol>
+    <li><b>先建测量制度，再谈 Agent 优化。</b>落地 F 篇框架：四级基线（弱/强/生产/未调参）、warmup+L2 flush+同步三要素、100 次配对采样 + Wilcoxon 检验 + speedup 中位数与 95% CI、shape 矩阵（含内部真实 shape）。这是所有后续工作的地基，且能立刻消除现有评测里的水分。</li>
+    <li><b>把 batch=1 decode 路径列为 megakernel/融合优化的第一目标。</b>评估 SGLang/vLLM 当前 decode step 的 kernel 数与 launch 开销占比（用 Nsight Systems 拉时间轴），对照 1–2 μs gap × 上百 kernel 的量化模型，确定收益上限；关注 Hazy Megakernels、ForgeMegakernel（已集成 SGLang）、Ada-MK 等开源进展。</li>
+    <li><b>用"受约束 IR + 独立 Oracle"的模式引入 Agent。</b>不要让 Agent 直接改任意代码：把优化面收敛到枚举旋钮（tile/并行度/量化档/调度参数），静态检查前置（拒绝死锁/race/非法配置），数值门（atol/rtol + PPL/任务回归）一票否决，四道门（build→correctness→benchmark→serving）全部过后才进灰度；所有候选可回退。</li>
+    <li><b>对 agentic 应用做一次"非 LLM 瓶颈体检"。</b>参照 AgentSysBench 方法拉 request-level critical path：统计工具调用等待、sandbox 状态、tokenization、排队占比；优先做工具结果缓存、状态卸载、P/D 分离——这些收益（2–3× 级）可能比改 kernel 更快到手。</li>
+    <li><b>建立实验账本与经验池。</b>每条实验记录模型/checkpoint 哈希、GPU/驱动/编译器、IR 与二进制哈希、种子、shape 分布、精度契约、验证结果、计时范围、原始 profile、基线版本与 diff；失败候选连同原因入库。这是 Agent 跨回合学习的唯一可靠载体，也是防止"区分不了代码变快/输入变简单/少算/机器漂移"的唯一手段。</li>
+    <li><b>权限分级先行：</b>从 L0 只读诊断 Agent 起步（自动归因、配置 lint、trace replay、容量三态分析），验证器/指标/基线/审计日志永远放在 Agent 可写边界之外；kill switch 与预算由外部执行。</li>
+  </ol>
+</section>
+
+<section class="card" id="s13">
+  <h2 class="sec">13. 参考资料</h2>
+  <h3>13.1 原始材料（本报告的总结对象）</h3>
+  <ul>
+    <li>Jack DeepPrompting《AI Infra 自优化：从 Megakernel 到推理》系列六篇（微信公众号，2026-09-19/09-22），目录内 PDF 共 94 页。</li>
+  </ul>
+  <h3>13.2 系列引用且经本报告核验的工作</h3>
+  <ul>
+    <li>Megakernels（Hazy Research 博客 + GitHub）：<a href="https://hazyresearch.stanford.edu/blog/2025-05-27-no-bubbles">No Bubbles: Compiling LLMs into a MegaKernel</a> · <a href="https://github.com/HazyResearch/Megakernels">github.com/HazyResearch/Megakernels</a></li>
+    <li>ThunderMLA：<a href="https://hazyresearch.stanford.edu/blog/2025-03-04-thundermla">ThunderMLA: FlashMLA, Faster and Fused-er!</a></li>
+    <li>AutoMegaKernel：<a href="https://arxiv.org/abs/2606.09682">arXiv:2606.09682</a> · <a href="https://github.com/RightNow-AI/AutoMegaKernel">GitHub</a></li>
+    <li>ForgeMegakernel：<a href="https://arxiv.org/abs/2609.12379">arXiv:2609.12379</a></li>
+    <li>KernelBench：<a href="https://arxiv.org/abs/2502.10517">arXiv:2502.10517</a> · <a href="https://github.com/ScalingIntelligence/KernelBench">GitHub</a></li>
+    <li>TritonBench：<a href="https://arxiv.org/abs/2502.14752">arXiv:2502.14752</a> · CUDA Agent：<a href="https://arxiv.org/abs/2602.24286">arXiv:2602.24286</a> · Dr. Kernel / KernelGYM：<a href="https://arxiv.org/abs/2602.05885">arXiv:2602.05885</a></li>
+    <li>StitchCUDA：<a href="https://arxiv.org/abs/2603.02637">arXiv:2603.02637</a> · <a href="https://github.com/UMN-APEX-Lab/StitchCUDA">GitHub</a></li>
+    <li>LLM4LLM：<a href="https://arxiv.org/abs/2608.21836">arXiv:2608.21836</a></li>
+    <li>FlashVector：<a href="https://arxiv.org/abs/2609.17391">arXiv:2609.17391</a> · Argus：<a href="https://arxiv.org/abs/2609.12299">arXiv:2609.12299</a> · SparseDitto：<a href="https://arxiv.org/abs/2608.05033">arXiv:2608.05033</a></li>
+    <li>VibeServe / VibeSys：<a href="https://arxiv.org/abs/2605.06068">arXiv:2605.06068</a> · <a href="https://github.com/uw-syfi/vibesys">github.com/uw-syfi/vibesys</a></li>
+    <li>Autopoiesis：<a href="https://arxiv.org/abs/2604.07144">arXiv:2604.07144</a> · RoofLang：<a href="https://arxiv.org/abs/2609.12551">arXiv:2609.12551</a> · Simthesizer：<a href="https://arxiv.org/abs/2608.24650">arXiv:2608.24650</a></li>
+    <li>InferenceBench：<a href="https://arxiv.org/abs/2607.20468">arXiv:2607.20468</a> · AutoTuneBench：<a href="https://arxiv.org/abs/2609.18123">arXiv:2609.18123</a> · AgentSysBench：<a href="https://arxiv.org/abs/2608.15127">arXiv:2608.15127</a></li>
+    <li>Autellix：<a href="https://arxiv.org/abs/2502.13965">arXiv:2502.13965</a> · <a href="https://www.usenix.org/conference/nsdi26/presentation/luo">NSDI'26</a></li>
+    <li>AlphaEvolve：<a href="https://deepmind.google/blog/alphaevolve-a-gemini-powered-coding-agent-for-designing-advanced-algorithms/">DeepMind 官方博客</a></li>
+  </ul>
+  <h3>13.3 延伸检索发现（系列之外）</h3>
+  <ul>
+    <li>Mixture-of-Kittens（MoE Megakernel for NVL72）：<a href="https://arxiv.org/abs/2609.36070">arXiv:2609.36070</a> · Weave（动态 SM 调度）：<a href="https://arxiv.org/abs/2609.21483">arXiv:2609.21483</a> · Event Tensor（MLSys'26）：<a href="https://arxiv.org/abs/2604.13327">arXiv:2604.13327</a></li>
+    <li>UniEP（训练侧 MoE Megakernel）：<a href="https://arxiv.org/abs/2604.19241">arXiv:2604.19241</a> · Fleet（AMD 多 Die）：<a href="https://arxiv.org/abs/2604.15379">arXiv:2604.15379</a> · 多机隐藏串行化：<a href="https://arxiv.org/abs/2605.00686">arXiv:2605.00686</a> · RaMP：<a href="https://arxiv.org/abs/2604.26039">arXiv:2604.26039</a></li>
+    <li>Ada-MK：<a href="https://arxiv.org/abs/2605.11581">arXiv:2605.11581</a> · MPK 编译路线（作者长文）：<a href="https://zhihaojia.medium.com/compiling-llms-into-a-megakernel-a-path-to-low-latency-inference-cf7840913c17">Medium</a> · CMU 15-779 Mega Kernel 讲义：<a href="https://www.cs.cmu.edu/~zhihaoj2/15-779/slides/07-mega-kernel.pdf">PDF</a></li>
+    <li>社区跟踪：<a href="https://news.ycombinator.com/item?id=44321672">Hacker News 讨论（含作者 Q&amp;A）</a> · <a href="https://kernelbench.com">kernelbench.com（agentic kernel 排行）</a></li>
+  </ul>
+  <h3>13.4 原文其余引用（未逐一核验或编号未辨明）</h3>
+  <ul>
+    <li>Mirage（μGraph 多级超级优化器）、ThunderKittens、TT-Metalium、Flash Decoding++、FlashInfer、LADR、Sarathi-Serve、Henson（CMU 2016）、CAKE、Cello、Kevin-20B、PassNet、AFlow、AgentBridge 等——多数为公开知名项目，个别（Cello、Kevin-20B）未能检索到对应论文。</li>
+    <li>引擎文档：vLLM engine args / metrics、SGLang server arguments / model gateway、TensorRT-LLM trtllm-serve 与 performance tuning guide（原文给出官方文档链接）。</li>
+  </ul>
+</section>
+
+<p class="foot">AI Infra 自优化洞察报告 · 2026-09-30 · 基于 6 篇原文档 94 页 + 20 余项公开来源交叉核验<br>数字均保留原口径；<span class="tag green">已核验</span>=本报告独立复核通过，<span class="tag orange">部分核验</span>=部分吻合，<span class="tag red">未能核验</span>=公开来源未找到，采信需谨慎</p>
+
+</div>
+
+<script>
+mermaid.initialize({ startOnLoad: true, theme: "neutral", fontFamily: '"Microsoft YaHei", "PingFang SC", sans-serif', flowchart:{curve:"basis"} });
+window.addEventListener("load", function(){
+  if (window.renderMathInElement) {
+    renderMathInElement(document.body, {
+      delimiters: [{left:"\\(", right:"\\)", display:false}, {left:"$$", right:"$$", display:true}],
+      throwOnError: false
+    });
+  }
+});
+</script>
+</body>
+</html>
