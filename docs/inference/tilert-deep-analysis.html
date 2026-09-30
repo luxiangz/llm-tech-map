@@ -319,7 +319,7 @@ flowchart LR
 <tr><td>FP32</td><td>67 TFLOPS</td><td>157.3 TFLOPS</td><td>150 TFLOPS</td><td>TF32 273 TFLOPS（多档 273/243/212）；FP32 走 Vector 核</td></tr>
 <tr><td>显存容量</td><td>141 GB HBM3e</td><td>288 GB HBM3E</td><td>128 GB</td><td>144 GB（PR 版 128 GB）</td></tr>
 <tr><td>显存带宽</td><td>4.8 TB/s</td><td>8 TB/s</td><td>3.2 TB/s</td><td><b>4 TB/s</b>（PR 版 1.6 TB/s）</td></tr>
-<tr><td>卡间互联（每卡）</td><td>NVLink 900 GB/s</td><td>Infinity Fabric ≈1.071 TB/s（7×153 GB/s，双向）</td><td>灵衢 UB 双向 784 GB/s</td><td><b>灵衢 UB 2.0，对外 IO 峰值 2 TB/s</b>（HiLink 72×112 Gbps，18 个 X4 端口；Scale-up/Scale-out 端口复用，另支持 PCIe 5.0 与 2×400G UBoE）</td></tr>
+<tr><td>卡间互联（每卡）</td><td>NVLink 900 GB/s（双向）</td><td>Infinity Fabric ≈1,071 GB/s（7×153 GB/s，双向）</td><td>灵衢 UB 双向 784 GB/s</td><td><b>灵衢 UB 2.0 ≈ 2,016 GB/s（双向）</b>——换算：HiLink 72 Lane × 112 Gbps ÷ 8 = <b>1,008 GB/s（单向）</b>，全双工 ×2 ≈ 2,016 GB/s，与白皮书"对外 IO 峰值 2 TB/s"吻合（双向口径，由 SerDes 位数换算推断）；18 个 X4 端口，Scale-up/Scale-out 复用，另支持 PCIe 5.0 与 2×400G UBoE。<b>四平台最高</b>：≈A3（784）的 2.6×、MI355X（1,071）的 1.9×、H200（900）的 2.2×</td></tr>
 <tr><td>低精度格式</td><td>FP8</td><td>FP8 / FP6 / FP4</td><td>仅 FP16 / INT8（+FP32）</td><td>原生 MXFP4 / MXFP8 / HiF8 / FP8 / INT8（第三代达芬奇 Cube 核）</td></tr>
 </table>
 <p style="font-size:.9em;color:#57606a">注：950 白皮书算力为"Cube+Vector 总算力"口径且分多档 SKU，表内取最高档；已上市整机 Atlas 650E（950DT×8）官标 12.4 PFLOPS @MXFP4，对应 1,561 TFLOPS/卡 档（<a href="https://www.hiascend.com/hardware/ai-server" target="_blank">hiascend 硬件页</a>），与本表多档口径吻合。H200/MI355X 数值为稀疏口径翻倍的稠密值。</p>
