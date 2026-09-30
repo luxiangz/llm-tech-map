@@ -76,7 +76,7 @@ window.MathJax = {
 <tr><th>项目</th><th>昇腾 910C（A3 世代）</th><th>AMD Instinct MI355X</th><th>来源</th></tr>
 <tr><td>架构 / 制程</td><td>达芬奇架构；制程官方未公开</td><td>CDNA 4；台积电 <b>3nm（计算芯片）+ 6nm（I/O 芯片）</b></td><td class="src">AMD<sup><a href="#ref6">[6]</a></sup></td></tr>
 <tr><td>晶体管 / 核心规模</td><td class="na">官方未公开</td><td>185 亿晶体管；16,384 流处理器 / 256 CU / 1024 矩阵核，峰值引擎时钟 2400 MHz</td><td class="src">AMD<sup><a href="#ref6">[6]</a></sup></td></tr>
-<tr><td>FP16 / BF16（稠密）</td><td>≈ 0.75 PFLOPS <span class="calc">计算：6.0÷8</span>；稀疏官方未标注</td><td><b>2.5 PFLOPS</b>（稀疏 5.0）<span class="win">≈3.3×</span></td><td class="src">华为<sup><a href="#ref1">[1]</a></sup> / AMD<sup><a href="#ref6">[6]</a></sup></td></tr>
+<tr><td>FP16 / BF16（稠密）</td><td>≈ 0.75 PFLOPS <span class="calc">计算：6.0÷8</span> ～ 0.8 PFLOPS（SuperPoD 官方值 $307.2 \div 384 = 800$ TFLOPS<sup><a href="#ref2">[2]</a></sup>；支持文档亦标 ≈800 TFLOPS<sup><a href="#ref14">[14]</a></sup>）；稀疏官方未标注</td><td><b>2.5 PFLOPS</b>（稀疏 5.0）<span class="win">≈3.3×</span></td><td class="src">华为<sup><a href="#ref1">[1]</a><a href="#ref2">[2]</a><a href="#ref14">[14]</a></sup> / AMD<sup><a href="#ref6">[6]</a></sup></td></tr>
 <tr><td>FP8</td><td class="na">官方规格未标注 FP8（无公开数据）</td><td><b>5 PFLOPS 稠密 / 10.1 稀疏</b>（MXFP8 与 OCP-FP8 同值）</td><td class="src">AMD<sup><a href="#ref6">[6]</a></sup></td></tr>
 <tr><td>FP4 / FP6</td><td class="na">无官方数据</td><td><b>10.1 PFLOPS</b>（MXFP4 与 MXFP6 同值）</td><td class="src">AMD<sup><a href="#ref6">[6]</a></sup></td></tr>
 <tr><td>INT8</td><td>≈ 1.5 POPS <span class="calc">计算：12.0÷8</span></td><td>5 POPS 稠密 / 10.1 稀疏 <span class="win">≈3.3×</span></td><td class="src">华为<sup><a href="#ref1">[1]</a></sup> / AMD<sup><a href="#ref6">[6]</a></sup></td></tr>
@@ -88,6 +88,20 @@ window.MathJax = {
 <tr><td>主机接口</td><td>无 PCIe 直连披露；对主机走系统总线，卡间走灵衢 UB</td><td>PCIe 5.0 ×16</td><td class="src">AMD<sup><a href="#ref6">[6]</a></sup> / 华为<sup><a href="#ref1">[1]</a></sup></td></tr>
 </table>
 <div class="note">注意：AMD 官方页的 FP16 峰值是 <b>稠密 2.5 / 稀疏 5.0 PFLOPS</b>（MI355X 相比 MI325X 精简了 CU 数量、提高了时钟，FP16 峰值与上代持平；其增量主要在 FP8/FP6/FP4 与 288GB 显存）。网络上常见的"MI355X 5.3 PFLOPS FP16"是把稀疏峰值/上代口径混用了，本文一律按 AMD 官方页为准。</div>
+
+<h3>2.1 910C 相对 910B 的代际提升（华为支持文档口径）</h3>
+<p>华为支持网站《Atlas 800I A3 超节点用户指南》（文档号 EDOC1100461231）给出了 910B → 910C 的官方代际对比<sup class="src"><a href="#ref14">[14]</a></sup>。该页为动态渲染无法程序化抓取，下表数字系使用者在官方页面人工摘录（链接可自行核验）；每一行都附本文其他官方数据的交叉验证结果：</p>
+<table>
+<tr><th>指标</th><th>910C（指南口径）</th><th>相对 910B</th><th>交叉验证</th></tr>
+<tr><td>FP16 算力</td><td><b>≈ 800 TFLOPS</b></td><td>2×</td><td class="src">与 SuperPoD $307.2 \div 384 = 800$ 一致<sup><a href="#ref2">[2]</a></sup>；产品页 $6.0 \div 8 \approx 752$ 为另一档配置<sup><a href="#ref1">[1]</a></sup></td></tr>
+<tr><td>显存带宽</td><td><b>3.2 TB/s</b></td><td>摘录为 8×（<b>存疑</b>：业界 910B≈1.6 TB/s 对应 2×；910B 官方数值从未公开，若指南原文为 8× 则系首个官方口径，建议人工复核）</td><td class="src">与产品页一致<sup><a href="#ref1">[1]</a><a href="#ref2">[2]</a></sup></td></tr>
+<tr><td>HBM 容量</td><td><b>128 GB</b></td><td>2×（910B = 64GB，与业界口径一致）</td><td class="src">与产品页一致<sup><a href="#ref1">[1]</a></sup></td></tr>
+<tr><td>H2D 带宽</td><td><b>350 GB/s</b></td><td>5×（910B = 70 GB/s）</td><td class="src">官方首次披露，暂无交叉源</td></tr>
+<tr><td>D2D 带宽</td><td><b>392 GB/s（单向）</b></td><td>7×（按 910B = 56 GB/s，即单 HCCS 链路单向口径）</td><td class="src">与 CloudMatrix 官方描述"每颗 910C 提供超过 392 GB/s 单向带宽"一致<sup><a href="#ref15">[15]</a></sup>；双向 784 GB/s 与产品页一致<sup><a href="#ref1">[1]</a></sup></td></tr>
+<tr><td>互联带宽</td><td><b>2 TB/s</b></td><td>2.5×（910B ≈ 0.8 TB/s，即双向 784 口径）</td><td class="src"><b>口径待核</b>：产品页 D2D 双向为 784 GB/s<sup><a href="#ref1">[1]</a></sup>，2 TB/s 或为模组/芯片总互联口径（指南未给定义），两值并存</td></tr>
+<tr><td>算力/带宽比</td><td><b>≈ 235 FLOPS/Byte</b>（910B ≈ 1057）</td><td>降至约 1/4.5，大幅缓解访存墙</td><td class="src">$235 = 752 \div 3.2$ 可复算 ✓（即按 752 TFLOPS 档）；1057 无法用公开 910B 口径复算，以指南为准</td></tr>
+</table>
+<div class="note"><b>两点如实说明</b>：① 910B 的官方规格华为从未公开，业界通用值（FP16 ≈376–400 TFLOPS、64GB、≈1.6 TB/s、HCCS 392 GB/s 单向）均出自第三方拆解；本表"910B 推算值"按指南倍数反推。② "显存带宽 8×"与"互联带宽 2 TB/s"两处与本文已核实的官方口径（2×、784 GB/s 双向）存在张力，可能是摘录笔误或指南采用不同统计口径，已在表中标注，建议打开链接<sup class="src"><a href="#ref14">[14]</a></sup>人工复核原文。</div>
 
 <h2>三、8 卡节点全量对比</h2>
 <p>左列为华为官网 Atlas 800T A3 整机规格<sup class="src"><a href="#ref1">[1]</a></sup>；右列优先取 AMD 官方 8 卡平台数据表<sup class="src"><a href="#ref7">[7]</a></sup>，单卡数据 ×8 聚合处标 <span class="calc">计算</span>。</p>
@@ -239,7 +253,9 @@ xychart-beta
 <li id="ref11">AMD，Hot Chips 2024 官方演讲《AMD MI300X》（"seven bi-directional links @ 128 GB/s" per OAM）：<a href="https://hc2024.hotchips.org/assets/program/conference/day1/23_HC2024.AMD.MI300X.ASmith(MI300X).v1.Final.20240817.pdf">hc2024.hotchips.org → AMD MI300X</a></li>
 <li id="ref12">TileRT 官方博客《Speed as the Next Scaling Law》（GLM-5.1 decode 激活 ≈42 GB/token（FP8/MXFP8 口径）、8×H200 ≈38 TB/s 聚合带宽的 roofline 账）：<a href="https://www.tilert.ai/blog/speed-as-the-next-scaling-law.html">tilert.ai/blog/speed-as-the-next-scaling-law</a></li>
 <li id="ref13">NVIDIA 官网，NVIDIA H200（HBM3e 141GB、4.8 TB/s）：<a href="https://www.nvidia.com/en-us/data-center/h200/">nvidia.com/en-us/data-center/h200</a></li>
+<li id="ref14">华为技术支持网站，《Atlas 800I A3 超节点用户指南》（文档号 EDOC1100461231）910B/910C 对比章节（FP16 ≈800 TFLOPS、H2D 350 GB/s、D2D 392 GB/s、互联 2 TB/s、算力/带宽比 ≈235 FLOPS/Byte 等出处）：<a href="https://support.huawei.com/enterprise/zh/doc/EDOC1100461231/8eaff0ba?idPath=23710424%7C251366513%7C254884019%7C261408772%7C264117745">support.huawei.com → EDOC1100461231</a></li>
+<li id="ref15">华为云，CloudMatrix384 超节点官方资料（"每颗昇腾 910C 提供超过 392 GB/s 单向 UB 带宽、384 NPU 无阻塞 All-to-All"）：<a href="https://www.huaweicloud.com/intl/zh-cn/news/20250424094932570.html">huaweicloud.com → CloudMatrix384 发布</a></li>
 </ol>
-<p style="font-size:14px;color:#8a94a3">文档生成：2026-09-28；2026-09-30 修订：补充 A3 灵衢"总线式全互联"拓扑口径、AMD Infinity Fabric 链路双向口径考证，新增第八章 Decode 访存墙上限评估（TileRT 口径）。所有数据以两司官方页面/官方文档公开内容为准；标注 <span class="calc">计算</span> 的条目为由官方数据做的乘除推导，未引入第三方数据。</p>
+<p style="font-size:14px;color:#8a94a3">文档生成：2026-09-28；2026-09-30 修订：补充 A3 灵衢"总线式全互联"拓扑口径、AMD Infinity Fabric 链路双向口径考证、第八章 Decode 访存墙上限评估（TileRT 口径）、2.1 节 910C vs 910B 代际演进（华为支持文档口径，两处存疑已标注）。所有数据以两司官方页面/官方文档公开内容为准；标注 <span class="calc">计算</span> 的条目为由官方数据做的乘除推导，未引入第三方数据。</p>
 </body>
 </html>
