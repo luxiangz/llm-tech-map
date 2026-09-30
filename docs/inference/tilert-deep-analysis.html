@@ -303,5 +303,45 @@ flowchart LR
 </ul>
 
 <blockquote>注：文中 2026 年的基准数字多来自官方博客与合作方宣传，标注为最高值 / 峰值，部署前建议自行复现验证。</blockquote>
+
+<hr>
+<h2>附录：四平台单卡硬件与理论 Decode 上限对照（2026-09-30 增补）</h2>
+
+<p>TileRT 博客《Speed as the Next Scaling Law》用 8×H200 的 roofline 账定义了"理论 decode 上限"这条引擎效率基准线（见正文一、四节）。本附录按同一口径把对比面扩到 8×MI355X、昇腾 800I A3（910C）与昇腾 A5 世代（950DT）。昇腾 950 数据取自华为<a href="https://github.com/lionelZhaowy/industry-ai-accelerators/blob/main/Cloud-and-Programmable-NPUs/Huawei-Ascend/pdf/%E6%98%87%E8%85%BE950%20NPU%E6%9E%B6%E6%9E%84%E7%99%BD%E7%9A%AE%E4%B9%A6.pdf" target="_blank">《昇腾 950 NPU 架构白皮书》</a>（2026）与灵衢<a href="https://www.unifiedbus.com/zh/white-papers/UB-SuperPoD-Architecture-White-Paper-zh" target="_blank">《UB SuperPoD 架构白皮书》</a>；其余平台数据同 <a href="../hardware/atlas800a3-vs-mi355x.html" target="_blank">《Atlas A3 vs MI355X 官方数据对比》</a>。</p>
+
+<h3>表 1 · 单卡硬件参数对比</h3>
+<table>
+<tr><th>参数（单卡）</th><th>NVIDIA H200</th><th>AMD MI355X</th><th>昇腾 910C<br>（800I A3 档）</th><th>昇腾 950DT<br>（A5 世代，如 Atlas 650E）</th></tr>
+<tr><td>FP16/BF16（张量，稠密）</td><td>989 TFLOPS</td><td>2.5 PFLOPS（稀疏 5.0）</td><td>560 TFLOPS</td><td>547 TFLOPS（多档 SKU：547/486/425）</td></tr>
+<tr><td>FP8</td><td>1,979 TFLOPS</td><td>5 PFLOPS（稀疏 10.1）</td><td>不支持（官方未标注）</td><td><b>1,034 TFLOPS</b>（原生 HiF8/MXFP8/FP8；多档 1034/919/804）</td></tr>
+<tr><td>FP4 / MXFP4</td><td>—</td><td>10.1 PFLOPS</td><td>不支持</td><td><b>2,007 TFLOPS</b>（原生 MXFP4；多档 2007/1784/1561）</td></tr>
+<tr><td>INT8</td><td>1,979 TOPS</td><td>5 POPS（稀疏 10.1）</td><td>≈1.12 POPS</td><td>1,034 TOPS（多档同 FP8）</td></tr>
+<tr><td>FP32</td><td>67 TFLOPS</td><td>157.3 TFLOPS</td><td>150 TFLOPS</td><td>TF32 273 TFLOPS（多档 273/243/212）；FP32 走 Vector 核</td></tr>
+<tr><td>显存容量</td><td>141 GB HBM3e</td><td>288 GB HBM3E</td><td>128 GB</td><td>144 GB（PR 版 128 GB）</td></tr>
+<tr><td>显存带宽</td><td>4.8 TB/s</td><td>8 TB/s</td><td>3.2 TB/s</td><td><b>4 TB/s</b>（PR 版 1.6 TB/s）</td></tr>
+<tr><td>卡间互联（每卡）</td><td>NVLink 900 GB/s</td><td>Infinity Fabric ≈1.071 TB/s（7×153 GB/s，双向）</td><td>灵衢 UB 双向 784 GB/s</td><td><b>灵衢 UB 2.0，对外 IO 峰值 2 TB/s</b>（HiLink 72×112 Gbps，18 个 X4 端口；Scale-up/Scale-out 端口复用，另支持 PCIe 5.0 与 2×400G UBoE）</td></tr>
+<tr><td>低精度格式</td><td>FP8</td><td>FP8 / FP6 / FP4</td><td>仅 FP16 / INT8（+FP32）</td><td>原生 MXFP4 / MXFP8 / HiF8 / FP8 / INT8（第三代达芬奇 Cube 核）</td></tr>
+</table>
+<p style="font-size:.9em;color:#57606a">注：950 白皮书算力为"Cube+Vector 总算力"口径且分多档 SKU，表内取最高档；已上市整机 Atlas 650E（950DT×8）官标 12.4 PFLOPS @MXFP4，对应 1,561 TFLOPS/卡 档（<a href="https://www.hiascend.com/hardware/ai-server" target="_blank">hiascend 硬件页</a>），与本表多档口径吻合。H200/MI355X 数值为稀疏口径翻倍的稠密值。</p>
+
+<h3>理论 Decode 上限的计算原理</h3>
+<p>Decode 阶段为访存受限（memory-bound）：自回归每生成一个 token，至少要把<b>激活的参数权重</b>从显存完整读一遍。因此单步时延下限与吞吐上限由带宽而非算力决定：</p>
+<div class="formula">\[
+t_{\text{step}} \;\ge\; \frac{S_{\text{act}}}{B_{\text{agg}}}, \qquad
+T_{\text{upper}} = \frac{1}{t_{\text{step}}} = \frac{B_{\text{agg}}}{S_{\text{act}}}
+\]</div>
+<p>其中 $B_{\text{agg}}$ 为节点聚合显存带宽，$S_{\text{act}}$ 为单 token 激活参数字节。按 TileRT 博客口径：GLM-5.1（MoE）单步激活 ≈42 GB（FP8/1 字节权重）；W8/INT8 权重同为 1 字节/权重，故 $S_{\text{act}}$ 同取 42 GB；MXFP4 则减半为 21 GB。假设：① 激活权重在 8 卡间理想切分、各卡带宽并行；② 只计权重流量（不含 KV Cache、通信、反量化）；③ 算力足够（memory-bound 成立）。这个上限与"传统引擎几十 tok/s"之间的 1~2 个数量级差，正是正文分析的 execution gap。</p>
+
+<h3>表 2 · 8 卡节点理论 Decode 上限（$S_{\text{act}} = 42$ GB）</h3>
+<table>
+<tr><th>平台（8 卡）</th><th>每卡带宽</th><th>聚合带宽 $B_{\text{agg}}$</th><th>权重口径</th><th>单步时延下限</th><th>理论 Decode 上限</th><th>vs 8×H200</th></tr>
+<tr><td>8×H200（TileRT 原账）</td><td>4.8 TB/s</td><td>38.4 TB/s</td><td>FP8（42 GB）</td><td>1.09 ms</td><td>≈ 914 tok/s</td><td>1×</td></tr>
+<tr><td>8×MI355X</td><td>8 TB/s</td><td>64 TB/s</td><td>FP8（42 GB）</td><td>0.66 ms</td><td><b>≈ 1,524 tok/s</b></td><td>1.67×</td></tr>
+<tr><td>昇腾 800I A3（910C×8）</td><td>3.2 TB/s</td><td>25.6 TB/s</td><td>W8/INT8（42 GB）</td><td>1.64 ms</td><td>≈ 610 tok/s</td><td>0.67×</td></tr>
+<tr><td>昇腾 A5（950DT×8）</td><td>4 TB/s</td><td>32 TB/s</td><td>FP8/W8（42 GB）</td><td>1.31 ms</td><td><b>≈ 762 tok/s</b></td><td>0.83×</td></tr>
+</table>
+<p style="font-size:.9em;color:#57606a">附注：950DT 原生 MXFP4，若按 4-bit 权重（$S_{\text{act}} = 21$ GB）计，A5 上限翻倍至 ≈1,524 tok/s，追平 8×MI355X 的 FP8 档；950PR（1.6 TB/s）按 FP8 计为 ≈305 tok/s。所有行均为官方带宽 ÷ 42 GB 的算术推导，未计 KV Cache 与通信开销；950 组网侧经灵衢 UB 2.0 可扩展至超大规模集群（白皮书称支持超 128K 卡）。</p>
+
+<p style="font-size:.9em;color:#57606a">附录来源：<a href="https://github.com/lionelZhaowy/industry-ai-accelerators/blob/main/Cloud-and-Programmable-NPUs/Huawei-Ascend/pdf/%E6%98%87%E8%85%BE950%20NPU%E6%9E%B6%E6%9E%84%E7%99%BD%E7%9A%AE%E4%B9%A6.pdf" target="_blank">《昇腾 950 NPU 架构白皮书》</a>（Cube/Vector 算力、144GB/4TB/s、HiLink 2TB/s、多档 SKU）· <a href="https://www.unifiedbus.com/zh/white-papers/UB-SuperPoD-Architecture-White-Paper-zh" target="_blank">灵衢《UB SuperPoD 架构白皮书》</a>（UB 2.0 / SuperPoD 组网）· <a href="https://www.tilert.ai/blog/speed-as-the-next-scaling-law-zh.html" target="_blank">TileRT：Speed as the Next Scaling Law（42 GB 口径）</a> · <a href="https://www.nvidia.com/en-us/data-center/h200/" target="_blank">NVIDIA H200</a> · <a href="https://www.amd.com/en/products/accelerators/instinct/mi350/mi355x.html" target="_blank">AMD MI355X</a> · <a href="https://e.huawei.com/cn/products/computing/ascend/atlas-800i-a3" target="_blank">华为 Atlas 800I A3（单卡 560 TFLOPS 白皮书档）</a> · <a href="https://www.hiascend.com/hardware/ai-server" target="_blank">hiascend 硬件页（Atlas 650E）</a></p>
 </body>
 </html>
