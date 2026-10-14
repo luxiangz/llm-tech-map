@@ -1,0 +1,938 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>进程、线程与设备绑定全解 —— 从一段「每卡一线程」的权重加载代码讲到 vLLM 的服务架构</title>
+<!-- 霞鹜文楷：开源可商用的中文楷体风格字体；加载失败时自动回退到微软雅黑 -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/lxgw-wenkai-webfont@1.7.0/style.css">
+<style>
+body { font-family: "LXGW WenKai", "Microsoft YaHei", "PingFang SC", "Segoe UI", sans-serif; font-size: 17.5px; line-height: 1.85; letter-spacing: 0.01em; max-width: 1080px; margin: 40px auto; padding: 0 28px; color: #1f2328; background: #fff; }
+h1, h2, h3, h4, .kicker { font-family: "Microsoft YaHei", "PingFang SC", sans-serif; }
+h1 { font-size: 2.0em; border-bottom: 2px solid #e5e7eb; padding-bottom: .35em; }
+h2 { font-size: 1.45em; border-bottom: 1px solid #e5e7eb; padding-bottom: .2em; margin-top: 2em; }
+h3, h4, h5, h6 { margin-top: 1.6em; }
+a { color: #0969da; text-decoration: none; }
+a:hover { text-decoration: underline; }
+code { background: #f6f8fa; padding: .12em .35em; border-radius: 4px; font-family: "Cascadia Code", Consolas, "Microsoft YaHei", monospace; font-size: .92em; }
+pre { background: #f6f8fa; padding: 16px; border-radius: 8px; overflow: auto; line-height: 1.45; }
+pre code { background: none; padding: 0; }
+table { border-collapse: collapse; width: 100%; margin: 1.2em 0; display: block; overflow-x: auto; }
+th, td { border: 1px solid #d0d7de; padding: 8px 10px; text-align: left; vertical-align: top; }
+th { background: #f6f8fa; font-family: "Microsoft YaHei", "PingFang SC", sans-serif; }
+blockquote { margin: 1em 0; padding: .6em 1em; border-left: 4px solid #d0d7de; color: #57606a; background: #f6f8fa; }
+hr { border: none; border-top: 1px solid #d8dee4; margin: 2em 0; }
+.formula { background: #f6f8fa; padding: 12px 16px; border-radius: 8px; overflow-x: auto; margin: 1em 0; }
+ul, ol { padding-left: 1.8em; }
+.ev { display: inline-block; font-size: .78em; font-weight: 700; border-radius: 4px; padding: 0 .45em; margin-left: .3em; vertical-align: 1px; font-family: "Microsoft YaHei", sans-serif; }
+.ev-v { background: #dafbe1; color: #116329; }
+.ev-r { background: #fff8c5; color: #7d4e00; }
+.ev-u { background: #ffebe9; color: #82071e; }
+.mermaid { text-align: center; margin: 1.4em 0; }
+.figcaption { margin: .4em 0 1.2em; color: #57606a; font-size: .92em; text-align: center; }
+.qa { border: 1px solid #e5e7eb; border-radius: 10px; padding: 4px 20px 12px; margin: 1.6em 0; background: #fcfdfe; }
+.qa > h3 { border-bottom: 1px dashed #d8dee4; padding-bottom: .3em; margin-top: 1.2em; }
+details.expand { border: 1px solid #e2e5ea; border-radius: 10px; padding: 8px 18px; margin: 1.4em 0; background: #fbfcfe; }
+details.expand summary { cursor: pointer; font-family: "Microsoft YaHei", "PingFang SC", sans-serif; font-weight: 700; color: #2c5fa8; padding: 6px 0; }
+.warn { border: 1px solid #f0c36d; background: #fffaf0; border-radius: 8px; padding: 10px 16px; margin: 1.2em 0; }
+.ok { border: 1px solid #b7e2c0; background: #f4fdf6; border-radius: 8px; padding: 10px 16px; margin: 1.2em 0; }
+.kicker { display: block; color: #57606a; font-size: .95em; margin-bottom: .4em; }
+.toc { background: #fbfcfe; border: 1px solid #e2e5ea; border-radius: 10px; padding: 8px 22px 14px; }
+.toc ol { margin: .4em 0; }
+.toc li { margin: .18em 0; }
+.filerow { font-family: "Cascadia Code", Consolas, monospace; font-size: .86em; color: #57606a; }
+</style>
+<script>
+window.MathJax = {
+  tex: {
+    inlineMath: [['$', '$']],
+    displayMath: [['$$', '$$'], ['\\[', '\\]']],
+    processEscapes: false
+  },
+  svg: { fontCache: 'global' }
+};
+</script>
+<script>
+(function () {
+  var sources = [
+    "../../assets/lib/mathjax-tex-svg.js",
+    "https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js",
+    "https://cdn.bootcdn.net/ajax/libs/mathjax/3.2.2/es5/tex-svg.js",
+    "https://cdn.staticfile.org/mathjax/3.2.2/es5/tex-svg.js",
+    "https://unpkg.com/mathjax@3/es5/tex-svg.js"
+  ];
+  function load(i) {
+    if (i >= sources.length) {
+      var node = document.getElementById("mathjax-load-fail");
+      if (node) node.style.display = "block";
+      return;
+    }
+    var s = document.createElement("script");
+    s.src = sources[i];
+    s.onload = function () { if (window.MathJax && MathJax.typesetPromise) return; };
+    s.onerror = function () { load(i + 1); };
+    document.head.appendChild(s);
+  }
+  load(0);
+})();
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+<script>mermaid.initialize({
+  startOnLoad: true,
+  theme: "neutral",
+  fontFamily: '"Microsoft YaHei", "PingFang SC", sans-serif',
+  // 关闭"缩放到容器宽度"：图按自然尺寸渲染，宽度超出时由外层 pre 横向滚动，
+  // 这样字号不会被压到看不见（默认缩放会把宽图压到 0.36 倍）。
+  flowchart: { useMaxWidth: false },
+  sequence: { useMaxWidth: false }
+});</script>
+</head>
+<body>
+<a href="https://luxiangz.github.io/llm-tech-map/" style="position:fixed;top:12px;right:14px;z-index:99;background:#f6f7f9;border:1px solid #e2e5ea;border-radius:999px;padding:4px 12px;font-size:14px;color:#2c5fa8;text-decoration:none;box-shadow:0 1px 4px rgba(0,0,0,.08)">← 技术地图首页</a>
+<div id="mathjax-load-fail" style="display:none;position:fixed;top:12px;left:14px;z-index:99;background:#fff4e5;border:1px solid #e8b04b;color:#8a5300;border-radius:8px;padding:8px 12px;font-size:13px">公式渲染组件未能加载，当前显示的是 LaTeX 源码。</div>
+
+<span class="kicker">推理引擎系统专题 · 深度笔记 · 2026-10-14</span>
+<h1>进程、线程与设备绑定全解<br>—— 从一段「每卡一线程」的权重加载代码讲到 vLLM 的服务架构</h1>
+
+<p><strong>这篇在回答什么：</strong>一段看起来像 vLLM 的代码，里面用 <code>threading.Thread</code> 给每张卡开一个线程去加载权重，还写了 <code>with torch.cuda.device(device_id)</code>。围绕它有一串非常基础、但几乎没人一次性讲透的问题：<em>线程和进程到底怎么被创建的？进程/线程的概念在 vLLM 里怎么体现？什么叫多进程、什么叫主进程？线程会绑到一张 GPU 或 NPU 上吗？这段代码是"在 CPU 上创建"还是"在 GPU/NPU 上创建"？</em></p>
+<p><strong>结论先行（三个最反直觉的点）：</strong></p>
+<ol>
+<li><strong>你贴的那段代码不是 vLLM 的，是 TileRT 的。</strong>出处是 <code>tilert/models/deepseek_v3_2/modules/end2end.py:354</code>（你本机 <code>E:\Desktop\业务\低时延\TileRT\</code>）。它在 vLLM 里 grep 不到——<code>__load_weights</code> + <code>exceptions[dev_id]</code> 这个组合在 vLLM v0.16.0 全仓零命中。<span class="ev ev-v">V</span></li>
+<li><strong>「线程绑定一张 GPU」这个说法是错的，但错得很接近真相。</strong>没有"绑定"这个动作。真相是：<em>CUDA 的「当前设备」是<strong>线程私有（thread-local）</strong>的状态，而 CUDA context／显存分配器是<strong>进程级（per-process）</strong>的</em>。所以"一个进程 N 张卡 + N 个线程"里，是<em>进程</em>拥有这批卡，<em>线程</em>只负责在正确的卡上发起工作。<span class="ev ev-v">V</span></li>
+<li><strong>进程和线程这件事，从头到尾没有一行发生在 GPU 上。</strong>创建线程/进程、切当前设备、join、抛异常，全部是 host CPU 上的活；GPU 只承接被下发过去的 kernel 和拷贝。<span class="ev ev-v">V</span></li>
+</ol>
+<p><strong>证据标注：</strong><span class="ev ev-v">V</span> = 一手核对（本机源码 <code>文件:行号</code>，或本机实测输出）；<span class="ev ev-r">R</span> = 合理推断（有依据但非直接证据）；<span class="ev ev-u">U</span> = 待核实。</p>
+<p><strong>版本坐标（很关键，不同版本结论会变）：</strong>vLLM <strong>v0.16.0</strong>（git 检出 <code>D:\wsl_projects\vllm</code>，commit <code>89a77b108</code>，2026-02-12）；vLLM-Ascend（<code>E:\Desktop\历史\vllm_newest\vllm-ascend</code>）；TileRT（<code>E:\Desktop\业务\低时延\TileRT</code>）；实测环境 Windows + 1×RTX 3080 Ti Laptop + torch 2.5.1+cu121 + WSL Ubuntu-22.04 / Python 3.12.3。</p>
+<p><strong>系列定位：</strong>本文是"系统底座"那一层；TileRT 的引擎设计看 <a href="tilert-deep-analysis.html">TileRT 深度解析</a>，EPLB 的算法细节看 <a href="../moe-ep/eplb-deep-reading.html">EPLB 深度阅读笔记</a>，昇腾侧的 MoE 并行看 <a href="../moe-ep/ascend-moe-parallel-deep-reading.html">昇腾 MoE 专家层四方案对比</a>。</p>
+
+<div class="toc">
+<strong>目录</strong>
+<ol>
+<li><a href="#s1">一页结论：你的五个问题，直接回答</a></li>
+<li><a href="#s2">基础：进程与线程，从操作系统说到 CPython</a></li>
+<li><a href="#s3">逐行拆解那段「每卡一线程」的权重加载代码</a></li>
+<li><a href="#s4">「线程绑定一张 GPU/NPU」到底对不对</a></li>
+<li><a href="#s5">这段代码是在 CPU 上创建的，还是 GPU/NPU 上创建的？</a></li>
+<li><a href="#s6">vLLM v0.16.0 的进程与线程全景（源码考据）</a></li>
+<li><a href="#s7">fork 还是 spawn：三个实验 + vLLM 的三条强制理由</a></li>
+<li><a href="#s8">NPU（昇腾）差异：ACL 线程、HCCL 与 EPLB 的进程化</a></li>
+<li><a href="#s9">三种并发模型对比与选型指南</a></li>
+<li><a href="#s10">复现清单（脚本、环境、原始输出）</a></li>
+<li><a href="#s11">快问快答（12 问）</a></li>
+<li><a href="#s12">参考与版本坐标</a></li>
+</ol>
+</div>
+
+<h2 id="s1">1. 一页结论：你的五个问题，直接回答</h2>
+
+<table>
+<thead><tr><th>你的问题</th><th>直接答案</th><th>证据</th></tr></thead>
+<tbody>
+<tr>
+<td>这些线程/进程怎么创建？</td>
+<td>那段代码里：<code>threading.Thread(target=_runner, args=(device_id,))</code> + <code>thread.start()</code>，在 <code>for device_id in range(8)</code> 循环里创建 <strong>8 条普通（非 daemon）线程</strong>，同一进程内。vLLM 里：<code>multiprocessing</code> 的 <code>Process()</code>/<code>start()</code>，走 <code>get_mp_context()</code>，默认 fork、必要时强制 spawn。</td>
+<td>end2end.py:472-489；system_utils.py:151-160 <span class="ev ev-v">V</span></td>
+</tr>
+<tr>
+<td>进程/线程概念在 vLLM 里怎么体现？</td>
+<td>vLLM 把它做成了<strong>架构骨架</strong>：API server 进程（不碰 GPU）→ EngineCore 进程（调度，不碰 GPU）→ 每张 GPU 一个 Worker 进程（碰 GPU）；每个进程内部再按角色挂线程（ZMQ IO、进程存活监控、EPLB 搬运、异步输出拷贝）。</td>
+<td>arch_overview.md:81-127；core.py:753-775；async_worker.py:56 <span class="ev ev-v">V</span></td>
+</tr>
+<tr>
+<td>多进程和主进程是什么关系？</td>
+<td>"主进程"= 你敲 <code>vllm serve</code> 的那个进程，它同时也是 API server；它 <code>spawn</code> 出 EngineCore 子进程，EngineCore 再 <code>spawn</code> 出 Worker 子进程。<strong>父进程创建的进程，父子之间只靠 ZMQ/共享内存/pickle 说话，不共享 Python 对象。</strong>多进程的动机是：绕过 GIL + 每张卡一个干净的 CUDA context + 隔离（一个 worker 崩了不至于带走调度器）。</td>
+<td>engine/utils.py:99-150；multiproc_executor.py:615-622 <span class="ev ev-v">V</span></td>
+</tr>
+<tr>
+<td>线程会绑定一张 GPU 或 NPU 吗？</td>
+<td><strong>不会"绑定"。</strong>卡归属于<em>进程</em>（CUDA context 是 per-process，进程内所有线程共享同一套 context 与显存池）；线程只持有"当前设备"这种<em>线程私有</em>状态。<strong>因此任何可能提交 kernel 的新线程都必须自己 <code>set_device</code>／<code>with torch.cuda.device(...)</code>，否则默认落到 0 号卡上。</strong>这正是 vLLM 在 4 个不同子线程里被迫重复设设备的原因。</td>
+<td>实验 1；ray_utils.py:45-51；gpu_ubatch_wrapper.py:196-197 <span class="ev ev-v">V</span></td>
+</tr>
+<tr>
+<td>这段代码是在 CPU 创建的还是 NPU/GPU 创建的？</td>
+<td><strong>全部在 host CPU 上创建与调度。</strong>线程创建、<code>with torch.cuda.device()</code>（只改本线程 TLS）、<code>join()</code>、异常抛出，都是 CPU 侧的 Python/OS 行为；GPU/NPU 只承接被下发的拷贝与 kernel。"在 GPU 上创建进程"这个说法在 CUDA/NPU 编程模型里没有对应实体。</td>
+<td>第 5 节执行位置表 <span class="ev ev-v">V</span></td>
+</tr>
+<tr>
+<td>（补）为什么这段代码用线程而不是进程？</td>
+<td>三个理由：① 权重加载是 I/O + H2D 拷贝，<strong>大部分时间在 C++/CUDA 里且会释放 GIL</strong>，线程能真并行；② 8 张卡要在同一进程里<strong>交换显存指针</strong>（<code>_v2_p2p</code> / <code>data_ptr()</code>），用进程就得 IPC 传指针，又慢又危险；③ 线程创建/切换便宜，也不需要每卡再建一套 driver context。</td>
+<td>end2end.py:491-501 <span class="ev ev-v">V</span></td>
+</tr>
+</tbody>
+</table>
+
+<div class="ok"><strong>一句话总纲：</strong>进程负责"资源与隔离"（地址空间、CUDA context、显存池、文件描述符），线程负责"执行与并发"（栈、寄存器、<em>当前设备</em>、<em>当前流</em>）。TileRT 选择"一个进程吃 8 张卡 + 8 条线程"，vLLM 选择"一张卡一个进程 + 进程内若干线程"。两者都在用同一套 CUDA 语义，只是把边界划在了不同地方。</div>
+
+<h2 id="s2">2. 基础：进程与线程，从操作系统说到 CPython</h2>
+
+<h3>2.1 定义与资源归属</h3>
+<table>
+<thead><tr><th>维度</th><th>进程 Process</th><th>线程 Thread</th></tr></thead>
+<tbody>
+<tr><td>是什么</td><td>程序的一次运行实例；资源分配与隔离的单位</td><td>进程内的执行流；CPU 调度与执行的单位</td></tr>
+<tr><td>地址空间</td><td><strong>独享</strong>（各自一套页表）</td><td><strong>共享</strong>同一进程的地址空间</td></tr>
+<tr><td>私有部分</td><td>代码/数据/堆/栈、文件描述符、信号处理、环境变量</td><td>栈、寄存器、程序计数器、线程 ID、<em>errno</em>、<strong>CUDA "当前设备"/"当前流"</strong></td></tr>
+<tr><td>共享部分</td><td>——</td><td>堆、全局变量、打开的文件、<strong>CUDA context 与显存分配器</strong></td></tr>
+<tr><td>通信</td><td>IPC：管道、消息队列、共享内存、socket、信号</td><td>直接读写共享变量（需加锁）</td></tr>
+<tr><td>切换代价</td><td>大（换页表、可能 flush TLB）</td><td>小（同地址空间）</td></tr>
+<tr><td>崩溃影响</td><td>通常互不影响</td><td>一条线程段错误 → 整个进程死</td></tr>
+<tr><td>创建 API（Python）</td><td><code>multiprocessing.Process</code> / <code>os.fork()</code> / <code>subprocess.Popen</code></td><td><code>threading.Thread</code> / <code>ThreadPoolExecutor</code> / <code>_thread.start_new_thread</code></td></tr>
+</tbody>
+</table>
+
+<pre class="mermaid">
+flowchart TB
+  subgraph P["进程 A（一个地址空间、一个 CUDA context、一套显存池）"]
+    direction TB
+    M["主线程 main thread<br/>栈／寄存器／当前设备＝cuda:0"]
+    T1["线程 1<br/>当前设备＝cuda:1"]
+    T2["线程 2<br/>当前设备＝cuda:2"]
+    HEAP["共享堆：Python 对象、Tensor 对象、state_dicts、列表、dict"]
+    CTX["共享 CUDA primary context<br/>共享 caching allocator（显存账本）"]
+    M --- HEAP
+    T1 --- HEAP
+    T2 --- HEAP
+    HEAP --- CTX
+  end
+  P2["进程 B<br/>另一套地址空间／独立 CUDA context"]
+  P -.->|"ZMQ / 共享内存 / pickle，无共享对象"| P2
+</pre>
+<div class="figcaption">图 1：进程是"资源容器"，线程是"执行流"。显存账本（caching allocator）与 CUDA context 属于进程；"当前设备/当前流"属于线程。</div>
+
+<h3>2.2 CPython 视角：GIL 决定了线程能干什么</h3>
+<p>CPython 有全局解释器锁（GIL），同一时刻只有一个线程在执行<strong>字节码</strong>。这带来一条非常实用的判据：</p>
+<ul>
+<li><strong>纯 Python 计算</strong>（循环、解析、算术）→ 多线程<em>不能</em>并行，GIL 会串行化；</li>
+<li><strong>阻塞式 I/O 和会释放 GIL 的 C/CUDA 调用</strong>（文件读写、socket、<code>safetensors</code> 反序列化、<code>cudaMemcpy</code>、kernel 下发）→ 多线程<em>能</em>真并行。</li>
+</ul>
+<p>这段权重加载代码恰好落在第二类：读 safetensors 文件、往 H2D 拷贝，绝大部分时间在 C++/驱动里，GIL 是放开的。所以"8 条线程同时加载 8 张卡的权重"确实能加速。<span class="ev ev-r">R</span></p>
+<p>对照 vLLM 源码里对线程动机的原话（EngineCore 的两个 IO 线程）：</p>
+<pre><code># vllm/v1/engine/core.py:748-752
+# Background Threads and Queues for IO. These enable us to
+# overlap ZMQ socket IO with GPU since they release the GIL,
+# and to overlap some serialization/deserialization with the
+# model forward pass.
+# Threads handle Socket &lt;-&gt; Queues and core_busy_loop uses Queue.</code></pre>
+<p>"<em>since they release the GIL</em>" —— 这句话就是 vLLM 选择线程而不是进程来搬运 ZMQ 数据的原因。<span class="ev ev-v">V</span></p>
+
+<h3>2.3 创建一个线程/进程，机器上实际发生了什么</h3>
+<table>
+<thead><tr><th>动作</th><th>Windows</th><th>Linux</th></tr></thead>
+<tbody>
+<tr><td><code>threading.Thread(...).start()</code></td><td>调 <code>CreateThread</code>，内核里建 ETHREAD + 用户态栈</td><td>内部走 <code>clone(CLONE_VM|CLONE_FS|CLONE_FILES|...)</code>，与父线程<b>共享</b>地址空间</td></tr>
+<tr><td><code>multiprocessing.Process(...).start()</code>（spawn）</td><td><code>CreateProcess</code>，新解释器重新 import 你的模块</td><td><code>fork+exec</code>（CPython 的 spawn 实现），同样是全新解释器</td></tr>
+<tr><td><code>multiprocessing.Process(...).start()</code>（fork）</td><td><b>不存在</b>（实测报 <code>ValueError: cannot find context for 'fork'</code>）</td><td><code>fork()</code>：复制整个地址空间（COW），<b>但只复制调用 fork 的那一条线程</b></td></tr>
+<tr><td>fork 出来的子进程</td><td>——</td><td>父进程的<b>其他线程在子进程里不存在</b>，被其他线程持有的锁会是"永远锁住"的状态 → 死锁</td></tr>
+</tbody>
+</table>
+<p>最后两行是第 7 节整节的主题，也是 vLLM 要强制 spawn 的根本原因。Windows 上根本没有 fork，所以"跨平台代码不能用 fork"是一条硬约束。<span class="ev ev-v">V</span>（实测见实验 3）</p>
+
+<h2 id="s3">3. 逐行拆解那段「每卡一线程」的权重加载代码</h2>
+
+<h3>3.1 先纠正出处</h3>
+<p>这段代码在 vLLM 里找不到。实测（本机 grep）：</p>
+<table>
+<thead><tr><th>检索项</th><th>vLLM v0.16.0</th><th>vllm-ascend</th><th>TileRT</th></tr></thead>
+<tbody>
+<tr><td><code>def __load_weights</code></td><td>0 命中</td><td>0 命中</td><td><b>命中</b> <span class="filerow">deepseek_v3_2/modules/end2end.py:354</span>、<span class="filerow">glm_5/modules/end2end.py:379</span></td></tr>
+<tr><td><code>exceptions[dev_id]</code></td><td>0 命中</td><td>0 命中</td><td><b>命中</b>（两处）</td></tr>
+<tr><td><code>torch.cuda.device(device_id)</code></td><td>0 命中（vLLM 用别的变量名）</td><td>0 命中</td><td><b>命中</b>（三处：:291 / :360 / :504）</td></tr>
+</tbody>
+</table>
+<p>结论：<strong>要理解这段代码，得拿 TileRT 的源码来读。</strong> 而"线程/进程概念在 vLLM 里怎么体现"是另一个独立问题（第 6 节），两者恰好构成两种典型并发模型的对照。<span class="ev ev-v">V</span></p>
+
+<h3>3.2 完整代码（<code>tilert/models/deepseek_v3_2/modules/end2end.py</code>）</h3>
+<p>外层是 <code>class ShowHandsDSALayer</code>（:166），关键状态在构造函数里定死：</p>
+<pre><code># end2end.py:188-196
+self.num_devices = 8                                    # 硬编码 8 张卡
+self.forward_max_seq_len = 4
+...
+self.multi_devices_results: list[DeviceResult | None] = [None] * torch.cuda.device_count()
+self._dsa_objects: list[Dsa | None] = [None] * torch.cuda.device_count()</code></pre>
+<p>线程逻辑在 <code>_init_weights</code>（:336）里：</p>
+<pre><code># end2end.py:336-360（节选）
+def _init_weights(self, model_path, cached_ffn_ops_per_device=None, skip_keys_per_device=None) -&gt; None:
+    self._v2_p2p: dict = {}
+
+    def __load_weights(device_id: int, model_path: str | None) -&gt; None:
+        intermediates: list[torch.Tensor] = []
+        caches: list[torch.Tensor] = []
+        params: list[torch.Tensor] = []
+        state_dicts = {}
+        start_time = time.time()
+        with torch.cuda.device(device_id):            # ← 改本线程的"当前设备"
+            ...</code></pre>
+<pre><code># end2end.py:472-489（线程创建与汇合：本文的主角）
+        threads = []
+        exceptions: list[Exception | None] = [None] * self.num_devices
+        for device_id in range(self.num_devices):
+
+            def _runner(dev_id: int) -&gt; None:
+                try:
+                    __load_weights(dev_id, model_path)
+                except Exception as exc:  # pragma: no cover - surfaced after join
+                    exceptions[dev_id] = exc
+
+            thread = threading.Thread(target=_runner, args=(device_id,))
+            threads.append(thread)
+            thread.start()
+        for thread in threads:
+            thread.join()
+        for device_id, exc in enumerate(exceptions):
+            if exc is not None:
+                raise RuntimeError(f"Failed to initialize device {device_id}: {exc}") from exc</code></pre>
+<p>线程汇合之后做的事，才是"为什么这里必须是线程"的答案：</p>
+<pre><code># end2end.py:491-501（线程全部结束，主线程读取所有线程留下的显存指针）
+        if self._v2_p2p:
+            gpu0 = self._v2_p2p[0]
+            peer_bufs_cpu = torch.zeros(self.num_devices - 1, dtype=torch.int64)
+            for i in range(self.num_devices - 1):
+                dev_id = i + 1
+                peer_bufs_cpu[i] = self._v2_p2p[dev_id]["ll_buf"].data_ptr()
+            gpu0["peer_bufs"].copy_(peer_bufs_cpu)</code></pre>
+<p>然后主线程再逐卡做 CUDA graph 的准备（注意：这里是<strong>串行</strong>的）：</p>
+<pre><code># end2end.py:503-514（注意这里回到了主线程、串行循环）
+        for device_id in range(self.num_devices):
+            with torch.cuda.device(device_id):
+                intermediates, caches, params, profile_logs = self._get_device_result(device_id)
+                dsa_show_hands_prepare_money(
+                    params, intermediates, caches, profile_logs,
+                    self.forward_max_seq_len, self.with_mtp, self.is_glm5,
+                )</code></pre>
+
+<h3>3.3 执行时序</h3>
+<pre class="mermaid">
+sequenceDiagram
+  autonumber
+  participant M as 主线程
+  participant T0 as 线程 dev0
+  participant T5 as 线程 dev5
+  participant D as 权重文件
+  participant G as 各卡显存
+  M->>M: 定义 __load_weights<br/>（只定义，不执行）
+  loop device_id = 0..7
+    M->>T0: Thread(...) + start()
+  end
+  Note over M: 主线程立刻 join()，被阻塞
+  T0->>T0: 改本线程当前设备<br/>为 cuda:0
+  T5->>T5: 改本线程当前设备<br/>为 cuda:5
+  T0->>D: 读 safetensors 分片<br/>（释放 GIL）
+  T5->>D: 读 safetensors 分片<br/>（释放 GIL）
+  T0->>G: H2D 拷贝到 cuda:0
+  T5->>G: H2D 拷贝到 cuda:5
+  T0->>M: 写 results[0]
+  T5->>M: 写 results[5]
+  T0-->>M: 线程结束<br/>（异常写进 exceptions[0]）
+  T5-->>M: 线程结束
+  M->>M: join() 返回<br/>→ 检查 exceptions
+  M->>M: 读 _v2_p2p 的 data_ptr<br/>做跨卡指针交换
+  M->>G: 串行逐卡 prepare_money<br/>（建 CUDA graph）
+</pre>
+<div class="figcaption">图 2：8 条线程并行"加载"，主线程负责"汇合 + 跨卡指针交换 + 串行建图"。（<code>results</code> 即 <code>multi_devices_results</code>）</div>
+
+<h3>3.4 六个容易踩的工程细节</h3>
+<table>
+<thead><tr><th>#</th><th>细节</th><th>说明</th></tr></thead>
+<tbody>
+<tr><td>1</td><td><strong>闭包 + 循环变量</strong></td><td><code>_runner</code> 定义在 <code>for</code> 里，但它把 <code>dev_id</code> 当<strong>参数</strong>收，创建线程时又显式 <code>args=(device_id,)</code>。双重保险，避开了"所有线程都看到最后一个 <code>device_id</code>"的经典坑。如果写成线程体里直接用外层 <code>device_id</code>，那 8 条线程会有一半在抢同一张卡。</td></tr>
+<tr><td>2</td><td><strong>共享容器的写法</strong></td><td><code>self.multi_devices_results[device_id] = result</code>、<code>exceptions[dev_id] = exc</code> 都是"每条线程写不同下标"。CPython 下 <code>list</code> 的单元素赋值因 GIL 是原子的，且下标不相交，所以无竞态。<span class="ev ev-v">V</span></td></tr>
+<tr><td>3</td><td><strong>子线程异常必须手工回传</strong></td><td>线程里抛的异常<strong>不会</strong>传到 <code>join()</code> 的调用方，只会打到 stderr 然后线程消失。这里用 <code>exceptions</code> 列表收集，join 后统一 <code>raise RuntimeError</code>，把 8 张卡里失败的那张点名报出。注释 <code># surfaced after join</code> 就是这个意思。</td></tr>
+<tr><td>4</td><td><strong>daemon 默认是 False</strong></td><td>没写 <code>daemon=True</code>，所以这 8 条是非守护线程；主线程已经 <code>join()</code> 了，退出时序没问题。反例见第 8 节：vllm-ascend 必须把 worker 进程的 <code>daemon</code> 改回 False，否则守护进程不许再创建子进程，EPLB 起不来。</td></tr>
+<tr><td>5</td><td><strong><code>__load_weights</code> 名字被改写（name mangling）</strong></td><td>它是"局部函数"，但文本上在 <code>class</code> 体内，所以照样被改写成 <code>_ShowHandsDSALayer__load_weights</code>。定义处与调用处改写一致，代码正常工作；但<strong>从类外按原名拿不到它</strong>。实测见下。</td></tr>
+<tr><td>6</td><td><strong><code>torch.cuda.empty_cache()</code> 是进程级操作</strong></td><td>它在 <code>load_device_weights</code> 里每读完一个分片就被调用一次（:242/:248），加载收尾又调一次（:463）。按官方文档与分配器语义，它作用在<strong>进程级缓存池</strong>（无 device 参数）。8 条线程各自反复调用 → 全局锁竞争 + 冗余清理。<span class="ev ev-r">R</span> 建议：移到 join 之后调用一次。</td></tr>
+</tbody>
+</table>
+
+<details class="expand">
+<summary>细节 5 的实测证据（名字改写的真相）</summary>
+<pre><code>$ python exp5_mangling.py
+1) 调用结果: loaded device 0 from /weights
+2) _init_weights 的局部变量表 co_varnames : ('self', 'model_path', '_runner')
+   _init_weights 的闭包变量表 co_cellvars : ('model_path', '_ShowHandsDSALayer__load_weights')
+3) _runner 的 co_freevars（它从外层捕获的名字）: ('_ShowHandsDSALayer__load_weights', 'model_path')
+   嵌套函数的 co_name 仍是原名（co_name 不受改写）: ['__load_weights']
+4) 类属性视角： ['_ShowHandsDSALayer__private_method']
+   obj.__private_method() -&gt; AttributeError: 'ShowHandsDSALayer' object has no attribute '__private_method'
+   obj._ShowHandsDSALayer__private_method() -&gt; 私有方法</code></pre>
+<p>读法：<code>co_cellvars</code> 里躺着 <code>_ShowHandsDSALayer__load_weights</code>，<code>_runner</code> 的 <code>co_freevars</code> 里也是同一个名字 —— 定义与引用被<b>同样</b>改写，所以自洽。<strong>顺带纠正一条常见的错误说法：</strong>"它是局部函数，所以不受名字改写影响"是错的；决定改写与否的是<em>是否在 class 体内</em>，不是<em>是否是局部函数</em>。<span class="ev ev-v">V</span></p>
+</details>
+
+<h3>3.5 同一个仓库里的第二种写法</h3>
+<p>TileRT 的 ROCm 变体把这套逻辑写成了线程池风格，而且<strong>把 <code>set_device</code> 放在了工作函数的第一行</strong>——教科书式的正确做法：</p>
+<pre><code># tilert/models/glm_5_2_rocm/end2end.py:497-514
+        def load_one(r: int) -&gt; list[torch.Tensor]:
+            torch.cuda.set_device(r)                    # ← 必须在新线程里自己设
+            out = load_rank_params(
+                weights_dir, self.args, r, f"cuda:{r}",
+                n_layers=self.n_layers, num_mtp=self.num_mtp,
+                embed=embed, freqs_cis=freqs_cis,
+            )
+            logger.info("rank %d: weights loaded and packed", r)
+            return out
+
+        with ThreadPoolExecutor(max_workers=self.npes) as pool:
+            params = list(pool.map(load_one, range(self.npes)))</code></pre>
+<p>两种写法的等价点：<em>一条线程 ↔ 一张卡，且线程必须自己声明"我在哪张卡上"</em>。<code>ThreadPoolExecutor</code> 版本还顺带把异常传播问题解决了——<code>pool.map</code> 会把工作函数里抛出的异常在迭代结果时重新抛给调用方，不需要手写 <code>exceptions</code> 列表。<span class="ev ev-v">V</span></p>
+
+<h3>3.6 为什么这里用线程而不是进程：三条硬理由</h3>
+<ol>
+<li><strong>要交换显存指针。</strong><code>peer_bufs_cpu[i] = self._v2_p2p[dev_id]["ll_buf"].data_ptr()</code>（:496）——把 8 张卡上缓冲区的设备地址收集到一张 CPU 张量里，再 <code>copy_</code> 回 GPU0。这些 <code>data_ptr()</code> 只在<strong>同一进程的同一 CUDA context 集合</strong>里才有意义；跨进程就得把裸指针数值传出去，还得保证对端进程活着、映射有效、生命周期对齐。用线程则天然共享。<span class="ev ev-v">V</span></li>
+<li><strong>加载是 I/O + H2D，GIL 会让路。</strong>（见 §2.2）<span class="ev ev-r">R</span></li>
+<li><strong>代价最低。</strong>线程创建不涉及新解释器、不重新 import、不重建 driver 上下文；而且这个模型本来就是"单进程吃满整机 8 卡"的设计（<code>self.num_devices = 8</code> 直接写死），没有进程隔离的需求。<span class="ev ev-v">V</span></li>
+</ol>
+
+<div class="warn"><strong>顺手发现的一处隐患（供参考）：</strong>循环上界是硬编码的 <code>self.num_devices = 8</code>（:188），而结果容器是按 <code>torch.cuda.device_count()</code> 分配的（:195-196）。若在少于 8 张卡的机器上运行，某些线程会写 <code>self.multi_devices_results[5]</code> 越界 → <code>IndexError</code>；由于异常收集机制，它会以 <code>RuntimeError: Failed to initialize device 5: ...</code> 的形式在 join 之后抛出，报错信息还算友好，但根因（上界不一致）不明显。建议把上界统一成 <code>min(8, torch.cuda.device_count())</code> 或直接从环境变量读。<span class="ev ev-r">R</span></div>
+
+<h2 id="s4">4. 「线程绑定一张 GPU/NPU」到底对不对</h2>
+
+<h3>4.1 三层状态，先分清楚谁是谁</h3>
+<table>
+<thead><tr><th>层级</th><th>状态</th><th>作用域</th><th>本代码里的体现</th></tr></thead>
+<tbody>
+<tr><td rowspan="2"><strong>进程级</strong></td><td>CUDA primary context（驱动上下文、模块、句柄）</td><td>每进程一份（同一设备）</td><td>8 条线程共享同一套 context，能互相使用对方创建的 Tensor</td></tr>
+<tr><td>caching allocator（显存账本 / 缓存池）</td><td>进程级</td><td><code>torch.cuda.memory_allocated()</code> 在任一线程看到的是同一个数（实验 1）</td></tr>
+<tr><td rowspan="2"><strong>线程级</strong></td><td><code>cudaSetDevice</code> 的"当前设备"</td><td><strong>线程私有</strong></td><td><code>with torch.cuda.device(device_id)</code> 只影响本线程</td></tr>
+<tr><td>"当前流"（current stream）</td><td><strong>线程私有</strong></td><td>在主线程 <code>with torch.cuda.stream(s)</code>，子线程看不到 <code>s</code>（实验 1 实测）</td></tr>
+<tr><td><strong>库级</strong></td><td>NCCL/HCCL 通信器、内部进度线程</td><td>库自己管理</td><td>vLLM 里由 <code>torch.distributed</code>/NCCL 创建，仓库内无创建代码</td></tr>
+</tbody>
+</table>
+
+<h3>4.2 实验 1：同进程多线程，什么共享、什么不共享</h3>
+<pre><code>$ python exp1_threads.py       # 1×RTX 3080 Ti Laptop, torch 2.5.1+cu121
+=== 主线程 ===
+  pid = 16412                       thread_ident = 1748
+  current_device = 0                mem_allocated = 512
+  current_stream_is_custom = True   # 主线程在 with torch.cuda.stream(s) 里
+=== 子线程（threading.Thread）===
+  pid = 16412                       # ← 同一个进程
+  thread_ident = 6696               # ← 不同的线程
+  current_device = 0
+  mem_allocated_seen_from_thread = 512          # ← 和主线程一模一样：分配器是进程级
+  current_stream_is_main_custom_stream = False  # ← 主线程设的流，子线程看不到
+  current_stream_is_default = True
+  parent_tensor_sum = 8.0           # ← 子线程能用主线程创建的张量（同 context）</code></pre>
+<p>三条读法：<span class="ev ev-v">V</span></p>
+<ul>
+<li><strong>pid 相同、thread_ident 不同</strong> → 确实是"一个进程里的两条线程"。</li>
+<li><strong>mem_allocated 相同 + 子线程能读写主线程的张量</strong> → CUDA context 与显存分配器<strong>进程级共享</strong>。</li>
+<li><strong>子线程的 current_stream 不是主线程设的那个</strong> → "当前流"是<strong>线程私有</strong>状态。</li>
+</ul>
+<div class="warn"><strong>实验的诚实边界：</strong>本机只有 1 张卡，无法通过"主线程设 cuda:1、子线程仍是 cuda:0"来直接演示"当前设备"的线程私有性。我们改用同一族的"当前流"状态演示线程局部性，设备层面的结论由 CUDA 语义 + vLLM 源码证据支撑（见 §4.3）。<span class="ev ev-r">R</span></div>
+
+<h3>4.3 源码证据：vLLM 在四个不同子线程里都不得不重设设备</h3>
+<p>如果"当前设备"是进程级的，那么 worker 进程初始化时设一次就够了——但 vLLM 反复设。这本身就是"换线程就得重设"的强证据：</p>
+<table>
+<thead><tr><th>位置</th><th>代码</th><th>所在线程</th></tr></thead>
+<tbody>
+<tr><td><span class="filerow">vllm/v1/executor/ray_utils.py:79</span></td><td><code>current_platform.set_device(self.worker.device)</code></td><td>Ray compiled-DAG 的<strong>后台线程</strong></td></tr>
+<tr><td><span class="filerow">vllm/v1/worker/gpu_ubatch_wrapper.py:197</span></td><td><code>torch.cuda.set_device(self.device)</code></td><td>ubatch 子线程（每个线程开头都设）</td></tr>
+<tr><td><span class="filerow">vllm/distributed/eplb/async_worker.py:37</span></td><td><code>torch.cuda.set_device(device_index)</code></td><td>EPLB daemon 子线程</td></tr>
+<tr><td><span class="filerow">.../p2p/p2p_nccl_engine.py:221,380</span></td><td><code>with torch.cuda.device(self.device):</code></td><td>KV 传输的发送/监听子线程</td></tr>
+</tbody>
+</table>
+<p>而且 vLLM 在注释里把原因写明了：</p>
+<pre><code># vllm/v1/executor/ray_utils.py:45-51
+def __init__(self, *args, **kwargs) -&gt; None:
+    super().__init__(*args, **kwargs)
+    # Since the compiled DAG runs a main execution
+    # in a different thread that calls cuda.set_device.
+    # The flag indicates is set_device is called on
+    # that thread.
+    self.compiled_dag_cuda_device_set = False
+
+# vllm/v1/executor/ray_utils.py:67-71
+def setup_device_if_necessary(self):
+    # TODO(swang): This is needed right now because Ray CG executes
+    # on a background thread, so we need to reset torch's current
+    # device.
+    # We can remove this API after it is fixed in compiled graph.</code></pre>
+<p>"<em>on a background thread, so we need to reset torch's current device</em>" —— 一句话说清全部。<span class="ev ev-v">V</span></p>
+
+<h3>4.4 不设设备会怎样：默认落到 0 号卡的坑</h3>
+<p>新线程的"当前设备"是 <strong>0</strong>（CUDA runtime 的默认当前设备），不是"继承创建它的线程"。所以在"一个进程 N 张卡"的模型里，危险动作是<strong>不显式指定设备的调用</strong>：</p>
+<pre><code># 危险写法（在 dev5 的线程里）
+y = torch.ones(8, device="cuda")          # ← 没有指定 index，落到 cuda:0
+torch.cuda.current_stream()               # ← 也是 cuda:0 的流
+torch.zeros(...)                          # ← 同上
+
+# 安全写法（TileRT 的做法，双保险）
+with torch.cuda.device(5):                # ① 改本线程当前设备
+    ...
+    load_file(filepath, device="cuda:5")  # ② 显式点名卡（end2end.py:245）</code></pre>
+<p>TileRT 两个都做了；这就是为什么它能安全地"一个进程跑 8 卡"。<span class="ev ev-v">V</span></p>
+
+<h3>4.5 那么，正确的说法是什么</h3>
+<div class="ok">
+<ol>
+<li><strong>模糊但不错：</strong>"这张卡由这条线程负责"——指的是<em>职责划分</em>，不是运行时绑定。</li>
+<li><strong>精确：</strong>"卡归属于<em>进程</em>；线程在用卡之前必须把<em>自己</em>的当前设备设成那张卡。"</li>
+<li><strong>注意反例：</strong><code>torch.cuda.empty_cache()</code>、显存总量/占用统计、context 的创建与销毁，都是<strong>进程级</strong>的，不受"线程当前设备"限制。</li>
+</ol>
+</div>
+
+<h2 id="s5">5. 这段代码是在 CPU 上创建的，还是 GPU/NPU 上创建的？</h2>
+<p>答案：<strong>所有"创建/调度"动作都在 host CPU 上。</strong>GPU/NPU 上没有"进程"或"线程"这种实体可以被你创建——它们只有 SM/CUDA Core 或 AI Core 上跑的 kernel、以及流（stream）里的任务队列。所谓"在 GPU 上创建"，只可能是指<em>被下发到设备上执行</em>。</p>
+
+<h3>5.1 逐行"执行位置"对照表</h3>
+<table>
+<thead><tr><th>代码</th><th>执行位置</th><th>碰不碰设备</th><th>说明</th></tr></thead>
+<tbody>
+<tr><td><code>self.num_devices = 8</code></td><td>host CPU</td><td>否</td><td>纯 Python 赋值</td></tr>
+<tr><td><code>[None] * torch.cuda.device_count()</code></td><td>host CPU + 驱动查询</td><td>查询驱动</td><td>读设备数量，不做计算</td></tr>
+<tr><td><code>threading.Thread(...)</code> / <code>.start()</code></td><td><strong>host CPU / OS 内核</strong></td><td><strong>否</strong></td><td>CreateThread / <code>clone()</code>；与 GPU 无关</td></tr>
+<tr><td><code>thread.join()</code></td><td>host CPU</td><td>否</td><td>等待线程退出</td></tr>
+<tr><td><code>with torch.cuda.device(device_id)</code></td><td>host CPU</td><td><strong>只改本线程 TLS</strong></td><td>可能触发 context 惰性创建（在设备侧建上下文，但发起点在 host）</td></tr>
+<tr><td><code>torch.cuda.set_device(r)</code>（ROCm 变体）</td><td>host CPU</td><td>同上</td><td>同上</td></tr>
+<tr><td><code>load_file(filepath, device="cuda:5")</code>（:245）</td><td>host CPU 读盘 + 驱动搬运</td><td><strong>是</strong>：H2D 拷贝到显存</td><td>CPU 发起，DMA 引擎干活</td></tr>
+<tr><td><code>torch.cuda.empty_cache()</code>（:248/:463）</td><td>host CPU（进程级分配器）</td><td>是（释放缓存块）</td><td>作用域是进程级缓存池</td></tr>
+<tr><td><code>dsa.init_tilert_weights(state_dicts)</code>（:389）</td><td>host CPU 跑 Python/torch</td><td>可能下发 kernel</td><td>权重重排/打包逻辑</td></tr>
+<tr><td><code>generate_params_with_continuous_storage(...)</code>（:402）</td><td>host CPU 发起，设备分配</td><td>是</td><td><code>torch.zeros(tot_size, device=...)</code>（:326）在显存里要一块连续空间</td></tr>
+<tr><td><code>dsa_show_hands_prepare_money(...)</code>（:506）</td><td>host CPU 发起</td><td><strong>是</strong>：CUDA graph 捕获/准备</td><td>GPU 上录制执行图</td></tr>
+<tr><td><code>raise RuntimeError(...)</code>（:489）</td><td>host CPU</td><td>否</td><td>纯 Python 异常</td></tr>
+<tr><td>kernel 真正执行</td><td><strong>GPU / NPU</strong></td><td>是</td><td>这是唯一"在卡上发生"的部分</td></tr>
+</tbody>
+</table>
+
+<h3>5.2 一条经验规则</h3>
+<div class="ok">
+<strong>能不能"在设备上创建"？</strong> 不能。你能做的只有：在 host 上<em>创建执行上下文</em>并<em>下发任务</em>。所以：<br>
+· <strong>进程/线程 = host 概念</strong>，用 OS 的 API 创建，与 CUDA/NPU 无关；<br>
+· <strong>CUDA context / stream / kernel = 设备概念</strong>，但<em>发起者</em>永远是 host 上的某个线程；<br>
+· 唯一"看起来像在卡上创建"的东西是 <strong>CUDA graph</strong>（在 GPU 上录制的执行图）和 <strong>NCCL/HCCL 通信器</strong>（在设备侧建链），但它们的创建调用同样发生在 host 线程里。
+</div>
+<p>NPU 侧完全同构：<code>torch.npu.set_device(npu:0)</code> 也是 host 侧调用，改的是 host 线程的当前 NPU；CANN/ACL 是 host 侧的驱动栈（见第 8 节）。<span class="ev ev-v">V</span></p>
+
+<h2 id="s6">6. vLLM v0.16.0 的进程与线程全景（源码考据）</h2>
+<p>下面是本机 git 检出 <code>D:\wsl_projects\vllm</code>（commit <code>89a77b108</code>）的实际结构，每条都有 <code>文件:行号</code>。</p>
+
+<h3>6.1 进程拓扑：三种形态</h3>
+<p>仓库内的权威描述在 <code>docs/design/arch_overview.md:81-127</code>：</p>
+<pre><code># docs/design/arch_overview.md（节选）
+:87   The API server process handles HTTP requests ... communicates with the
+      engine core process(es) via ZMQ sockets
+:95   The engine core process runs the scheduler, manages KV cache, and
+      coordinates model execution across GPU workers.
+:105  There is **1 worker process per GPU**. The total number of GPU worker
+      processes equals `tensor_parallel_size x pipeline_parallel_size` per engine core.</code></pre>
+
+<pre class="mermaid">
+flowchart TB
+  A1["主进程（即 API server）<br/>uvicorn/asyncio、tokenize、AsyncLLM、AsyncMPClient<br/>不碰 GPU"]
+  A2["EngineCore_DP0<br/>run_busy_loop：调度器、KV cache 元数据<br/>不碰 CUDA；另挂 2 条 ZMQ IO 线程"]
+  A3["模型实际跑在 EngineCore 进程内<br/>world_size==1 → backend='uni' → UniProcExecutor"]
+  A1 <-->|"ZMQ ROUTER/DEALER + PUSH/PULL"| A2
+  A2 --- A3
+</pre>
+<div class="figcaption">图 3a：形态 A —— 默认 <code>vllm serve</code>（TP=1、DP=1），<strong>只有 2 个 OS 进程，没有独立的 worker 进程</strong>。这是最反直觉的一点。</div>
+
+<pre class="mermaid">
+flowchart TB
+  B1["主进程（API server）"]
+  B2["EngineCore_DP0<br/>run_busy_loop + 2 条 IO 线程"]
+  B1 <-->|"ZMQ ROUTER/DEALER"| B2
+  subgraph W["每张 GPU 一个 VllmWorker 进程（daemon=True）"]
+    direction LR
+    B3["VllmWorker-0"] --- G0["GPU0"]
+    B4["VllmWorker-1"] --- G1["GPU1"]
+    B5["VllmWorker-N"] --- GN["GPU N"]
+  end
+  B2 -->|"共享内存环 + ZMQ XPUB"| B3
+  B2 --> B4
+  B2 --> B5
+</pre>
+<div class="figcaption">图 3b：形态 B —— TP 或 PP 大于 1 时，EngineCore 进程再 <code>spawn</code> 出每卡一个 worker 进程（这是"一卡一进程"的落点）。</div>
+
+<pre class="mermaid">
+flowchart TB
+  C1["Launcher（原来的 vllm serve 进程）"]
+  subgraph S["spawn 出来的前端进程（api_server_count 个，硬编码 spawn）"]
+    direction LR
+    C2["ApiServer_0"]
+    C3["ApiServer_k"]
+  end
+  subgraph E["EngineCore 进程（非 daemon）"]
+    direction LR
+    C4["EngineCore_DP0"]
+    C5["EngineCore_DPk"]
+  end
+  C6["VLLM_DP_Coordinator（daemon）"]
+  C1 --> C2
+  C1 --> C3
+  C1 --> C4
+  C1 --> C5
+  C1 --> C6
+  C4 <-->|"XSUB/XPUB + PUSH/PULL"| C6
+  C5 <--> C6
+</pre>
+<div class="figcaption">图 3c：形态 C —— DP 大于 1 时，<code>vllm serve</code> 进程本身变成 launcher，另外再起前端与 EngineCore 进程，外加一个 DP 协调进程。</div>
+
+<table>
+<thead><tr><th>进程</th><th>创建位置</th><th>daemon</th><th>职责</th><th>碰加速器</th></tr></thead>
+<tbody>
+<tr><td>主进程 / API Server</td><td>你自己敲的 <code>vllm serve</code>；<code>api_server.py:531 uvloop.run(run_server(args))</code></td><td>否</td><td>HTTP、tokenize、多模态加载</td><td><strong>否</strong></td></tr>
+<tr><td><code>ApiServer_{i}</code></td><td><code>v1/utils.py:194-215</code>（<b>硬编码 spawn</b>）</td><td>否</td><td>DP 下的多前端横向扩展</td><td>否</td></tr>
+<tr><td><code>EngineCore_DP{i}</code></td><td><code>v1/engine/utils.py:120-129</code>，<code>proc.start()</code> 在 <code>:150</code></td><td><b>否</b></td><td>调度、KV cache 元数据、向 worker 发 RPC</td><td><strong>否</strong>（关键）</td></tr>
+<tr><td><code>VLLM_DP_Coordinator</code></td><td><code>v1/engine/coordinator.py:78-90</code></td><td>是（<code>:88</code>）</td><td>DP 负载均衡 / MoE wave 同步</td><td>否</td></tr>
+<tr><td><code>VllmWorker-{rank}</code> × world_size</td><td><code>v1/executor/multiproc_executor.py:615-622</code></td><td>是（<code>:619</code>）</td><td>加载权重、前向、管显存</td><td><strong>是</strong></td></tr>
+<tr><td>Ray worker actor（可选）</td><td><code>v1/executor/ray_utils.py:41</code></td><td>—</td><td>同上，Ray 托管</td><td>是</td></tr>
+</tbody>
+</table>
+<pre><code># vllm/v1/executor/multiproc_executor.py:615-622
+proc = context.Process(
+    target=WorkerProc.worker_main,
+    kwargs=process_kwargs,
+    name=f"VllmWorker-{rank}",
+    daemon=True,
+)
+proc.start()</code></pre>
+<pre><code># vllm/v1/engine/utils.py:120-150（节选，EngineCore 进程的创建）
+proc = context.Process(
+    target=run_engine_core,
+    name=f"EngineCore_DP{local_dp_rank}",
+    kwargs=process_kwargs,
+)
+...
+for proc, local_dp_rank in zip(self.processes, local_dp_ranks):
+    # Adjust device control in DP for non-CUDA platforms ...
+    with (set_device_control_env_var(vllm_config, local_dp_rank) if ... else contextlib.nullcontext()):
+        proc.start()</code></pre>
+<p>注意 <code>EngineCore</code> 的 <code>Process(...)</code> 里<strong>没有 <code>daemon=True</code></strong>，而 worker 是显式 <code>daemon=True</code>。这个差别在昇腾上会变成 bug（第 8 节）。<span class="ev ev-v">V</span></p>
+
+<h3>6.2 创建机制：谁决定 fork 还是 spawn</h3>
+<pre><code># vllm/utils/system_utils.py:114-148（决定用哪种启动方式）
+def _maybe_force_spawn():
+    if os.environ.get("VLLM_WORKER_MULTIPROC_METHOD") == "spawn":
+        return
+    reasons = []
+    if is_in_ray_actor():
+        os.environ["RAY_ADDRESS"] = ray.get_runtime_context().gcs_address
+        reasons.append("In a Ray actor and can only be spawned")
+    if cuda_is_initialized():
+        reasons.append("CUDA is initialized")
+    elif xpu_is_initialized():
+        reasons.append("XPU is initialized")
+    if in_wsl():
+        reasons.append("WSL is detected and NVML is not compatible with fork")
+    if reasons:
+        logger.warning("We must use the `spawn` multiprocessing start method. ...")
+        os.environ["VLLM_WORKER_MULTIPROC_METHOD"] = "spawn"
+
+# vllm/utils/system_utils.py:151-160
+def get_mp_context():
+    _maybe_force_spawn()
+    mp_method = envs.VLLM_WORKER_MULTIPROC_METHOD
+    return multiprocessing.get_context(mp_method)</code></pre>
+<p>这段是全文最重要的十几行之一：<strong>vLLM 的默认是 fork，但只要满足上面任一条件就强制 spawn。</strong> 而 CLI 入口干脆把默认值直接设成 spawn：</p>
+<pre><code># vllm/entrypoints/utils.py:170-172（启命令行入口时设 spawn）
+# 注释同时要求用户的代码必须有 if __name__ == "__main__" 保护</code></pre>
+<p>原因见第 7 节的实验与推理。<span class="ev ev-v">V</span></p>
+
+<h3>6.3 EngineCore 里面：一个 CPU busy loop + 两条 IO 线程</h3>
+<pre><code># vllm/v1/engine/core.py:929-1026（进程入口与主循环）
+def run_engine_core(*args, **kwargs):        # 子进程入口
+    engine_core = DPEngineCoreProc(...) if is_dp else EngineCoreProc(...)
+    ...
+def run_busy_loop(self):                     # 进程主线程，while True
+    ...
+def _process_engine_step(self):
+    ...
+
+# vllm/v1/engine/core.py:753-775（两条 daemon IO 线程）
+self.input_thread = threading.Thread(target=self.process_input_sockets, daemon=True)
+...
+self.output_thread = threading.Thread(target=self.process_output_sockets, daemon=True)</code></pre>
+<table>
+<thead><tr><th>线程</th><th>位置</th><th>daemon</th><th>碰加速器</th><th>职责</th></tr></thead>
+<tbody>
+<tr><td>ZMQ input IO 线程</td><td><code>core.py:753-764</code></td><td>是</td><td>否</td><td>反序列化请求 → 队列</td></tr>
+<tr><td>ZMQ output IO 线程</td><td><code>core.py:766-775</code></td><td>是</td><td>否</td><td>输出编码 → socket</td></tr>
+<tr><td><code>MultiprocWorkerMonitor</code></td><td><code>multiproc_executor.py:257-259</code></td><td>是</td><td>否</td><td>监控 worker 存活</td></tr>
+<tr><td><code>MPClientEngineMonitor</code></td><td><code>core_client.py:625-627</code></td><td>是</td><td>否</td><td>前端监控 EngineCore 猝死</td></tr>
+</tbody>
+</table>
+
+<h3>6.4 Worker 进程内的线程</h3>
+<table>
+<thead><tr><th>线程</th><th>位置</th><th>时机</th><th>碰加速器</th><th>职责</th></tr></thead>
+<tbody>
+<tr><td><code>WorkerDeathMonitor</code></td><td><code>multiproc_executor.py:738-741</code></td><td><code>worker_main</code> 最开头</td><td>否</td><td>父进程死 → 自己退出</td></tr>
+<tr><td><code>WorkerAsyncOutputCopy</code></td><td><code>multiproc_executor.py:563-568</code></td><td><code>init_device()</code> 之前</td><td>是</td><td>异步拷贝输出</td></tr>
+<tr><td><b>EPLB 异步搬运线程</b></td><td><code>distributed/eplb/async_worker.py:56</code></td><td>首次重排前</td><td><strong>是</strong></td><td>后台搬 expert 权重</td></tr>
+<tr><td>ubatch 前向线程 ×2</td><td><code>gpu_ubatch_wrapper.py:222,276</code></td><td>捕获/每步</td><td>是</td><td>Dual-batch overlap</td></tr>
+<tr><td>KV 传输（p2p NCCL / nixl / mooncake…）</td><td><code>p2p_nccl_engine.py:159,178,185</code> 等</td><td>连接器初始化</td><td>部分</td><td>KV 跨实例搬运</td></tr>
+<tr><td>ZMQ publisher（KV events）</td><td><code>kv_events.py:309-312</code></td><td>构造时</td><td>否</td><td>发布 KV cache 事件</td></tr>
+<tr><td>媒体加载线程池 ×8</td><td><code>multimodal/media/connector.py:28-31</code></td><td><strong>import 期</strong></td><td>否</td><td>多模态下载解码（在 <b>API server 进程</b>）</td></tr>
+<tr><td>权重加载线程池</td><td><code>model_loader/weight_utils.py:753,902</code></td><td><code>load_model()</code></td><td>否→是</td><td>并行反序列化 safetensors</td></tr>
+<tr><td>usage 上报线程</td><td><code>usage/usage_lib.py:160-165</code></td><td>启动上报</td><td>否</td><td>匿名遥测</td></tr>
+</tbody>
+</table>
+<div class="warn"><strong>两个"查无此物"的澄清：</strong><code>BackgroundLoop</code> 在 v0.16 已<strong>不存在</strong>（<code>vllm/v1/utils.py</code> 里没有这个类）；<code>VLLM_USE_V1</code> 这个环境变量也<strong>不存在</strong>了（V1 是唯一路径），只剩 <code>VLLM_ENABLE_V1_MULTIPROCESSING</code>。网上不少文章仍按 v0.6~v0.8 的结构描述，对照时要注意版本。<span class="ev ev-v">V</span></div>
+
+<h3>6.5 通道表：进程之间到底怎么说话</h3>
+<table>
+<thead><tr><th>通道</th><th>两端</th><th>传输内容</th><th>代码位置</th></tr></thead>
+<tbody>
+<tr><td>ZMQ ROUTER(bind) ↔ DEALER(connect)</td><td>前端 ↔ EngineCore</td><td>握手 HELLO / READY（msgspec.msgpack）</td><td><code>v1/utils.py:900-902</code>；<code>core.py:855-862</code></td></tr>
+<tr><td>ZMQ ROUTER(bind) ← DEALER(connect)</td><td>前端 → EngineCore</td><td>请求（engine identity = 2 字节小端）</td><td><code>core_client.py:507-509</code>；<code>core.py:1155-1157</code></td></tr>
+<tr><td>ZMQ PUSH → PULL</td><td>EngineCore → 前端</td><td>输出（按 client_index 分派）</td><td><code>core.py:1240-1282</code>；<code>core_client.py:510-512</code></td></tr>
+<tr><td><b>共享内存环 ShmRingBuffer + ZMQ XPUB</b></td><td>EngineCore ↔ Worker 进程</td><td>每步的调度/执行消息；&gt;24 MiB 溢出走 XPUB</td><td><code>multiproc_executor.py:131-137,337</code>；<code>shm_broadcast.py:296-310</code></td></tr>
+<tr><td><code>multiprocessing.Pipe</code></td><td>EngineCore ↔ Worker</td><td>worker READY 握手、死亡检测</td><td><code>multiproc_executor.py:598-601,724-741</code></td></tr>
+<tr><td>ZMQ XSUB/XPUB + PUSH/PULL</td><td>EngineCore ↔ DP Coordinator</td><td>DP 统计与 wave 同步</td><td><code>core.py:1164-1174,1246-1251</code>；<code>coordinator.py:169-198</code></td></tr>
+<tr><td><code>init_process_group(backend="nccl")</code></td><td>Worker 进程之间</td><td>张量并行/专家并行的集合通信</td><td><code>parallel_state.py:1256-1262</code>；<code>gpu_worker.py:232-238</code></td></tr>
+</tbody>
+</table>
+<p>格式：IPC 地址是 <code>ipc://</code>（同机）或 <code>tcp://</code>，见 <code>v1/utils.py:143-156</code>；序列化用 <code>msgspec</code> 的 msgpack 编解码器。<span class="ev ev-v">V</span></p>
+
+<h3>6.6 一条请求的跨进程全链路</h3>
+<pre class="mermaid">
+flowchart TB
+  H["HTTP / OpenAI API<br/>uvicorn 事件循环"] --> TK["tokenize（CPU）"]
+  TK --> AL["AsyncLLM.generate<br/>async_llm.py:537"]
+  AL -->|"ZMQ ROUTER"| CC["AsyncMPClient<br/>core_client.py:970"]
+  CC -->|"跨进程 1"| EC["EngineCore：解码入队<br/>core.py:1195-1218"]
+  EC --> SCH["调度器 scheduler（CPU）<br/>core.py:1076"]
+  SCH --> EX["execute_model<br/>core.py:404"]
+  EX -->|"共享内存环 跨进程 2"| W["Worker 进程<br/>worker_busy_loop"]
+  W --> GPU["GPU：前向 / 采样<br/>gpu_worker.py:604"]
+  GPU -->|"结果回传：response MQ 回到 EngineCore<br/>再 ZMQ PUSH（跨进程 3）"| OUT["OutputProcessor<br/>async_llm.py:662"]
+  OUT --> AL2["generate 逐 token yield"]
+</pre>
+<div class="figcaption">图 4：一次解码至少跨 3 次进程边界（请求 → 共享内存环 → 输出 PUSH → 结果回传）。但调度与 GPU 前向是<strong>重叠</strong>的（EngineCore 的 IO 线程 + 异步输出拷贝），这是"多进程不是为了省事、而是为了重叠"的直接体现。</div>
+
+<h3>6.7 "主进程"在 vLLM 里到底指什么</h3>
+<ul>
+<li><strong>没有</strong>任何"判断自己是不是主进程"的代码（全仓无 <code>os.getpid() == 1</code> 之类；唯一身份读取是日志前缀用的 multiprocessing 进程名，<code>system_utils.py:220-221</code>）。<span class="ev ev-v">V</span></li>
+<li>"主进程"在实践中有三个不同含义，别混：
+  <ol>
+    <li><strong>用户敲命令的那个进程</strong>（= API server，形态 C 下会变成 launcher）；</li>
+    <li><strong>CPython 的 <code>__main__</code> 模块所在进程</strong>——spawn 时决定"哪些模块级代码会被重新执行"；</li>
+    <li><strong>父进程</strong>（相对它 spawn 出来的子进程）。</li>
+  </ol>
+</li>
+<li><strong>为什么必须有 <code>if __name__ == "__main__":</code>：</strong>spawn 的子进程会重新 import 你的模块。若把"创建进程"的代码写在模块级（无保护），子进程 import 时又会创建孙进程 → 无限递归。CLI 入口正是因此在 <code>entrypoints/utils.py:170-172</code> 强制 spawn，并要求保护；<code>api_server.py:519</code>、<code>cli/main.py:78</code> 是保护落点。<span class="ev ev-v">V</span></li>
+<li><strong>engine core 不碰 CUDA</strong> 的边界是"进程划分带来的"而不是代码强制的：<code>VLLM_ENABLE_V1_MULTIPROCESSING=0</code> 时 worker 被拉回 EngineCore 进程（<code>uniproc_executor.py:46-48</code>），边界就消失了。<span class="ev ev-v">V</span></li>
+</ul>
+
+<h3>6.8 EPLB 的两种形态：线程 vs 进程（同一功能，两种架构）</h3>
+<table>
+<thead><tr><th></th><th>上游 vLLM v0.16</th><th>vllm-ascend</th></tr></thead>
+<tbody>
+<tr><td>形态</td><td><strong>worker 进程内的 daemon 线程</strong></td><td><strong>独立子进程</strong>（<code>EplbProcess</code>）</td></tr>
+<tr><td>创建代码</td><td><span class="filerow">distributed/eplb/async_worker.py:56</span><br/><code>threading.Thread(target=thread_target, daemon=True)</code></td><td><span class="filerow">eplb/core/eplb_worker.py:382</span><br/><code>Process(target=self.worker_process, ..., daemon=True).start()</code></td></tr>
+<tr><td>碰设备的处理</td><td>线程启动即 <code>torch.cuda.set_device(device_index)</code>（<code>async_worker.py:37</code>）</td><td>由子进程侧负责（<code>enable_d2d=True</code>）</td></tr>
+<tr><td>触发路径</td><td>worker 主线程 <code>rearrange_event.set()</code>（<code>eplb_state.py:898</code>）→ 线程 <code>await asyncio.to_thread(event.wait)</code></td><td>队列 <code>planner_q</code> / <code>block_update_q</code></td></tr>
+<tr><td>连带约束</td><td>—</td><td><strong>必须把 worker 进程的 daemon 关掉</strong>：守护进程不允许再创建子进程</td></tr>
+</tbody>
+</table>
+<pre><code># vllm_ascend/patch/__init__.py:61-64（为什么 ascend 要改上游）
+#   vLLM create child process with daemon=True, which doesn't work with EPLB case,
+#   since EPLB will create a new process which is not allowed by daemon=True.
+#   How: Set daemon=False in MultiprocExecutor.
+#
+# 对应实现：vllm_ascend/patch/platform/patch_multiproc_executor.py:199  daemon=False
+# 上游原值：vllm/v1/executor/multiproc_executor.py:619                    daemon=True</code></pre>
+<p>这是一个绝好的例子，说明"线程还是进程"不只是性能选择，还会<strong>反向约束进程的属性</strong>（daemon 与否）。<span class="ev ev-v">V</span></p>
+
+<h2 id="s7">7. fork 还是 spawn：三个实验 + vLLM 的三条强制理由</h2>
+
+<h3>7.1 实验 2：spawn 出来的子进程 = 全新解释器 + 全新 CUDA context</h3>
+<pre><code>$ python exp2_spawn.py
+[父进程] pid=7820 __name__=__main__ mem_allocated=4194304 devices=1
+[spawn子进程] pid=12772 ppid=7820 线程ident=30380 __name__=__mp_main__
+[spawn子进程] 进入子进程时 mem_allocated=0 devices=1          # ← 父进程的 4 MB 不见了
+[spawn子进程] set_device(0) 后 current_device=0 y.sum=8.0 mem_allocated=512
+[父进程] 子进程 exitcode=0；父进程自己的 x.sum=0.0 mem_allocated=4194304
+[父进程] 关键点：子进程的 mem_allocated 与父进程无关 —— 两个进程各有独立 CUDA context；
+         父进程创建的 x 在子进程里根本不存在。</code></pre>
+<p>三条结论：<span class="ev ev-v">V</span></p>
+<ol>
+<li><code>__name__=__mp_main__</code> → <strong>子进程重新 import 了模块</strong>，所以 <code>if __name__ == "__main__"</code> 保护是必需的（否则递归创建进程）。</li>
+<li><code>mem_allocated=0</code> → <strong>全新的 CUDA context 与显存池</strong>；父进程的 Tensor 对象在子进程里不可见。</li>
+<li>父子进程各自 <code>set_device(0)</code> 互不影响 → 设备选择是<strong>进程内</strong>的事。</li>
+</ol>
+
+<h3>7.2 实验 3：Windows 上根本没有 fork</h3>
+<pre><code>$ python exp3_fork.py
+[父进程] pid=26192 CUDA 已初始化, mem_allocated=4194304
+ValueError: cannot find context for 'fork'</code></pre>
+<p>所以任何需要跨平台（含 Windows）的推理框架，都不能把 fork 当默认路径。vLLM 的 <code>VLLM_WORKER_MULTIPROC_METHOD</code> 之所以要能被覆盖，根因之一在此。<span class="ev ev-v">V</span></p>
+
+<h3>7.3 实验 4：Linux 上 fork 的真实语义（在 WSL 里跑）</h3>
+<pre><code>$ wsl -d Ubuntu-22.04 -- python3 exp4_fork_linux.py
+[父进程] pid=84 fork 前存活线程数=2
+[fork子进程] pid=86
+[fork子进程] 存活线程数=1 （父进程 fork 时有 2 条：主线程 + 后台线程）
+[fork子进程] 后台线程留下的变量 side_thread_ok=True （值被复制过来了，但线程本身没有跟着过来）
+[fork子进程] counter 的快照 = 1
+/path/exp4_fork_linux.py:34: DeprecationWarning: This process (pid=23) is multi-threaded,
+                             use of fork() may lead to deadlocks in the child.
+[父进程] pid=23 存活线程数=2
+[父进程] 父进程的 counter = 999（子进程看到的是快照 1，互不影响）</code></pre>
+<p>三个实测事实：<span class="ev ev-v">V</span></p>
+<ol>
+<li><strong>fork 只复制调用它的那一条线程</strong>（子进程存活线程数 = 1，父进程是 2）。其余线程<em>连同它们的栈状态</em>凭空消失——但被它们持有的锁、以及运行库内部的线程池计数，仍停留在"被持有"状态。</li>
+<li><strong>内存是写时复制快照</strong>：<code>side_thread_ok=True</code> 这个值被复制过去了，但产生它的线程不在；父进程后改的 <code>counter=999</code> 子进程看不到（看到 1）。</li>
+<li><strong>CPython 自己会警告</strong>："multi-threaded ... may lead to deadlocks in the child"。</li>
+</ol>
+<div class="warn"><strong>这就解释了 vLLM 的强制逻辑：</strong>CUDA 初始化之后，进程里已经活着驱动/NVML/NCCL 的内部线程与 context。此时 fork 得到的子进程只剩一条线程，却继承了"CUDA 已初始化"的运行时状态——一个注定不一致的现场。所以 <code>_maybe_force_spawn()</code> 见到 <code>cuda_is_initialized()</code> 就报 "<em>CUDA is initialized</em>" 并强制 spawn。同理还有两条：Ray actor 里只能 spawn；<strong>WSL 环境下 NVML 与 fork 不兼容</strong>（注释原文："WSL is detected and NVML is not compatible with fork"）。<span class="ev ev-v">V</span></div>
+
+<h3>7.4 spawn / fork / forkserver 对比表</h3>
+<table>
+<thead><tr><th></th><th>fork</th><th>spawn</th><th>forkserver</th></tr></thead>
+<tbody>
+<tr><td>平台</td><td>仅 POSIX（<b>Windows 无</b>）</td><td>全平台</td><td>仅 POSIX</td></tr>
+<tr><td>子进程内容</td><td>父进程内存的 COW 副本，<b>只保留调用线程</b></td><td>全新解释器，重新 import <code>__main__</code> 之外的模块</td><td>由干净的服务器进程 fork 出来</td></tr>
+<tr><td>启动速度</td><td>最快</td><td>最慢（要重新 import、可能重新建 context）</td><td>中</td></tr>
+<tr><td>能否继承 CUDA context</td><td>表面继承，实际<b>不可用/危险</b></td><td>不继承，得到<strong>干净的新 context</strong></td><td>不继承</td></tr>
+<tr><td>需要 <code>__main__</code> 保护</td><td>否</td><td><strong>是</strong></td><td>部分需要</td></tr>
+<tr><td>传参要求</td><td>随意（内存里有）</td><td>必须可 pickle</td><td>必须可 pickle</td></tr>
+<tr><td>vLLM 的选择</td><td>Linux 默认值</td><td>CLI 默认 + 条件强制</td><td>在 <code>api_server.py:77-84</code> 用于前端进程</td></tr>
+</tbody>
+</table>
+
+<h2 id="s8">8. NPU（昇腾）差异：ACL 线程、HCCL 与 EPLB 的进程化</h2>
+<p>好消息是：<strong>NPU 沿用完全相同的"一进程一卡 + 线程需自设设备"模型</strong>，只是把 API 名字换掉。</p>
+
+<h3>8.1 名字的对应</h3>
+<table>
+<thead><tr><th>概念</th><th>CUDA</th><th>昇腾 NPU</th></tr></thead>
+<tbody>
+<tr><td>设当前设备</td><td><code>torch.cuda.set_device(d)</code></td><td><code>torch.npu.set_device(d)</code>（<span class="filerow">vllm_ascend/platform.py:292-294</span>）</td></tr>
+<tr><td>worker 里的调用</td><td><code>gpu_worker.py:223-224</code><br/><code>self.device = torch.device(f"cuda:{local_rank}")</code></td><td><code>vllm_ascend/worker/worker.py:260-262</code><br/><code>device = torch.device(f"npu:{self.local_rank}")</code></td></tr>
+<tr><td>可见设备变量</td><td><code>CUDA_VISIBLE_DEVICES</code></td><td><code>ASCEND_RT_VISIBLE_DEVICES</code>（<span class="filerow">platform.py:104</span>）</td></tr>
+<tr><td>集合通信后端</td><td><code>nccl</code></td><td><code>hccl</code>（<span class="filerow">worker/worker.py:755-760</span> 里硬编码字符串）</td></tr>
+<tr><td>流</td><td><code>torch.cuda.Stream</code></td><td><code>torch.npu.Stream</code>（vllm-ascend 里 170+ 处使用）</td></tr>
+<tr><td>graph 捕获</td><td>CUDA graph</td><td>ACL graph（<code>compilation/acl_graph.py</code>）</td></tr>
+</tbody>
+</table>
+<p><code>local_rank → 物理卡</code> 的映射在 NPU 侧同样是"按可见列表取下标"：</p>
+<pre><code># vllm_ascend/utils.py:508-526（节选）
+visible_devices = os.getenv("ASCEND_RT_VISIBLE_DEVICES")
+if visible_devices is None:
+    devices = sorted([int(x) for x in DeviceInfo.get_npu_map_info()])
+else:
+    devices = [int(x) for x in visible_devices.split(",") if x.strip()]
+...
+if local_rank &lt; 0 or local_rank &gt;= len(devices):
+    raise ValueError(f"local_rank {local_rank} is out of bounds for the available NPU devices: {devices}")
+local_comm_res_file = os.path.join(local_comm_res_path, f"ub_endpoint_npu_{devices[local_rank]}.json")</code></pre>
+<p>而 vllm-ascend 为了让上游为 CUDA 写的代码直接可用，甚至做了别名替换：</p>
+<pre><code># vllm_ascend/worker/model_runner_v1.py:4481-4503
+torch.cuda.Stream = torch.npu.Stream
+torch.cuda.current_stream = torch.npu.current_stream
+torch.cuda.stream = torch.npu.stream</code></pre>
+<p><span class="ev ev-v">V</span></p>
+
+<h3>8.2 ACL 自己有线程，而且被显式绑到 CPU 核上</h3>
+<p>这是"线程"这一层在 NPU 栈里最有趣的证据：CANN/ACL runtime 会在 worker 进程里创建名为 <code>acl_thread</code> 与 <code>release_thread</code> 的线程，vllm-ascend 通过 <code>ps -Te</code> 把它们找出来，再把每个 NPU 相关的线程钉到预留的 CPU 上：</p>
+<pre><code># vllm_ascend/cpu_binding.py:14-15
+MASK_BIT = 32  # Number of bits in a CPU affinity mask group
+MIN_CPUS_PER_NPU = 5  # 2(IRQ) + 1(main, at least 1 CPU) + 1(acl) + 1(release) = 5 CPUs per NPU
+
+# vllm_ascend/cpu_binding.py:425-434（节选）
+def bind_threads(self) -&gt; None:
+    thread_message, _ = execute_command(["ps", "-Te"])
+    threads_map = self.get_threads_map(thread_message)
+    ...
+    self.bind(main_pid, self.assign_main[current_npu], True)
+    for acl_thread in threads_map.get(main_pid, {}).get("acl_thread", []):
+        self.bind(acl_thread, self.assign_acl[current_npu], False)
+    for release_thread in threads_map.get(main_pid, {}).get("release_thread", []):
+        self.bind(release_thread, self.assign_rel[current_npu], False)</code></pre>
+<p>注意这里的"绑定"（<code>taskset</code>/CPU 亲和性）指的是<strong>把线程绑到 CPU 核</strong>——和"把线程绑到 NPU"完全是两回事。这也是术语容易混淆的一个点：<em>绑核</em>（affinity）是真实存在且常用的操作，<em>绑卡</em>（device affinity）并不存在对应机制，只有"当前设备"这一线程私有状态。<span class="ev ev-v">V</span></p>
+
+<h3>8.3 昇腾上一个真实的坑：daemon 与"进程里再建进程"</h3>
+<pre><code># vllm_ascend/patch/platform/patch_multiproc_executor.py:199
+daemon=False        # 上游 vllm/v1/executor/multiproc_executor.py:619 是 daemon=True</code></pre>
+<p>原因：Python 的守护进程<strong>不允许创建子进程</strong>，而 ascend 的 EPLB 需要再起一个 planner 子进程。于是 vllm-ascend 只能打补丁把 worker 的 daemon 属性改掉。<span class="ev ev-v">V</span></p>
+
+<h2 id="s9">9. 三种并发模型对比与选型指南</h2>
+<table>
+<thead><tr><th>维度</th><th>TileRT（你贴的那段代码）</th><th>vLLM v0.16（单机）</th><th>vLLM-Ascend + EPLB</th></tr></thead>
+<tbody>
+<tr><td>进程数</td><td><strong>1</strong>（不吃进程隔离）</td><td>2（单卡）/ 2+N（TP=N）</td><td>在 vLLM 基础上 +1 个 EPLB planner 进程</td></tr>
+<tr><td>卡与承载者</td><td>1 进程吃 8 卡</td><td><strong>1 卡 1 worker 进程</strong></td><td>同左</td></tr>
+<tr><td>并发手段</td><td>每卡一条线程（+ 线程池变体）</td><td>多进程 + 进程内少量线程</td><td>多进程 + 线程 + 子进程</td></tr>
+<tr><td>设备设定</td><td>线程内 <code>with torch.cuda.device(id)</code> / <code>set_device(r)</code></td><td>进程初始化时 <code>cuda:{local_rank}</code>，子线程各自重设</td><td>同左，换 <code>torch.npu</code></td></tr>
+<tr><td>主要动机</td><td>加载并行 + 同进程交换显存指针 + 极低时延（避免跨进程同步）</td><td>绕 GIL、每卡干净 context、调度与执行重叠、进程隔离</td><td>规划器不阻塞主推理循环</td></tr>
+<tr><td>代价</td><td>GIL 区域无法并行；一条线程崩 → 全进程死</td><td>进程间只能 IPC，不能共享 Python 对象；启动更贵</td><td>多一层 daemon 约束与 shared dict</td></tr>
+</tbody>
+</table>
+
+<div class="ok">
+<strong>选型判据（按优先级）：</strong>
+<ol>
+<li><strong>要不要共享 Python 对象/显存指针？</strong> 要 → 线程（TileRT 的 <code>data_ptr()</code> 交换是典型）。</li>
+<li><strong>瓶颈在 Python 字节码还是 C/CUDA？</strong> 前者 → 进程（否则 GIL 白给）；后者 → 线程够用。</li>
+<li><strong>需不需要崩溃隔离？</strong> 需要 → 进程（vLLM 的调度器不能因为某张卡 OOM 就一起死）。</li>
+<li><strong>是不是"一张卡一个独立运行时"？</strong> 是 → 一进程一卡（vLLM），这样每个进程的 CUDA context 生命周期、显存账本、故障域都对齐到卡。</li>
+<li><strong>有没有"库要求再建子进程"的需求？</strong> 有（如昇腾 EPLB）→ 注意 daemon 约束。</li>
+</ol>
+</div>
+
+<h2 id="s10">10. 复现清单（脚本、环境、原始输出）</h2>
+<p>本文所有实验脚本都在本仓库：<code>docs/inference/assets/vllm-proc-thread/</code>，可直接下载运行。环境：Windows + 1×RTX 3080 Ti Laptop（驱动 528.92）+ <code>torch 2.5.1+cu121</code>（conda env <code>llm-learn</code>）；fork 实验在 WSL Ubuntu-22.04 / Python 3.12.3 下运行（无需 GPU）。</p>
+<table>
+<thead><tr><th>脚本</th><th>证明什么</th><th>关键输出</th></tr></thead>
+<tbody>
+<tr><td><code>exp1_threads.py</code></td><td>同进程多线程：context/分配器共享，当前流线程私有</td><td><code>mem_allocated=512</code>（两线程相同）；<code>current_stream_is_main_custom_stream=False</code></td></tr>
+<tr><td><code>exp2_spawn.py</code></td><td>spawn 子进程：新解释器（<code>__mp_main__</code>）+ 新 context</td><td>子进程 <code>mem_allocated=0</code>，父进程 4 MiB 不受影响</td></tr>
+<tr><td><code>exp3_fork.py</code></td><td>Windows 无 fork</td><td><code>ValueError: cannot find context for 'fork'</code></td></tr>
+<tr><td><code>exp4_fork_linux.py</code></td><td>fork 只复制调用线程 + COW 快照 + CPython 警告</td><td>子进程存活线程 1 / 父进程 2；<code>counter</code> 1 vs 999</td></tr>
+<tr><td><code>exp5_mangling.py</code></td><td>类体内名字改写：<code>__load_weights</code> → <code>_ShowHandsDSALayer__load_weights</code></td><td><code>co_cellvars = ('model_path', '_ShowHandsDSALayer__load_weights')</code></td></tr>
+</tbody>
+</table>
+<p>阅读完整原始输出：<a href="assets/vllm-proc-thread/RAW_OUTPUT.txt">RAW_OUTPUT.txt</a>。查看被分析的真实源码位置：TileRT <code>tilert/models/deepseek_v3_2/modules/end2end.py:336-524</code>；vLLM <code>vllm/v1/executor/multiproc_executor.py:615-622</code>、<code>vllm/utils/system_utils.py:114-160</code>。<span class="ev ev-v">V</span></p>
+
+<h2 id="s11">11. 快问快答（12 问）</h2>
+<div class="qa">
+<h3>Q1：一句话说清进程和线程的区别？</h3>
+<p>进程是<strong>资源与隔离</strong>的单位（地址空间、CUDA context、显存池、文件描述符）；线程是<strong>执行与调度</strong>的单位（栈、寄存器、"当前设备"、"当前流"）。线程共享进程的资源，也因此享有"直接读写共享内存"的便利，并承担"一起死"的风险。<span class="ev ev-v">V</span></p>
+
+<h3>Q2：那段代码的 8 条线程是谁创建的？在哪创建的？</h3>
+<p><code>ShowHandsDSALayer._init_weights</code> 里的主线程（就是调 <code>from_pretrained</code> 的那条）循环 8 次调用 <code>threading.Thread(...).start()</code>，在 <strong>host CPU</strong> 上通过 OS 创建 8 条普通线程。<code>tilert/.../end2end.py:472-484</code>。<span class="ev ev-v">V</span></p>
+
+<h3>Q3：线程会绑到某张 GPU 吗？</h3>
+<p>不存在"绑定"。<code>with torch.cuda.device(5)</code> 做的是"把<strong>本线程</strong>的当前设备设为 5"。跑完这个 with 块，本线程又回到原来的当前设备（默认 0），而进程的其他线程从来不知道这件事。<span class="ev ev-v">V</span></p>
+
+<h3>Q4：那为什么大家还说"一卡一线程"？</h3>
+<p>因为它是<strong>职责约定</strong>：只要每条线程在干自己的活之前都设好自己的当前设备，就等于"这张卡归这条线程管"。TileRT 两种写法都遵守了这个约定（<code>with torch.cuda.device(id)</code> / <code>set_device(r)</code>）。<span class="ev ev-v">V</span></p>
+
+<h3>Q5：CUDA context 是进程的还是线程的？</h3>
+<p><strong>进程的。</strong>同一个进程里的线程共享 primary context、共享显存分配器。实验 1 的 <code>mem_allocated</code> 在两个线程里完全相同、且子线程能直接读写主线程创建的张量 —— 这两条都是硬证据。<span class="ev ev-v">V</span></p>
+
+<h3>Q6：不调 <code>set_device</code> 会怎样？</h3>
+<p>新线程的当前设备是 <strong>0</strong>，所以任何没写 <code>device=</code> 的调用都会落到 0 号卡：<code>torch.ones(8, device="cuda")</code> 会去卡 0 分配，<code>torch.cuda.current_stream()</code> 也是卡 0 的流。在"一进程多卡"的模型里这是头号隐蔽 bug。<span class="ev ev-r">R</span></p>
+
+<h3>Q7：vLLM 为什么要多进程？</h3>
+<p>三条：① 绕开 GIL，让调度（CPU busy loop）和 GPU 前向真正重叠；② 每张卡一个专属进程，CUDA context/显存/故障域都对齐到卡；③ 隔离——worker OOM 崩掉不至于带走调度器和 API。<span class="ev ev-v">V</span></p>
+
+<h3>Q8：vLLM 里哪个进程是"主进程"？</h3>
+<p>没有代码层面的定义。实践上指"你敲命令的那个进程"（它是 API server；<code>dp&gt;1</code> 时会变成 launcher）。真正有技术含义的是 CPython 的 <code>__main__</code> 语义：spawn 出来的子进程会重新 import 模块，所以创建进程的代码必须放在 <code>if __name__ == "__main__":</code> 里。<span class="ev ev-v">V</span></p>
+
+<h3>Q9：单卡跑 <code>vllm serve</code>，到底有几个进程？</h3>
+<p><strong>两个</strong>：主进程（API server）和 <code>EngineCore_DP0</code>。因为 <code>world_size==1</code> 时后端被设为 <code>uni</code>（<code>config/parallel.py:644-645</code>），模型在 EngineCore 进程里直接跑，没有 <code>VllmWorker-*</code> 进程。<span class="ev ev-v">V</span></p>
+
+<h3>Q10：为什么 CUDA 初始化之后不能 fork？</h3>
+<p>因为 fork 只把"调用 fork 的那条线程"复制进子进程（实验 4 实测：2 条变 1 条），而 CUDA 初始化会在父进程留下驱动/NVML 的内部线程与大量库状态。子进程继承了一个"状态说已初始化、但支撑它的线程都不在了"的现场，必然不一致甚至死锁。CPython 自己也会为此发 DeprecationWarning。所以 vLLM 见到 <code>cuda_is_initialized()</code> 就强制 spawn。<span class="ev ev-v">V</span></p>
+
+<h3>Q11：NPU 上"线程绑卡"的说法成立吗？</h3>
+<p>同样不成立，机制完全同构：<code>torch.npu.set_device</code> 改的也是 host 线程的当前 NPU。昇腾上真实存在的"绑定"是把线程钉到 <strong>CPU 核</strong>（<code>cpu_binding.py</code> 把 <code>acl_thread</code>/<code>release_thread</code> 绑核），那是 <code>taskset</code> 语义，不是设备亲和性。<span class="ev ev-v">V</span></p>
+
+<h3>Q12：那段代码用线程池改写会更好吗？</h3>
+<p>不必然。现有写法多出的东西是"跨线程交换显存指针"和"每卡串行建图"，这些必须由主线程在 join 后做；线程池能简化的是异常传播与线程复用（TileRT 的 ROCm 变体就是 <code>ThreadPoolExecutor</code> + <code>pool.map</code>，异常自动回抛）。但要注意：<code>empty_cache()</code> 是进程级操作，8 条线程各调一次是冗余的，建议收拢到 join 之后。<span class="ev ev-r">R</span></p>
+</div>
+
+<h2 id="s12">12. 参考与版本坐标</h2>
+<ul>
+<li><strong>被分析的真实代码（本机）</strong>：TileRT <code>tilert/models/deepseek_v3_2/modules/end2end.py</code>（<code>ShowHandsDSALayer</code>:166、<code>load_device_weights</code>:207、<code>_init_weights</code>:336、<code>__load_weights</code>:354、线程段:472-489、P2P 交换:491-501）；ROCm 变体 <code>tilert/models/glm_5_2_rocm/end2end.py:497-514</code>；构造入口 <code>tilert/models/deepseek_v3_2/generator.py:80,105</code>。</li>
+<li><strong>vLLM v0.16.0</strong>（<code>D:\wsl_projects\vllm</code>，commit <code>89a77b108</code>）：<code>docs/design/arch_overview.md:81-127</code>、<code>vllm/v1/engine/utils.py:99-150</code>、<code>vllm/v1/executor/multiproc_executor.py:257,563,615,738</code>、<code>vllm/v1/engine/core.py:753,929,1018,1570</code>、<code>vllm/v1/engine/core_client.py:469,507,625</code>、<code>vllm/utils/system_utils.py:114-160</code>、<code>vllm/v1/worker/gpu_worker.py:209-238</code>、<code>vllm/v1/executor/ray_utils.py:45-79</code>、<code>vllm/distributed/eplb/async_worker.py:25-58</code>、<code>vllm/distributed/parallel_state.py:297,347,1256</code>、<code>vllm/env_override.py:15-24</code>、<code>vllm/platforms/cuda.py:104,122-130</code>。</li>
+<li><strong>vLLM-Ascend</strong>：<code>vllm_ascend/platform.py:100-104,292-294</code>、<code>vllm_ascend/worker/worker.py:260-262,755-760</code>、<code>vllm_ascend/utils.py:508-526</code>、<code>vllm_ascend/cpu_binding.py:14-15,425-434</code>、<code>vllm_ascend/eplb/core/eplb_worker.py:378-385</code>、<code>vllm_ascend/patch/platform/patch_multiproc_executor.py:199</code>。</li>
+<li><strong>官方文档</strong>：<a href="https://docs.vllm.ai/en/latest/design/arch_overview.html" target="_blank">vLLM 架构总览</a>、<a href="https://docs.vllm.ai/en/latest/usage/troubleshooting.html#python-multiprocessing" target="_blank">vLLM troubleshooting: Python multiprocessing</a>、<a href="https://docs.python.org/3/library/multiprocessing.html" target="_blank">Python multiprocessing（spawn / fork / forkserver）</a>、<a href="https://docs.pytorch.org/docs/stable/notes/multiprocessing.html" target="_blank">PyTorch multiprocessing 最佳实践</a>、<a href="https://docs.nvidia.com/cuda/cuda-runtime-api/group__CUDART__DEVICE.html" target="_blank">CUDA Runtime API：cudaSetDevice</a>。</li>
+</ul>
+
+<hr>
+<p style="color:#57606a;font-size:.9em">本文由 ZCode 整理（2026-10-14）：TileRT / vLLM v0.16.0 / vllm-ascend 的结论均来自本机源码逐处核对（附 <code>文件:行号</code>）；并发语义结论来自本机实测的 5 个脚本（1×RTX 3080 Ti Laptop + WSL），脚本与原始输出见 <a href="assets/vllm-proc-thread/">assets/vllm-proc-thread/</a>。文中标注 <span class="ev ev-r">R</span> 的推论请在使用前自行复核；<span class="ev ev-u">U</span> 项为尚未核实。引用的第三方文档链接指向官方站点，版本变化时以官方为准。</p>
+
+</body>
+</html>

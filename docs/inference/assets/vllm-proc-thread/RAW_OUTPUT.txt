@@ -1,0 +1,69 @@
+﻿# 进程 / 线程 / 设备绑定实验 —— 原始输出（复现时间 2026-10-14 11:44:26）
+# 环境: Windows + 1x RTX 3080 Ti Laptop (driver 528.92) + torch 2.5.1+cu121 (conda env llm-learn)
+#       fork 语义实验在 WSL Ubuntu-22.04 / Python 3.12.3 下运行（不需要 GPU）
+# 用法: python exp1_threads.py 等；exp4_fork_linux.py 只能在 Linux/WSL 下运行
+========================================================================
+## [1] python exp1_threads.py
+========================================================================
+=== 主线程 ===
+  pid = 16412
+  thread_ident = 1748
+  current_device = 0
+  mem_allocated = 512
+  current_stream_is_custom = True
+=== 子线程（threading.Thread）===
+  pid = 16412
+  thread_ident = 6696
+  current_device = 0
+  mem_allocated_seen_from_thread = 512
+  current_stream_is_main_custom_stream = False
+  current_stream_is_default = True
+  parent_tensor_sum = 8.0
+  same_context_ptr_ok = True
+结论: pid 相同 => 同一个进程; mem_allocated 相同 => 显存/上下文进程内共享; 子线程的 current_stream 不是主线程设的 s => 流是线程私有状态
+========================================================================
+## [2] python exp2_spawn.py
+========================================================================
+[父进程] pid=7820 __name__=__main__ mem_allocated=4194304 devices=1
+[spawn子进程] pid=12772 ppid=7820 线程ident=30380 __name__=__mp_main__
+[spawn子进程] 进入子进程时 mem_allocated=0 devices=1
+[spawn子进程] set_device(0) 后 current_device=0 y.sum=8.0 mem_allocated=512
+[父进程] 子进程 exitcode=0；父进程自己的 x.sum=0.0 mem_allocated=4194304
+[父进程] 关键点：子进程的 mem_allocated 与父进程无关 —— 两个进程各有独立 CUDA context； 父进程创建的 x 在子进程里根本不存在。
+========================================================================
+## [3] python exp3_fork.py
+========================================================================
+[父进程] pid=26192 CUDA 已初始化, mem_allocated=4194304
+  File "E:\Desktop\业务\llm-tech-map\docs\inference\assets\vllm-proc-thread\exp3_fork.py", line 20, in <module>
+    ctx = mp.get_context("fork")
+          ^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\miniconda3\envs\llm-learn\Lib\multiprocessing\context.py", line 243, in get_context
+    return super().get_context(method)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\miniconda3\envs\llm-learn\Lib\multiprocessing\context.py", line 193, in get_context
+    raise ValueError('cannot find context for %r' % method) from None
+ValueError: cannot find context for 'fork'
+========================================================================
+## [4] python exp5_mangling.py
+========================================================================
+1) 调用结果: loaded device 0 from /weights
+2) _init_weights 的局部变量表 co_varnames : ('self', 'model_path', '_runner')
+   _init_weights 的闭包变量表 co_cellvars : ('model_path', '_ShowHandsDSALayer__load_weights')
+3) _runner 的 co_freevars（它从外层捕获的名字）: ('_ShowHandsDSALayer__load_weights', 'model_path')
+   嵌套函数的 co_name 仍是原名（co_name 不受改写）: ['__load_weights']
+4) 类属性视角： ['_ShowHandsDSALayer__private_method']
+   obj.__private_method() -> AttributeError: 'ShowHandsDSALayer' object has no attribute '__private_method'
+   obj._ShowHandsDSALayer__private_method() -> 私有方法
+========================================================================
+## [5] wsl python3 exp4_fork_linux.py
+========================================================================
+[父进程] pid=84 fork 前存活线程数=2
+[fork子进程] pid=86
+[fork子进程] 存活线程数=1 （父进程 fork 时有 2 条：主线程 + 后台线程）
+[fork子进程] 后台线程留下的变量 side_thread_ok=True （值被复制过来了，但线程本身没有跟着过来）
+[fork子进程] counter 的快照 = 1
+/mnt/e/Desktop/业务/llm-tech-map/docs/inference/assets/vllm-proc-thread/exp4_fork_linux.py:34: DeprecationWarning: This process (pid=84) is multi-threaded, use of fork() may lead to deadlocks in the child.
+  pid = os.fork()                       # Linux only
+[父进程] pid=84 存活线程数=2
+[父进程] 父进程的 counter = 999（子进程看到的是快照 1，互不影响）
+(完)

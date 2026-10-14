@@ -23,6 +23,7 @@ description: 面向大模型方向的完整技术知识目录，覆盖从数学�
 - [MoE 与 FFN 原理及 vLLM / vLLM-Ascend 前馈融合算子](docs/inference/moe-ffn-fused-operators.html)
 - [投机解码完全指南：从拒绝采样到并行草稿生成](docs/inference/speculative-decoding-complete-guide.html)
 - [TileRT 深度解构 —— 持久化引擎内核与 execution gap 的系统性消除](docs/inference/tilert-deep-analysis.html)
+- [进程、线程与设备绑定全解 —— 从一段「每卡一线程」的权重加载代码讲到 vLLM 的服务架构（含 5 个可复现实测）](docs/inference/vllm-process-thread-model.html)
 
 ### AI Infra 自优化（Agentic 优化）
 - [AI Infra 自优化洞察报告 —— 从 Megakernel 到推理系统的 Agentic 优化全景（六篇系列全量浓缩 + 20 余项公开来源交叉核验）](docs/aiinfra/aiinfra-agentic-optimization-insight.html)
@@ -251,7 +252,7 @@ flowchart LR
 - [ ] 结构化输出与约束解码（grammar/JSON Schema/guided decoding）
 
 ### 5.2 推理引擎
-- [ ] vLLM 源码解析（调度/执行/注意力/显存管理）
+- [ ] vLLM 源码解析（调度/执行/注意力/显存管理） — 📄 [vLLM 进程/线程与设备绑定解构](docs/inference/vllm-process-thread-model.html)
 - [ ] SGLang、RadixAttention 与结构化生成
 - [ ] TensorRT-LLM（NVIDIA 优化栈）
 - [ ] TileRT：持久化引擎内核、tile 级流水线、execution gap、vLLM KVConnector PD 分离插件 — 📄 [TileRT 深度解构笔记](docs/inference/tilert-deep-analysis.html)
@@ -300,7 +301,7 @@ flowchart LR
 ## 六、算子与高性能计算
 ### 6.0 前置基础：体系结构与操作系统
 - [ ] 计算机体系结构：内存层次（cache/局部性）、CPU 流水线、SIMD/向量化、冯诺依曼与哈佛
-- [ ] 操作系统：进程线程、虚拟内存、I/O 模型、NUMA
+- [ ] 操作系统：进程线程、虚拟内存、I/O 模型、NUMA — 📄 [进程/线程/设备绑定全解](docs/inference/vllm-process-thread-model.html)
 - [ ] 性能分析的底层依据：延迟数字（内存/磁盘/网络）、Amdahl 定律
 
 ### 6.1 GPU 编程

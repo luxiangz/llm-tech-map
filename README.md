@@ -29,6 +29,7 @@
 - [前缀命中在 Transformer / MoE 中到底节省了什么计算](https://luxiangz.github.io/llm-tech-map/docs/inference/prefix-cache-kv-moe.html)
 - [MoE 与 FFN 原理及 vLLM / vLLM-Ascend 前馈融合算子](https://luxiangz.github.io/llm-tech-map/docs/inference/moe-ffn-fused-operators.html)
 - [投机解码完全指南：从拒绝采样到并行草稿生成](https://luxiangz.github.io/llm-tech-map/docs/inference/speculative-decoding-complete-guide.html)
+- [进程、线程与设备绑定全解](https://luxiangz.github.io/llm-tech-map/docs/inference/vllm-process-thread-model.html)
 
 ### 并行与通信
 
