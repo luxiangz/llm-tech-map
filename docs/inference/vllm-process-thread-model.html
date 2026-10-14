@@ -118,7 +118,7 @@ window.MathJax = {
 <li><a href="#s8">NPU（昇腾）差异：ACL 线程、HCCL 与 EPLB 的进程化</a></li>
 <li><a href="#s9">三种并发模型对比与选型指南</a></li>
 <li><a href="#s10">复现清单（脚本、环境、原始输出）</a></li>
-<li><a href="#s11">快问快答（12 问）</a></li>
+<li><a href="#s11">快问快答（14 问）</a></li>
 <li><a href="#s12">参考与版本坐标</a></li>
 </ol>
 </div>
@@ -157,6 +157,11 @@ window.MathJax = {
 <td>（补）为什么这段代码用线程而不是进程？</td>
 <td>三个理由：① 权重加载是 I/O + H2D 拷贝，<strong>大部分时间在 C++/CUDA 里且会释放 GIL</strong>，线程能真并行；② 8 张卡要在同一进程里<strong>交换显存指针</strong>（<code>_v2_p2p</code> / <code>data_ptr()</code>），用进程就得 IPC 传指针，又慢又危险；③ 线程创建/切换便宜，也不需要每卡再建一套 driver context。</td>
 <td>end2end.py:491-501 <span class="ev ev-v">V</span></td>
+</tr>
+<tr>
+<td>（补 2）GPU0 能直接读 GPU1 的 HBM 吗？</td>
+<td><strong>默认不能。</strong>线程共享的是 <em>host</em> 地址空间，HBM 根本不在里面（实验 6：host 解引用 device 指针直接访问违例）。跨卡可读，但必须显式建通路：P2P（<code>cudaDeviceEnablePeerAccess</code>，默认关闭）／VMM 映射 + <code>cuMemSetAccess</code> 逐设备授权／跨进程的 IPC 句柄。这件事和"线程还是进程"是两本账。详见 §4.6。</td>
+<td>实验 6；§4.6 <span class="ev ev-v">V</span></td>
 </tr>
 </tbody>
 </table>
@@ -469,6 +474,112 @@ with torch.cuda.device(5):                # ① 改本线程当前设备
 <li><strong>注意反例：</strong><code>torch.cuda.empty_cache()</code>、显存总量/占用统计、context 的创建与销毁，都是<strong>进程级</strong>的，不受"线程当前设备"限制。</li>
 </ol>
 </div>
+
+<h3>4.6 延伸：GPU0 能直接读 GPU1 的 HBM 吗？</h3>
+<p>这是「线程共享进程地址空间」最容易被多推一步的地方。<strong>默认不能。</strong>被共享的是 <em>host 虚拟地址空间</em>（CPU DRAM 那一段），而 <strong>HBM 是设备内存，根本不在进程地址空间里</strong>。</p>
+
+<p>实验 6（<code>exp6_addrspace.py</code>）的输出：</p>
+<pre><code>设备数 = 1
+CUDA 可用 peer 访问矩阵: [[False]]           # 注意：自己和自己也不算 peer
+host  可分页张量 data_ptr = 0x4a636001140
+host  锁页张量   data_ptr = 0x205000000
+device HBM 张量  data_ptr = 0xb2ac00000      # 与 host 指针相差 4.6 TiB 量级，完全不同的地址区间
+
+--- 在子进程里把 device 指针当 host 内存读 ---
+失败（符合预期）: OSError: exception: access violation reading 0x0000000B0B400000</code></pre>
+<p>最后一行是决定性的：<strong>host 代码解引用 device 指针 = 访问违例</strong>。所以「线程共享地址空间」这句话里，压根没有 HBM 的份。<span class="ev ev-v">V</span></p>
+
+<table>
+<thead><tr><th>层次</th><th>谁拥有</th><th>同进程线程共享？</th><th>指针能被谁解引用</th></tr></thead>
+<tbody>
+<tr><td>host 虚拟地址空间（可分页／锁页内存）</td><td>进程</td><td><strong>是</strong></td><td>该进程里的任何线程</td></tr>
+<tr><td>device 虚拟地址空间（每张卡一套，驱动管理）</td><td>该卡的 CUDA context</td><td>同进程内共享同一套 context，但<strong>只在「当前设备」语义下才有意义</strong></td><td>只有跑在「拥有这段地址的那张卡」上、且该地址属于它的 kernel</td></tr>
+<tr><td>UVA 统一编址</td><td>驱动</td><td>——</td><td>UVA 只保证<strong>指针全局唯一</strong>，不保证<strong>处处可达</strong>：一个指针始终只有一个合法解引用者</td></tr>
+</tbody>
+</table>
+<p>一句话：<strong>UVA 统一的是「编号」，不是「权限」。</strong><span class="ev ev-r">R</span></p>
+
+<h4>那跨卡到底能不能读？能，但必须显式建立通路</h4>
+<table>
+<thead><tr><th>手段</th><th>机制</th><th>前提 / 代价</th></tr></thead>
+<tbody>
+<tr><td><strong>P2P over NVLink / PCIe</strong></td><td><code>cudaDeviceEnablePeerAccess(peer, 0)</code>，按 <strong>context 对</strong>开启；开启后 GPU0 上的 kernel 可以直接 load/store GPU1 的 HBM</td><td>先 <code>cudaDeviceCanAccessPeer</code> 查拓扑是否支持；<strong>默认不开</strong>，不开就是非法访问</td></tr>
+<tr><td><code>cudaMemcpyPeer</code></td><td>纯拷贝，不要求预先开启 peer access（驱动内部决定走 P2P 还是经 host 中转）</td><td>只能搬数据，不能让 kernel 直接访</td></tr>
+<tr><td><strong>VMM API</strong><br><code>cuMemCreate/Map/SetAccess</code></td><td>把一块物理 HBM 映射进 VA，并用 <code>cuMemSetAccess</code> <strong>逐设备显式授权</strong>读写</td><td>最灵活，也是 NVSHMEM／对称内存的底层；要管句柄与映射生命周期</td></tr>
+<tr><td>IPC 句柄</td><td>跨<strong>进程</strong>共享同一块 HBM：导出/导入 shareable handle（POSIX fd 或 <code>cudaIpcMemHandle</code>）</td><td>多进程模型下<strong>绕不过去</strong></td></tr>
+<tr><td>对称内存 / NVSHMEM</td><td>每 rank 一块对称堆，可用 peer 指针直接访</td><td>要建堆；vLLM 走 <code>torch.distributed._symmetric_memory</code></td></tr>
+<tr><td>Multicast（NVLink 多播）</td><td><code>cuMulticastCreate/AddDevice/BindMem</code>，一次写入打到多张卡</td><td>硬件与平台支持有限</td></tr>
+</tbody>
+</table>
+
+<h4>和「线程 / 进程」的账要分开算</h4>
+<ul>
+<li><strong>P2P 是 context 对之间的能力，不是线程的能力。</strong>一个进程管 8 张卡 → 开一次，8 条线程都能用；一进程一卡（vLLM）→ 每个进程都要各自与 peer 开启，而且跨进程共享缓冲区<strong>必须交换 IPC 句柄</strong>。</li>
+<li>这恰好解释了 TileRT 为什么能心安理得地用线程：<strong>单进程吃 8 卡，让「直接交换裸 device 指针」成为可行</strong>。</li>
+<li>反过来，多进程方案就只能走更重的机制。</li>
+</ul>
+
+<details class="expand">
+<summary>你自己代码里的实证（TileRT / MoonEP / vLLM 三条路子）</summary>
+<p><strong>① TileRT —— 同进程内直接传 peer 设备指针（最轻）</strong></p>
+<pre><code># tilert/models/deepseek_v3_2/ops/broadcast_selected_token_ids.py:18-27
+"""Broadcast idx_selects [1,S,2048] int32 from GPU 0 to peer GPUs.
+    peer_bufs: Device pointer array [N] int64 — each entry is a peer
+        buffer address.
+    flag_val: Synchronization flag value.
+"""
+
+# tilert/models/deepseek_v3_2/modules/end2end.py:493-497
+peer_bufs_cpu = torch.zeros(self.num_devices - 1, dtype=torch.int64)
+for i in range(self.num_devices - 1):
+    dev_id = i + 1
+    peer_bufs_cpu[i] = self._v2_p2p[dev_id]["ll_buf"].data_ptr()
+gpu0["peer_bufs"].copy_(peer_bufs_cpu)</code></pre>
+<p>GPU0 的 kernel 拿到别的卡的<strong>裸设备地址</strong>，直接往里写——这就是 P2P。注意最后一行的两条隐含前提：peer access 已经开好，否则 kernel 一解引用就崩；以及 <code>flag_val</code> 这种显式同步标志（P2P 绕过 host 内存序）。<span class="ev ev-v">V</span></p>
+
+<p><strong>② MoonEP —— 走 VMM + POSIX fd，因为要支持多进程</strong></p>
+<pre><code>// src/MoonEP/csrc/nvl_shared_buffer.cuh:108-139（节选）
+inline std::tuple&lt;at::Tensor, int64_t, int64_t&gt; nvl_dist_alloc(...) {
+    CUmemAllocationProp prop = {};
+    prop.type = CU_MEM_ALLOCATION_TYPE_PINNED;
+    prop.location.type = CU_MEM_LOCATION_TYPE_DEVICE;
+    prop.location.id = device_id;
+    prop.requestedHandleTypes = CU_MEM_HANDLE_TYPE_POSIX_FILE_DESCRIPTOR;
+    CUmemGenericAllocationHandle mem_handle;
+    CUCHECK(cuMemCreate(&amp;mem_handle, allocated_size, &amp;prop, 0));   // 1. 物理 HBM
+    CUdeviceptr dptr;
+    CUCHECK(cuMemAddressReserve(&amp;dptr, allocated_size, 0, 0, 0));  // 2. 预留 VA
+    CUCHECK(cuMemMap(dptr, allocated_size, 0, mem_handle, 0));     // 3. 映射
+    CUmemAccessDesc access_desc = {};
+    access_desc.location.type = CU_MEM_LOCATION_TYPE_DEVICE;
+    access_desc.location.id = device_id;
+    access_desc.flags = CU_MEM_ACCESS_FLAGS_PROT_READWRITE;
+    CUCHECK(cuMemSetAccess(dptr, allocated_size, &amp;access_desc, 1)); // 4. 显式授权
+    ...cuMemExportToShareableHandle(...)                            // 5. 导出 fd 给别的进程</code></pre>
+<p>四步连起来就是答案：<strong>跨卡/跨进程访问不是「地址空间自动共享」，而是「显式映射 + 显式授权 + 显式传句柄」</strong>。另外 <code>nvl_shared_buffer.cuh:355</code> 有一句很真实的注释：<em>「BindAddr returns invalid argument for IPC-imported VAs on this platform」</em>——连老手也要为平台差异让路。<span class="ev ev-v">V</span></p>
+<pre><code># src/MoonEP/moonep/buffer.py:55, 126（跨进程那一半）
+def _exchange_ipc_fds(...)          # 通过文件系统交换 POSIX fd
+fds = _exchange_ipc_fds(local_fd, list(range(world_size)), ...)</code></pre>
+
+<p><strong>③ vLLM —— 两条路都有</strong></p>
+<pre><code># 对称内存：vllm/compilation/passes/fusion/collective_fusion.py:8, 380
+from torch.distributed._symmetric_memory import enable_symm_mem_for_group
+enable_symm_mem_for_group(get_tp_group().device_group.group_name)
+
+# IPC 句柄：vllm/compilation/passes/fusion/allreduce_rms_fusion.py:747
+self.ipc_handles, workspace_tensor = trtllm_create_ipc_workspace_for_all_reduce_fusion(...)</code></pre>
+<p>原因很直接：vLLM 是「一卡一进程」，同进程内传裸指针那条路走不通，只能走对称内存或 IPC 句柄。<span class="ev ev-v">V</span></p>
+</details>
+
+<div class="warn">
+<strong>两个容易踩的坑：</strong>
+<ol>
+<li><strong>peer access 是 per-context 的。</strong><code>cudaDeviceEnablePeerAccess</code> 只对「调用时的那对 context」生效；N 张卡两两互访要开 N×(N-1) 次。但一旦开了，<strong>同进程内所有线程都能用</strong>——又回到「进程级能力 vs 线程级状态」这条主线。</li>
+<li><strong>一致性要自己管。</strong>P2P 是设备间直访，绕过 host 内存序与对方的 cache 语义。GPU0 写完 GPU1 的缓冲区后，GPU1 必须靠显式同步（flag / atomic / stream 依赖）才能安全读到。TileRT 的 <code>flag_val</code> 参数正是干这个用的。</li>
+</ol>
+</div>
+
+<div class="ok"><strong>所以那句话应该改成：</strong>同进程的线程共享 <em>host</em> 地址空间；跨卡访问 HBM 与「线程还是进程」无关，它取决于<em>有没有把 peer 访问／映射授权建起来</em>。单进程多卡的写法只是让「交换裸设备指针」这一步变得便宜，<strong>并把「必须显式建立 P2P」这件事藏得更深</strong>。</div>
 
 <h2 id="s5">5. 这段代码是在 CPU 上创建的，还是 GPU/NPU 上创建的？</h2>
 <p>答案：<strong>所有"创建/调度"动作都在 host CPU 上。</strong>GPU/NPU 上没有"进程"或"线程"这种实体可以被你创建——它们只有 SM/CUDA Core 或 AI Core 上跑的 kernel、以及流（stream）里的任务队列。所谓"在 GPU 上创建"，只可能是指<em>被下发到设备上执行</em>。</p>
@@ -880,11 +991,12 @@ daemon=False        # 上游 vllm/v1/executor/multiproc_executor.py:619 是 daem
 <tr><td><code>exp3_fork.py</code></td><td>Windows 无 fork</td><td><code>ValueError: cannot find context for 'fork'</code></td></tr>
 <tr><td><code>exp4_fork_linux.py</code></td><td>fork 只复制调用线程 + COW 快照 + CPython 警告</td><td>子进程存活线程 1 / 父进程 2；<code>counter</code> 1 vs 999</td></tr>
 <tr><td><code>exp5_mangling.py</code></td><td>类体内名字改写：<code>__load_weights</code> → <code>_ShowHandsDSALayer__load_weights</code></td><td><code>co_cellvars = ('model_path', '_ShowHandsDSALayer__load_weights')</code></td></tr>
+<tr><td><code>exp6_addrspace.py</code></td><td>host 地址空间与 device 地址空间是两套；跨卡可访问性需显式查询</td><td>host 读 device 指针 → <code>OSError: access violation reading 0x...B0B400000</code>；peer 矩阵 <code>[[False]]</code></td></tr>
 </tbody>
 </table>
 <p>阅读完整原始输出：<a href="assets/vllm-proc-thread/RAW_OUTPUT.txt">RAW_OUTPUT.txt</a>。查看被分析的真实源码位置：TileRT <code>tilert/models/deepseek_v3_2/modules/end2end.py:336-524</code>；vLLM <code>vllm/v1/executor/multiproc_executor.py:615-622</code>、<code>vllm/utils/system_utils.py:114-160</code>。<span class="ev ev-v">V</span></p>
 
-<h2 id="s11">11. 快问快答（12 问）</h2>
+<h2 id="s11">11. 快问快答（14 问）</h2>
 <div class="qa">
 <h3>Q1：一句话说清进程和线程的区别？</h3>
 <p>进程是<strong>资源与隔离</strong>的单位（地址空间、CUDA context、显存池、文件描述符）；线程是<strong>执行与调度</strong>的单位（栈、寄存器、"当前设备"、"当前流"）。线程共享进程的资源，也因此享有"直接读写共享内存"的便利，并承担"一起死"的风险。<span class="ev ev-v">V</span></p>
@@ -921,6 +1033,12 @@ daemon=False        # 上游 vllm/v1/executor/multiproc_executor.py:619 是 daem
 
 <h3>Q12：那段代码用线程池改写会更好吗？</h3>
 <p>不必然。现有写法多出的东西是"跨线程交换显存指针"和"每卡串行建图"，这些必须由主线程在 join 后做；线程池能简化的是异常传播与线程复用（TileRT 的 ROCm 变体就是 <code>ThreadPoolExecutor</code> + <code>pool.map</code>，异常自动回抛）。但要注意：<code>empty_cache()</code> 是进程级操作，8 条线程各调一次是冗余的，建议收拢到 join 之后。<span class="ev ev-r">R</span></p>
+
+<h3>Q13：GPU0 能直接读 GPU1 的 HBM 吗？</h3>
+<p>默认不能。<code>torch.zeros(8, device="cuda:1").data_ptr()</code> 给出的是一个<strong>设备虚拟地址</strong>，它不在进程的 host 地址空间里（实验 6 里 host 去读它直接 access violation）。要跨卡访问，必须显式建通路：开了 <code>cudaDeviceEnablePeerAccess</code> 的 P2P，或用 VMM 把物理内存映射进 VA 并用 <code>cuMemSetAccess</code> 逐设备授权。<strong>UVA 统一的是编号，不是权限。</strong><span class="ev ev-v">V</span></p>
+
+<h3>Q14：那"一个进程管多张卡"到底省了什么？</h3>
+<p>省的是<strong>共享缓冲区的建立成本</strong>：同进程内可以直接把 <code>data_ptr()</code> 当整数传（TileRT 的 <code>peer_bufs</code>），而跨进程必须导出/导入可共享句柄（POSIX fd 或 <code>cudaIpcMemHandle</code>）——MoonEP 的 <code>_exchange_ipc_fds</code> 与 vLLM 的 <code>ipc_handles</code> 都是这一笔开销。但要注意：<strong>P2P 权限本身仍要开</strong>，单进程只是把"交换指针"这一步变便宜了，并没有让 HBM 自动互相可见。<span class="ev ev-v">V</span></p>
 </div>
 
 <h2 id="s12">12. 参考与版本坐标</h2>
@@ -932,7 +1050,7 @@ daemon=False        # 上游 vllm/v1/executor/multiproc_executor.py:619 是 daem
 </ul>
 
 <hr>
-<p style="color:#57606a;font-size:.9em">本文由 ZCode 整理（2026-10-14）：TileRT / vLLM v0.16.0 / vllm-ascend 的结论均来自本机源码逐处核对（附 <code>文件:行号</code>）；并发语义结论来自本机实测的 5 个脚本（1×RTX 3080 Ti Laptop + WSL），脚本与原始输出见 <a href="assets/vllm-proc-thread/">assets/vllm-proc-thread/</a>。文中标注 <span class="ev ev-r">R</span> 的推论请在使用前自行复核；<span class="ev ev-u">U</span> 项为尚未核实。引用的第三方文档链接指向官方站点，版本变化时以官方为准。</p>
+<p style="color:#57606a;font-size:.9em">本文由 ZCode 整理（2026-10-14）：TileRT / vLLM v0.16.0 / vllm-ascend / MoonEP 的结论均来自本机源码逐处核对（附 <code>文件:行号</code>）；并发与地址空间语义结论来自本机实测的 6 个脚本（1×RTX 3080 Ti Laptop + WSL），脚本与原始输出见 <a href="assets/vllm-proc-thread/">assets/vllm-proc-thread/</a>。文中标注 <span class="ev ev-r">R</span> 的推论请在使用前自行复核；<span class="ev ev-u">U</span> 项为尚未核实。引用的第三方文档链接指向官方站点，版本变化时以官方为准。</p>
 
 </body>
 </html>
