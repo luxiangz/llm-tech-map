@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>自演进 × 推理引擎 —— 自改进闭环如何优化 LLM 推理系统：Sol-H3 RSI · KernelEvolve · MetaInfer · DwarfStar 机制拆解</title>
+<!-- 霞鹜文楷：开源可商用的中文楷体风格字体；加载失败时自动回退到微软雅黑 -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/lxgw-wenkai-webfont@1.7.0/style.css">
+<style>
+body { font-family: "LXGW WenKai", "Microsoft YaHei", "PingFang SC", "Segoe UI", sans-serif; font-size: 17.5px; line-height: 1.85; letter-spacing: 0.01em; max-width: 1080px; margin: 40px auto; padding: 0 28px; color: #1f2328; background: #fff; }
+h1, h2, h3, h4, .kicker { font-family: "Microsoft YaHei", "PingFang SC", sans-serif; }
+h1 { font-size: 2.0em; border-bottom: 2px solid #e5e7eb; padding-bottom: .35em; }
+h2 { font-size: 1.45em; border-bottom: 1px solid #e5e7eb; padding-bottom: .2em; margin-top: 2em; }
+h3, h4, h5, h6 { margin-top: 1.6em; }
+a { color: #0969da; text-decoration: none; }
+a:hover { text-decoration: underline; }
+code { background: #f6f8fa; padding: .12em .35em; border-radius: 4px; font-family: "Cascadia Code", Consolas, "Microsoft YaHei", monospace; font-size: .92em; }
+pre { background: #f6f8fa; padding: 16px; border-radius: 8px; overflow: auto; line-height: 1.45; }
+pre code { background: none; padding: 0; }
+table { border-collapse: collapse; width: 100%; margin: 1.2em 0; display: block; overflow-x: auto; }
+th, td { border: 1px solid #d0d7de; padding: 8px 10px; text-align: left; vertical-align: top; }
+th { background: #f6f8fa; font-family: "Microsoft YaHei", "PingFang SC", sans-serif; }
+blockquote { margin: 1em 0; padding: .6em 1em; border-left: 4px solid #d0d7de; color: #57606a; background: #f6f8fa; }
+hr { border: none; border-top: 1px solid #d8dee4; margin: 2em 0; }
+.formula { background: #f6f8fa; padding: 12px 16px; border-radius: 8px; overflow-x: auto; margin: 1em 0; }
+ul, ol { padding-left: 1.8em; }
+.ev { display: inline-block; font-size: .78em; font-weight: 700; border-radius: 4px; padding: 0 .45em; margin-left: .3em; vertical-align: 1px; font-family: "Microsoft YaHei", sans-serif; }
+.ev-v { background: #dafbe1; color: #116329; }
+.ev-r { background: #fff8c5; color: #7d4e00; }
+.ev-u { background: #ffebe9; color: #82071e; }
+.mermaid { text-align: center; margin: 1.4em 0; }
+.figcaption { margin: .4em 0 1.2em; color: #57606a; font-size: .92em; text-align: center; }
+.kicker { display: block; color: #57606a; font-size: .95em; margin-bottom: .4em; }
+</style>
+<script>
+window.MathJax = {
+  tex: {
+    inlineMath: [['$', '$']],
+    displayMath: [['$$', '$$'], ['\\[', '\\]']],
+    processEscapes: false
+  },
+  svg: { fontCache: 'global' }
+};
+</script>
+<script>
+(function () {
+  var sources = [
+    "../../assets/lib/mathjax-tex-svg.js",
+    "https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js",
+    "https://cdn.bootcdn.net/ajax/libs/mathjax/3.2.2/es5/tex-svg.js",
+    "https://cdn.staticfile.org/ajax/libs/mathjax/3.2.2/es5/tex-svg.js",
+    "https://unpkg.com/mathjax@3/es5/tex-svg.js"
+  ];
+  function load(i) {
+    if (i >= sources.length) {
+      var node = document.getElementById("mathjax-load-fail");
+      if (node) node.style.display = "block";
+      return;
+    }
+    var s = document.createElement("script");
+    s.src = sources[i];
+    s.onerror = function () { load(i + 1); };
+    document.head.appendChild(s);
+  }
+  load(0);
+})();
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+<script>mermaid.initialize({ startOnLoad: true, theme: "neutral", fontFamily: '"Microsoft YaHei", "PingFang SC", sans-serif' });</script>
+</head>
+<body>
+<a href="https://luxiangz.github.io/llm-tech-map/" style="position:fixed;top:12px;right:14px;z-index:99;background:#f6f7f9;border:1px solid #e2e5ea;border-radius:999px;padding:4px 12px;font-size:14px;color:#2c5fa8;text-decoration:none;box-shadow:0 1px 4px rgba(0,0,0,.08)">← 技术地图首页</a>
+<div id="mathjax-load-fail" style="display:none;position:fixed;top:12px;left:14px;z-index:99;background:#fff4e5;border:1px solid #e8b04b;color:#8a5300;border-radius:8px;padding:8px 12px;font-size:13px">公式渲染组件未能加载，当前显示的是 LaTeX 源码。</div>
+
+<span class="kicker">AI Infra 自优化（Agentic 优化）· 推理引擎专题 · 2026-10-15</span>
+<h1>自演进 × 推理引擎 —— 自改进闭环如何优化 LLM 推理系统</h1>
+
+<p><strong>分析对象：</strong>2025–2026 年把「自演进 / 自改进」（self-evolution / recursive self-improvement）用于 LLM 推理引擎优化的代表性系统——NVIDIA <a href="https://nvlabs.github.io/Sana/Sol-Engine/Sol-H3" target="_blank">Sol-H3</a>（Recursive Self-Improvement，<a href="https://arxiv.org/abs/2609.35110" target="_blank">arXiv:2609.35110</a>）、Meta <a href="https://engineering.fb.com/2026/04/02/developer-tools/kernelevolve-how-metas-ranking-engineer-agent-optimizes-ai-infrastructure" target="_blank">KernelEvolve</a>（生产级 agentic kernel 进化）、<a href="https://arxiv.org/abs/2607.12875" target="_blank">MetaInfer</a>（arXiv:2607.12875，契约知识库演化）、antirez <a href="https://github.com/antirez/ds4" target="_blank">DwarfStar/ds4</a>（引擎即模板）；并以 <a href="https://husky.underdog.ai" target="_blank">Husky</a>（编译期特化）、<a href="https://arxiv.org/abs/2508.18572" target="_blank">Strata</a>（运行时调度自适应）作为非演进对照路线。</p>
+<p><strong>证据标注：</strong><span class="ev ev-v">V</span> = 论文 / 官方页面明确陈述；<span class="ev ev-r">R</span> = 合理推断；<span class="ev ev-u">U</span> = 待核实。本文为公开资料综述，未做源码精读。</p>
+<blockquote>⚠️ <strong>时效提示：</strong>Sol-H3（arXiv:2609.35110）与 MetaInfer（arXiv:2607.12875）均为 2026 年预印本，<strong>尚未经过同行评审</strong>；KernelEvolve / Husky / DwarfStar 的数字来自各自官方渠道的自述。引用或落地前请自行复现验证。</blockquote>
+
+<h2>TL;DR</h2>
+<p><strong>自演进把推理引擎优化从「人写代码」变成一个带适应度函数的搜索闭环——LLM 当变异算子，profiler 和数值校验当裁判，被接受的改动成为下一轮的基线。</strong>这个闭环在推理引擎上已经跑通三个层面：kernel 与栈配置层（Sol-H3 RSI、KernelEvolve）、引擎代码层（DwarfStar 模板化）、部署知识层（MetaInfer 契约知识库）。它能跑通的前提不是模型多强，而是这个领域恰好具备四个稀缺条件：<strong>适应度便宜且无梯度、正确性可机械验证、设计空间不连续且反直觉、基线可累积</strong>。而它能不能上生产，取决于护栏而不是搜索能力——固定契约、fail-closed、数值三分类、关源再生验证，这些「不给 agent 作弊空间」的设计才是各家真正的核心贡献。</p>
+
+<h2>一、「自演进」是什么：从 autotuning 到 agent 演进</h2>
+<p>用搜索代替手写，在编译器领域并不新鲜。Triton 的 <code>@autotune</code>、TVM 的 AutoTVM/Ansor 早已把 kernel 优化变成搜索问题——但那是在<strong>人事先定义好的参数空间</strong>（tile size、<code>num_warps</code>、流水级数）里做网格搜索或贝叶斯优化，变异算子是「调参数」。</p>
+<p>LLM agent 改变的是<strong>变异算子的表达范围</strong>：从「调参数」扩展到「改任意代码决策」——把两个算子融合成一个 kernel、换一种内存布局、把通信从 BF16 降到 INT8、把整个模型写成一个 megakernel。这些决策不连续、组合爆炸、没有平滑结构，恰好是传统搜索空间表达不了、而代码生成天然覆盖的空间。</p>
+<p>所谓「自演进」，就是把这条「生成 → 评估 → 反馈 → 再生成」的循环闭环运转起来，并且让<strong>接受的成果累积为新基线</strong>、让<strong>探索的经验沉淀为可复用记忆</strong>。极端形式就是 Sol-H3 论文标题里的 Recursive Self-Improvement（RSI，递归自改进）。</p>
+
+<h2>二、通用闭环的五个环节</h2>
+<p>不管哪家系统，骨架都是同一套五环节。下图是以「当前基线 $b$」为起点的完整闭环：</p>
+
+<pre class="mermaid">
+flowchart TB
+    B["当前基线 b：已接受的栈配置"] --> M["① 变异：LLM agent 生成候选 c<br/>融合边界 · 内存布局 · 传输精度 · 通信排布"]
+    M --> E{"② 评估：实测延迟<br/>数值一致性校验"}
+    E -->|"接受"| R["③ 递归：c 成为新基线"]
+    R --> M
+    E -->|"拒绝：fail-closed"| B
+    E -.->|"④ 诊断：为什么慢 / 为什么错"| M
+    KB[("⑤ 记忆：技能库 · 契约 · 失败模式")]
+    KB -.->|"注入下一轮"| M
+    M -.->|"成功策略回库"| KB
+</pre>
+<p class="figcaption">图 1：自演进的通用闭环。①②③ 是主循环，④⑤ 是让它「越跑越聪明」的两条增强回路。</p>
+
+<ol>
+<li><strong>变异（生成候选）</strong>：LLM agent 生成候选实现——kernel 融合方案、内存布局、通信排布、传输精度，乃至整段引擎代码。变异空间从参数空间扩展到了任意代码决策。</li>
+<li><strong>评估（适应度）</strong>：编译 → 在真实 shape 上跑 → 量延迟 + 验数值一致性。形式化地，一个候选 $c$ 被接受当且仅当：
+<div class="formula">
+$$\text{accept}(c) \iff \big(\operatorname{latency}(c) &lt; \operatorname{latency}(b)\big) \;\wedge\; \big(d_{\text{num}}(c,\, b) \le \epsilon\big)$$
+</div>
+其中 $d_{\text{num}}$ 是与参考实现的数值距离（bit-exact 时取 $0$），$\epsilon$ 按数值类别分别设定。适应度便宜、连续、可复现——这是这个领域能跑通演进的前提。</li>
+<li><strong>诊断反馈</strong>：不只回答「慢 / 错」，还要回答「为什么」——NCU 等 profiler 判断 memory-bound / compute-bound / occupancy 受限，把「为什么」喂回 prompt 指导下一轮变异。</li>
+<li><strong>记忆</strong>：成功策略蒸馏进技能库 / 知识库，失败的证据单独记录，跨任务复用，避免每次从零探索。</li>
+<li><strong>递归</strong>：接受的优化累积为新基线；更进一步，搜索轨迹本身反哺训练（演进「演进器」，见 KernelEvolve 的强化飞轮）。</li>
+</ol>
+
+<h2>三、Sol-H3 的 RSI：固定契约下的递归自改进</h2>
+<p><a href="https://arxiv.org/html/2609.35110v1" target="_blank">RSI 论文</a>的循环是：每轮提出一个候选实现改动（kernel 融合、内存布局、通信排布、传输精度），profile 其延迟、对照正确性契约验证，然后接受或拒绝——<strong>接受的改动成为下一轮搜索的基底</strong>，这就是「递归」的含义。<span class="ev ev-v">V</span></p>
+<p>它的核心贡献其实是<strong>护栏设计</strong>，而不是搜索算法本身：</p>
+<ul>
+<li><strong>固定生成契约（fail-closed）</strong>：循环被刻意限制为「在固定生成契约下搜索实现，<strong>绝不修改契约本身</strong>」。不受约束的自改进 agent 可能悄悄减步数、改数值轨迹来换速度，让加速变得不可归因；这里被拒绝的候选只产出「一次精确测量而非一个模糊判断」，验证不过就不上线——循环失败时是关闭的（fail-closed）。</li>
+<li><strong>数值三分类</strong>：bit-exact 的布局变换、结构保持但不逐位相同的算术融合、量化近似模式，三类分开验证，不许混在一起蒙混过关。</li>
+<li><strong>精度保持贯彻到基线层</strong>：LoRA 不做权重合并（合并会改变输出——86.1%–94.4% 的更新会舍位回原 BF16 权重），改用消费端融合，并逐字节对照原生分支验证。<span class="ev ev-v">V</span></li>
+</ul>
+<p>搜索确实挖出了直觉找不到的东西：<span class="ev ev-v">V</span></p>
+<ul>
+<li>在 50 个 transformer 块中发现 3 个融合组：residual+RMSNorm+modulation、QK norm+RoPE、SwiGLU，每 GPU 每 pass 省约 178 GB 显存流量；</li>
+<li>用 stride-aware 布局 kernel 替换掉一个比参考实现还慢 4.7% 的 naive PyTorch permute；</li>
+<li>反直觉发现：GB200 上 16 字节对齐的<strong>更大</strong> payload 反而比更小的更快——这类不连续、反直觉的设计点正是搜索强、直觉弱的证据。</li>
+</ul>
+<p><strong>结果与边界</strong>：RSI 加速的系统优化与算法侧调度（4 步 LoRA 等）合计带来约 30× 加速、约 20% 显存节省——8×B300 上 5 秒视频 18.25 s → 1.653 s（快于实时播放），8×GB200 上 1.434 s。<span class="ev ev-v">V</span> 但论文明确划了线：范式级决策（两阶段跨分辨率调度、latent adapter 这类「需要范式迁移级直觉」的东西）仍然靠人，RSI 只做「可数学验证的有界工程问题」。代码 Apache 2.0 开源。</p>
+
+<h2>四、KernelEvolve：生产级演进闭环与强化飞轮</h2>
+<p>Meta 的 <a href="https://engineering.fb.com/2026/04/02/developer-tools/kernelevolve-how-metas-ranking-engineer-agent-optimizes-ai-infrastructure" target="_blank">KernelEvolve</a>（隶属 Ranking Engineer Agent）是目前最完整的工业级实现，五个环节全部到位：<span class="ev ev-v">V</span></p>
+<ul>
+<li><strong>候选</strong>：高层 DSL（Triton、TLX、CuTe DSL、FlyDSL）与底层语言（CUDA、HIP、MTIA C++），覆盖 NVIDIA / AMD GPU、自研 MTIA 芯片和 CPU。</li>
+<li><strong>搜索</strong>：树搜索引擎用 <strong>MCTS + 进化策略</strong>，每个候选是树上一个节点；节点内存可配置——继承父代轨迹、对比兄弟分支、或整体重启以逃离局部最优。</li>
+<li><strong>知识</strong>：检索增强知识库注入硬件文档、正确性约束与优化模式（自研 MTIA 芯片没有任何 LLM 训练数据，全靠这条）；成功策略蒸馏回<strong>自演进技能库</strong>。</li>
+<li><strong>评估</strong>：对参考实现做 bitwise 正确性校验 + 性能 profiling（NCU、PyTorch Profiler、TritonBench、MTIA Insight），诊断 memory-bound / compute-bound / occupancy 并把「为什么」喂回 LLM。</li>
+<li><strong>工程化</strong>：job harness 管理多分钟级编译与基础设施故障，数百候选并行评估，直到命中性能目标 / 预算 / 停滞条件。</li>
+</ul>
+<p>最关键的一步是<strong>强化飞轮：优化 session 产生的 agentic 轨迹用来后训练更小的专用模型，reward 就是实测 kernel 性能——优化器本身在被优化</strong>，效率随时间复利。结果：KernelBench 250 题全通过；广告 Andromeda 模型推理吞吐 +60%（对 torch.compile + 厂商库）；MTIA 上训练吞吐 +25%；生成的 kernel 承载<strong>万亿级日请求</strong>，搜索树跨模型变体与芯片代际复用。<span class="ev ev-v">V</span></p>
+
+<h2>五、MetaInfer：演进的是知识，不是代码</h2>
+<p><a href="https://arxiv.org/html/2607.12875v1" target="_blank">MetaInfer</a> 把「模型落到硬件上」这件事交给 LLM agent，但它演进的载体不是 kernel 代码，而是一个<strong>契约知识库（Contract Knowledge Base，CKB）</strong>——模型结构规约、状态契约、权重映射、失败模式。<span class="ev ev-v">V</span></p>
+<p>工作流是一个三环嵌套的循环：<strong>约束输入 → 覆盖检测 → 代码生成 → 契约审查 → 独立验证 → 失败反馈</strong>。覆盖检测决定走哪条路：CKB 覆盖目标配置就走「零参照生成」，不覆盖就进入「知识库演化」——失败分析 agent 记录缺失知识与错误假设，转向增量探索，例如修复过 GatedDeltaNet 的 L2 归一化误用 mean 而非 sum、RMSNormGated 门控顺序颠倒、重复 Q 缩放、KV cache 长度维护等具体错误。<span class="ev ev-v">V</span></p>
+<p>验证是 <strong>L0–L3 分层门禁</strong>：路径检查 → 组件测试 → 跨阶段回归 → 端到端证据；接受时还查「真实性」——真权重、真并行路径、不许硬编码输出、不许绕过框架。知识吸收的标准非常硬：<strong>关闭源码参考后能独立再生，且 24/24 greedy token 与 HuggingFace 参考轨迹一致，才算 PASS_VERIFIED</strong>——一次性探索的上下文被蒸馏成可复用的知识约束，而不是塞进上下文里当原始记录。<span class="ev ev-v">V</span></p>
+<blockquote>注：v1 正文记录的演化案例为 Qwen3.6-27B / Z200 加速器；arXiv 摘要页另列出 DeepSeek V4 Flash（A800 部署修复）、GLM 5.3 Flash（跨模型知识迁移）、海光 K100AI DCU（异构移植）三段实战。两个版本叙述存在差异，引用时以对应版本原文为准。</blockquote>
+
+<h2>六、DwarfStar / Husky / Strata：不靠演进的对照路线</h2>
+<p>自演进不是唯一解，三个系统给出了清晰的对照组：</p>
+<ul>
+<li><strong>DwarfStar（ds4）——引擎代码层的「半演进」</strong>：antirez 的 C 语言本地推理引擎，官方披露大量借助 AI coding agent 开发，并以「模板」形态发布——集成测试套件（加载 / 推理 / KV 状态 / 服务）就是现成的适应度函数，官方明确鼓励用户拿 coding agent 对着自家硬件继续改。相当于把自演进下放给用户侧执行。只跑自产 GGUF 的少数精选模型（DeepSeek V4/V4.1 Flash、GLM 5.2/5.3 Flash 等），约 2.4 万 star。<span class="ev ev-v">V</span></li>
+<li><strong>Husky——编译期特化，运行时零搜索</strong>：Underdog 的 model-specific 引擎，只跑自家 4B Woof 模型（4-bit，约 2.4 GB）。为模型的精确张量形状手写 kernel、权重按 kernel tile 顺序直接落盘（加载零转换）、8-bit KV cache 按 attention 消费布局存储、持久 Metal megakernel。M5 Max 上解码 730 tok/s（比 MLX 快至 4.5×）、prefill 约 5150 tok/s、续聊 TTFT 约 35 ms。一切在构建时定死——唯一沾「自」的是 Flash draft 模型用 Woof 自身输出蒸馏（自蒸馏）。<span class="ev ev-v">V</span></li>
+<li><strong>Strata——运行时在线自适应，代码不变</strong>：长上下文分层 KV 缓存，GPU-assisted I/O 消碎片 + cache-aware 请求调度把 I/O 停顿与计算重叠。调度策略在线适应负载，但系统代码本身不演进。TTFT 比 vLLM+LMCache 低至 5×，长上下文比 TensorRT-LLM 快 3.75×。<span class="ev ev-v">V</span></li>
+</ul>
+<p>这两条静态路线的共同逻辑是：<strong>如果问题能被静态分析清楚，就不必付搜索的成本</strong>。它们反衬出适用边界——单模型专用引擎可以特化，跨模型、跨硬件、持续新模型的场景才需要演进。</p>
+
+<h2>七、横向对比</h2>
+<table>
+<thead><tr><th>系统</th><th>演进对象</th><th>变异算子</th><th>记忆载体</th><th>独特护栏 / 飞轮</th><th>关键数字</th></tr></thead>
+<tbody>
+<tr><td>Sol-H3 RSI</td><td>kernel 融合 / 布局 / 精度</td><td>专用 skill agent 层级 + 中央整合 agent</td><td>接受即新基线</td><td>固定生成契约，fail-closed；数值三分类</td><td>合计约 30× 加速、约 20% 省显存（含算法侧）<span class="ev ev-v">V</span></td></tr>
+<tr><td>KernelEvolve</td><td>kernel 代码（DSL → 底层语言）</td><td>LLM + MCTS / 进化策略</td><td>技能库 + 可复用搜索树</td><td>轨迹后训练小模型（优化器被优化）</td><td>KernelBench 100%；广告推理吞吐 +60%；MTIA 训练 +25%<span class="ev ev-v">V</span></td></tr>
+<tr><td>MetaInfer</td><td>部署知识（契约）</td><td>agent 增量探索</td><td>契约知识库 CKB</td><td>关源再生 + 24/24 token 对齐才算吸收</td><td>L0–L3 分层验证；跨模型 / 跨加速器迁移<span class="ev ev-v">V</span></td></tr>
+<tr><td>DwarfStar</td><td>引擎本身（用户侧）</td><td>coding agent</td><td>git 历史 + 集成测试</td><td>引擎即模板，测试当适应度</td><td>8×L40S 约 126 tok/s 聚合<span class="ev ev-v">V</span></td></tr>
+<tr><td>Husky（对照）</td><td>—（编译期特化）</td><td>—</td><td>—</td><td>构建时定死，运行时零搜索</td><td>730 tok/s decode，至 4.5× vs MLX<span class="ev ev-v">V</span></td></tr>
+<tr><td>Strata（对照）</td><td>—（运行时自适应）</td><td>—</td><td>—</td><td>调度在线适应，代码不变</td><td>TTFT 5× vs vLLM+LMCache<span class="ev ev-v">V</span></td></tr>
+</tbody>
+</table>
+
+<pre class="mermaid">
+flowchart TB
+    subgraph S1["层面一 · kernel 与栈配置 —— Sol-H3 RSI / KernelEvolve"]
+        direction LR
+        X1["融合边界"] --- X2["内存布局"] --- X3["传输精度"] --- X4["megakernel"]
+    end
+    subgraph S2["层面二 · 引擎代码本身 —— DwarfStar"]
+        Y["C 引擎源码 + 集成测试当适应度<br/>官方定位：给用户 agent 继续改造的模板"]
+    end
+    subgraph S3["层面三 · 部署知识 —— MetaInfer"]
+        Z["契约知识库 CKB：覆盖检测 → 零参照生成 / 知识库演化<br/>关源再生 + 逐 token 对齐才算吸收"]
+    end
+    subgraph S4["非演进对照 —— 静态特化 / 在线自适应"]
+        direction LR
+        N1["Husky：编译期特化<br/>构建时定死，运行时零搜索"] --- N2["Strata：运行时调度自适应<br/>代码不变"]
+    end
+    S1 ~~~ S2
+    S2 ~~~ S3
+    S3 ~~~ S4
+</pre>
+<p class="figcaption">图 2：自演进发生的三个层面与非演进对照组——越往上越接近代码，越往下越接近知识；对照组证明了「能静态分析清楚的问题不必搜索」。</p>
+
+<h2>八、为什么推理引擎是这个范式的绝佳试验田</h2>
+<ul>
+<li><strong>适应度便宜且无梯度</strong>：CUDA kernel 不可微，没法梯度下降，但跑一千次量延迟只要毫秒级——演化搜索恰好是「无梯度、可测量」问题的标准解法。</li>
+<li><strong>正确性可机械验证</strong>：<code>allclose</code>、逐 token 对比 HF 轨迹、bitwise 对照参考实现——杜绝「快但错」静默上线，这是绝大多数软件领域给不了的奢侈条件。</li>
+<li><strong>设计空间不连续且反直觉</strong>：融合边界、布局、对齐、精度排布的组合没有平滑结构，GB200 上「更大的对齐 payload 反而更快」这类发现，恰好是进化搜索强、人类直觉弱的地方。</li>
+<li><strong>基线可累积</strong>：每个被接受的 kernel 都是真实资产，不会白搜；搜索树、技能库、契约知识都能跨任务、跨芯片代际复用。</li>
+</ul>
+
+<h2>九、局限与护栏</h2>
+<ul>
+<li><strong>范式级创新仍靠人</strong>：Sol-H3 论文自己划线——改调度、改架构这类需要范式迁移直觉的决策，RSI 目前做不了；分工是「确定性、可数学验证的有界工程问题交给 agent，开放式有损设计交给人」。</li>
+<li><strong>评估成本在引擎级爆炸</strong>：单 kernel 千次微秒级测量很便宜，但引擎级 / 端到端级的候选评估（编译、拉起服务、跑真实负载）成本高一个量级以上，分层验证（L0–L3）就是为控制这个成本。</li>
+<li><strong>过拟合 benchmark 是通病</strong>：所有搜索系统都可能向评测集过拟合；KernelBench 100% 不等于生产 100%，Meta 的做法是直接用生产模型当评测对象。</li>
+<li><strong>护栏不是可选项</strong>：固定契约、fail-closed、数值三分类、关源再生验证——这些「不给 agent 作弊空间」的设计决定了加速是否可归因、成果能否上生产。换句话说，<strong>自演进系统的核心工程量在裁判席，不在生成器</strong>。</li>
+</ul>
+
+<h2>资料来源</h2>
+<ul>
+<li>Sol-H3：论文 <a href="https://arxiv.org/abs/2609.35110" target="_blank">Recursive Self-Improvement for MiniMax-H3 Inference（arXiv:2609.35110）</a> · <a href="https://nvlabs.github.io/Sana/Sol-Engine/Sol-H3" target="_blank">Sol-Engine 项目页（8×B300）</a>（2026 预印本 / 官方页面）</li>
+<li>KernelEvolve：<a href="https://engineering.fb.com/2026/04/02/developer-tools/kernelevolve-how-metas-ranking-engineer-agent-optimizes-ai-infrastructure" target="_blank">Meta Engineering Blog：KernelEvolve（2026-04-02）</a>（官方自述，数字未第三方复现）</li>
+<li>MetaInfer：<a href="https://arxiv.org/abs/2607.12875" target="_blank">arXiv:2607.12875</a>（2026 预印本，未同行评审）</li>
+<li>DwarfStar/ds4：<a href="https://github.com/antirez/ds4" target="_blank">GitHub：antirez/ds4</a></li>
+<li>Husky：<a href="https://husky.underdog.ai" target="_blank">Underdog：Husky 项目页（2026-09-20）</a>（官方自述）</li>
+<li>Strata：<a href="https://arxiv.org/abs/2508.18572" target="_blank">Strata: Hierarchical Context Caching for Long-Context LLM Inference（arXiv:2508.18572）</a></li>
+<li>领域背景：<a href="https://github.com/qhy991/Awesome-LLM-Kernel-Agent" target="_blank">Awesome-LLM-Kernel-Agent</a>（LLM 驱动 kernel 生成研究清单）</li>
+</ul>
+</body>
+</html>
