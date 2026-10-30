@@ -14,6 +14,9 @@ description: 面向大模型方向的完整技术知识目录，覆盖从数学�
 ### 学习指南
 - [MiniMind 全链路完整指南：从零训练到强化学习与部署](docs/minimind/)
 
+### 卷积网络与轻量化设计
+- [卷积的原理与卷积层设计全景 —— 核尺寸（小核堆叠 · 多尺度 · 可变形 · 1×1）× 运算方式（分组 · Depthwise · 通道混洗 · 通道加权）× 连接拓扑（跳跃 · 密集）：公式推导、数值对比与代表网络](docs/cnn/conv-principles-and-designs.html)
+
 ### 推理引擎与 Serving
 - [Continuous Batching 完整梳理——机制、意义与前世今生](docs/inference/continuous-batching-history-flow.html)
 - [Chunked Prefill 完整梳理——流程、意义与前世今生](docs/inference/chunked-prefill-history-flow.html)
@@ -106,7 +109,7 @@ flowchart LR
 
 ### 1.2 深度学习基础
 - [ ] 神经网络与反向传播、自动微分原理
-- [ ] CNN 基础与经典网络
+- [ ] [CNN 基础与经典网络：卷积原理与卷积层设计全景](docs/cnn/conv-principles-and-designs.html)
 - [ ] 序列建模：RNN/LSTM/GRU、seq2seq、双向模型
 - [ ] 归一化：BN/LN/RMSNorm/DeepNorm、PreNorm vs PostNorm
 - [ ] 激活函数演进：ReLU/GELU/SiLU/SwiGLU

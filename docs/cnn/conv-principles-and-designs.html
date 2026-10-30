@@ -1,0 +1,704 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>卷积的原理与卷积层设计全景 —— 核尺寸 · 运算方式 · 连接拓扑：公式推导、数值对比与代表网络</title>
+<!-- 霞鹜文楷：开源可商用的中文楷体风格字体；加载失败时自动回退到微软雅黑 -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/lxgw-wenkai-webfont@1.7.0/style.css">
+<script>
+window.MathJax = {
+  tex: {
+    inlineMath: [['$', '$'], ['\\(', '\\)']],
+    displayMath: [['$$', '$$'], ['\\[', '\\]']],
+    processEscapes: true
+  },
+  svg: { fontCache: 'global' }
+};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js" async></script>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+<script>mermaid.initialize({ startOnLoad: true, theme: "neutral", fontFamily: '"Microsoft YaHei", "PingFang SC", sans-serif' });</script>
+<style>
+  :root {
+    --ink: #1f2430; --muted: #5c6470; --accent: #b3354a; --accent2: #2c5fa8;
+    --bg: #ffffff; --bg-soft: #f6f7f9; --line: #e2e5ea; --code-bg: #f2f4f7;
+    --green: #1e7d4f; --purple: #6b3fa0; --orange: #d98e04;
+  }
+  * { box-sizing: border-box; }
+  body {
+    font-family: "LXGW WenKai", "Microsoft YaHei", "PingFang SC", "Segoe UI", sans-serif;
+    font-size: 17.5px; line-height: 1.85; letter-spacing: 0.01em;
+    color: var(--ink); background: var(--bg); margin: 0; padding: 0;
+  }
+  .wrap { max-width: 1180px; margin: 0 auto; padding: 40px 28px 120px; }
+  h1, h2, h3, h4, .kicker, .toc a, .card-title, .tag, .axis-name { font-family: "Microsoft YaHei", "PingFang SC", sans-serif; }
+  h1 { font-size: 28px; line-height: 1.45; margin: 8px 0 6px; }
+  h2 { font-size: 23px; margin: 56px 0 16px; padding-bottom: 8px; border-bottom: 2px solid var(--accent); letter-spacing: 0.03em; }
+  h2 .sec-no { color: var(--accent); margin-right: 8px; }
+  h3 { font-size: 19px; margin: 34px 0 10px; color: #16324f; }
+  h4 { font-size: 16.5px; margin: 22px 0 8px; color: #16324f; }
+  p { margin: 10px 0; }
+  ul, ol { margin: 10px 0; padding-left: 26px; }
+  li { margin: 4px 0; }
+  .kicker { font-size: 13px; letter-spacing: 0.28em; color: var(--accent); text-transform: uppercase; font-weight: 600; }
+  .meta { color: var(--muted); font-size: 14.5px; margin: 4px 0 0; }
+  code, pre { font-family: "Cascadia Code", Consolas, "Microsoft YaHei", monospace; }
+  code { background: var(--code-bg); padding: 1.5px 6px; border-radius: 4px; font-size: 0.86em; color: #8a1f3d; }
+  pre { background: #1b2230; color: #dce3f0; border-radius: 10px; padding: 14px 18px; font-size: 12.5px; line-height: 1.6; overflow-x: auto; }
+  pre.mermaid { background: var(--bg-soft); color: var(--ink); text-align: center; }
+  table { width: 100%; border-collapse: collapse; margin: 14px 0 22px; font-size: 14px; line-height: 1.6; }
+  th { background: #16324f; color: #fff; font-weight: 600; text-align: left; padding: 7px 11px; font-family: "Microsoft YaHei", sans-serif; }
+  td { padding: 6px 11px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  tr:nth-child(even) td { background: var(--bg-soft); }
+  .tag { display: inline-block; font-size: 12px; font-weight: 600; padding: 1px 10px; border-radius: 20px; margin-right: 6px; }
+  .tag.red { background: #fdecef; color: #b3354a; }
+  .tag.blue { background: #e8f0fb; color: #2c5fa8; }
+  .tag.green { background: #e6f4ec; color: #1e7d4f; }
+  .tag.purple { background: #f0e9fa; color: #6b3fa0; }
+  .tag.gray { background: #eef0f3; color: #5c6470; }
+  .callout { background: #fdf6ec; border-left: 4px solid #d98e04; border-radius: 6px; padding: 12px 18px; margin: 16px 0; }
+  .callout.info { background: #eef4fc; border-left-color: #2c5fa8; }
+  .callout.green { background: #eaf6f0; border-left-color: #1e7d4f; }
+  .callout.red { background: #fdf0f2; border-left-color: #b3354a; }
+  .callout.purple { background: #f3edfb; border-left-color: #6b3fa0; }
+  .callout code { background: rgba(0,0,0,0.06); }
+  .formula { background: #faf8f0; border: 1px solid #e8e2ce; border-radius: 8px; padding: 10px 18px; margin: 12px 0; overflow-x: auto; }
+  .formula .lbl { display: block; font-size: 12.5px; color: #8a7a4a; font-family: "Microsoft YaHei", sans-serif; margin-bottom: 2px; }
+  .toc { background: var(--bg-soft); border: 1px solid var(--line); border-radius: 12px; padding: 18px 26px; margin: 26px 0 10px; font-size: 15px; }
+  .toc a { color: #16324f; text-decoration: none; }
+  .toc a:hover { color: var(--accent); }
+  .toc ol { margin: 8px 0; padding-left: 22px; }
+  .toc li { margin: 3px 0; }
+  .fig { margin: 22px 0; text-align: center; }
+  .fig .caption { font-size: 13.5px; color: var(--muted); margin-top: 6px; font-family: "Microsoft YaHei", sans-serif; }
+  .axes { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 14px; margin: 18px 0; }
+  .axis-card { border: 1px solid var(--line); border-radius: 12px; padding: 14px 18px; background: var(--bg-soft); }
+  .axis-card.sp { border-top: 4px solid var(--accent); }
+  .axis-card.ch { border-top: 4px solid var(--accent2); }
+  .axis-card.tp { border-top: 4px solid var(--green); }
+  .axis-name { font-weight: 700; font-size: 16px; margin-bottom: 4px; }
+  .axis-card.sp .axis-name { color: var(--accent); }
+  .axis-card.ch .axis-name { color: var(--accent2); }
+  .axis-card.tp .axis-name { color: var(--green); }
+  .axis-card ul { margin: 6px 0 2px; padding-left: 20px; font-size: 14.5px; }
+  .footer { margin-top: 70px; padding-top: 18px; border-top: 1px solid var(--line); color: var(--muted); font-size: 13.5px; }
+  a { color: var(--accent2); }
+  .note { font-size: 13.5px; color: var(--muted); }
+  mjx-container { overflow-x: auto; overflow-y: hidden; max-width: 100%; }
+/* ===== 跟随系统深浅色（prefers-color-scheme）===== */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --ink: #e6e9f0; --muted: #9aa3b5; --accent: #ff8fa3; --accent2: #7fa8ff;
+    --bg: #0f1420; --bg-soft: #171d2b; --line: #2a3245; --code-bg: #10151f;
+    --green: #4ec7b6; --purple: #b48ce0; --orange: #ffb454;
+  }
+  html { color-scheme: dark; }
+  body { color: var(--ink); background: var(--bg); }
+  h3, h4 { color: #8fb6ff; }
+  a { color: var(--accent2); }
+  .toc a { color: #8fb6ff; }
+  code { color: #ffb4c5; background: var(--code-bg); }
+  th { background: #232c40; color: #e6e9f0; }
+  td { border-bottom-color: var(--line); }
+  tr:nth-child(even) td { background: var(--bg-soft); }
+  .tag.red { background: rgba(255,143,163,0.15); color: #ff8fa3; }
+  .tag.blue { background: rgba(127,168,255,0.15); color: #7fa8ff; }
+  .tag.green { background: rgba(78,199,182,0.15); color: #4ec7b6; }
+  .tag.purple { background: rgba(180,140,224,0.15); color: #b48ce0; }
+  .tag.gray { background: rgba(154,163,181,0.15); color: #9aa3b5; }
+  .callout { background: rgba(255,180,84,0.10); border-left-color: #ffb454; }
+  .callout.info { background: rgba(127,168,255,0.10); border-left-color: #7fa8ff; }
+  .callout.green { background: rgba(78,199,182,0.10); border-left-color: #4ec7b6; }
+  .callout.red { background: rgba(255,143,163,0.10); border-left-color: #ff8fa3; }
+  .callout.purple { background: rgba(180,140,224,0.10); border-left-color: #b48ce0; }
+  .callout code { background: rgba(255,255,255,0.06); }
+  .formula { background: #1a1a12; border-color: #4a3f22; color: #e0c27a; }
+  .formula .lbl { color: #d4b26a; }
+  .axis-card.sp .axis-name { color: var(--accent); }
+  .axis-card.ch .axis-name { color: var(--accent2); }
+  .axis-card.tp .axis-name { color: var(--green); }
+  [style*="position:fixed;top:12px;right:14px"] { background: #1d2434 !important; border-color: #2a3245 !important; color: #7fa8ff !important; }
+}
+</style>
+</head>
+<body>
+<a href="https://luxiangz.github.io/llm-tech-map/" style="position:fixed;top:12px;right:14px;z-index:99;background:#f6f7f9;border:1px solid #e2e5ea;border-radius:999px;padding:4px 12px;font-size:14px;color:#2c5fa8;text-decoration:none;box-shadow:0 1px 4px rgba(0,0,0,.08)">← 技术地图首页</a>
+<div class="wrap">
+
+  <div class="kicker">深度学习基础 · 卷积网络 · 轻量化设计</div>
+  <h1>卷积的原理与卷积层设计全景<br><span style="font-size:16px;color:var(--muted);font-weight:400;">核尺寸 · 运算方式 · 连接拓扑 —— 逐项原理拆解、公式推导与数值对比</span></h1>
+  <p class="meta">
+    生成日期 2026-10-30 · 覆盖 10 类卷积层设计：小卷积核堆叠 / 多尺度卷积核 / 可变形卷积 / 1×1 卷积 / 分组卷积 / Depthwise 卷积 / 通道混洗 / 通道加权 / 跳跃连接 / 密集连接，
+    每一项都从卷积的数学定义与成本模型出发解释「为什么有效、省在哪里、代价是什么」。
+  </p>
+
+  <div class="toc">
+    <strong>目录</strong>
+    <ol>
+      <li><a href="#s0">一页结论：卷积是什么，所有设计在改什么（先记结论）</a></li>
+      <li><a href="#s1">卷积的原理：定义、三大结构先验与成本模型</a></li>
+      <li><a href="#s2">卷积核尺寸的设计（空间轴）</a></li>
+      <li><a href="#s3">卷积层运算的设计（通道轴）</a></li>
+      <li><a href="#s4">卷积层连接的设计（拓扑轴）</a></li>
+      <li><a href="#s5">全景总结：统一视角、大对比表、轻量化的本质与陷阱</a></li>
+    </ol>
+  </div>
+
+  <!-- ==================== §0 ==================== -->
+  <h2 id="s0"><span class="sec-no">0</span>一页结论：卷积是什么，所有设计在改什么</h2>
+
+  <p><strong>卷积层的本质是一个「局部连接 + 权重共享」的滑动窗口加权求和器</strong>：一个 $K \times K$ 的小窗口在输入特征图上滑动，每个位置做一次「对应元素相乘再求和」，得到输出特征图上的一个值。它与全连接层的全部区别来自两条结构先验——<strong>局部性</strong>（每个输出只看输入的一个邻域）和<strong>参数共享</strong>（同一组权重扫过整张图）——由此自动获得<strong>平移等变性</strong>，并把参数量从「与图像面积成正比」降到「与图像面积无关」。</p>
+
+  <p>围绕这个基本操作，卷积网络的设计演进可以精确地归约为<strong>三个正交的设计轴</strong>——这正是题面中「卷积核尺寸 / 卷积层运算 / 卷积层连接」三组方法的结构化表述：</p>
+
+  <div class="axes">
+    <div class="axis-card sp">
+      <div class="axis-name">空间轴：核的尺寸与采样方式</div>
+      <div class="tag red">对应「卷积核尺寸」</div>
+      <ul>
+        <li>小卷积核替代（堆叠小核）：VGG</li>
+        <li>多尺寸卷积核（多尺度并行）：Inception / GoogLeNet</li>
+        <li>可变形卷积核（采样点可学）：DCN / DCNv2</li>
+        <li>1×1 卷积（空间尺寸退化为 1）：NiN、ResNet Bottleneck</li>
+      </ul>
+    </div>
+    <div class="axis-card ch">
+      <div class="axis-name">通道轴：通道间的耦合方式</div>
+      <div class="tag blue">对应「卷积层运算」</div>
+      <ul>
+        <li>分组卷积（通道分组隔离）：AlexNet、ResNeXt</li>
+        <li>Depthwise 卷积（每通道独立滤波）：MobileNet、Xception</li>
+        <li>通道混洗（组间信息再流通）：ShuffleNet</li>
+        <li>通道加权（动态重标定通道贡献）：SENet</li>
+      </ul>
+    </div>
+    <div class="axis-card tp">
+      <div class="axis-name">拓扑轴：层与层的连接方式</div>
+      <div class="tag green">对应「卷积层连接」</div>
+      <ul>
+        <li>跳跃连接（恒等捷径，残差学习）：ResNet</li>
+        <li>密集连接（跨层拼接，特征复用）：DenseNet</li>
+      </ul>
+    </div>
+  </div>
+
+  <p>所有这些设计追求的目标可以概括为一句话：<strong>在参数量、计算量（FLOPs）、精度三者之间重新分配预算</strong>。而分析任何一种设计的工具只有两条公式——标准卷积的参数量与计算量：</p>
+
+  <div class="formula">
+    <span class="lbl">标准卷积的成本模型（本文所有轻量化分析的基准）</span>
+    \[
+    \text{Params} = K^2 \cdot C_{\mathrm{in}} \cdot C_{\mathrm{out}} + C_{\mathrm{out}}, \qquad
+    \mathrm{MACs} = H \cdot W \cdot K^2 \cdot C_{\mathrm{in}} \cdot C_{\mathrm{out}}
+    \]
+  </div>
+
+  <p>其中 $K$ 为核边长，$C_{\mathrm{in}} / C_{\mathrm{out}}$ 为输入/输出通道数，$H \times W$ 为输出空间尺寸；MACs（乘加次数）约为 FLOPs 的一半。看懂每个设计「动了公式里的哪个因子」，就看懂了这个设计。</p>
+
+  <div class="fig">
+<pre class="mermaid">
+flowchart TD
+  ROOT["卷积层的设计空间"] --> SP["空间轴：核尺寸与采样方式"]
+  ROOT --> CH["通道轴：通道间耦合方式"]
+  ROOT --> TP["拓扑轴：层间连接方式"]
+  SP --> S1["小卷积核堆叠<br/>VGG"]
+  SP --> S2["多尺度卷积核并行<br/>Inception / GoogLeNet"]
+  SP --> S3["可变形卷积<br/>DCN / DCNv2"]
+  CH --> C0["1×1 卷积与瓶颈结构<br/>NiN · ResNet Bottleneck"]
+  CH --> C1["分组卷积<br/>AlexNet · ResNeXt"]
+  CH --> C2["Depthwise + Pointwise<br/>MobileNet · Xception"]
+  CH --> C3["通道混洗<br/>ShuffleNet"]
+  CH --> C4["通道加权（通道注意力）<br/>SENet"]
+  TP --> T1["跳跃连接<br/>ResNet"]
+  TP --> T2["密集连接<br/>DenseNet"]
+</pre>
+    <div class="caption">图 0-1 · 卷积层设计全景：三个正交设计轴。1×1 卷积同时横跨空间轴（$K=1$）与通道轴（只做通道混合），这里按其主要功能放在通道轴。</div>
+  </div>
+
+  <div class="callout info">
+    <strong>先记三句话。</strong>
+    ① 卷积 = 局部连接 + 权重共享 + 平移等变，成本集中在 $K^2 C_{\mathrm{in}} C_{\mathrm{out}}$ 这一个乘积上；
+    ② 空间轴设计改「核怎么采样」（$K$ 的大小、形状、位置），通道轴设计改「通道怎么耦合」（$C_{\mathrm{in}} \times C_{\mathrm{out}}$ 的全连接程度），拓扑轴设计改「层间信息怎么流动」（绕过 / 复用哪些层）；
+    ③ 轻量化的本质是<strong>削减卷积的冗余</strong>——空间冗余、通道冗余、层间特征冗余——但 FLOPs 的下降不等于延迟的下降（详见 §5.3）。
+  </div>
+
+  <!-- ==================== §1 ==================== -->
+  <h2 id="s1"><span class="sec-no">1</span>卷积的原理：定义、三大结构先验与成本模型</h2>
+
+  <h3>1.1 为什么需要卷积：全连接层的两个灾难</h3>
+  <p>考虑一张 $224 \times 224 \times 3$ 的 ImageNet 图像。如果第一层用全连接接到 4096 个隐单元，仅这一层的参数就是 $150528 \times 4096 \approx 6.2$ 亿——比整个 VGG-16（约 1.38 亿参数，其中大部分还在分类头的全连接上）还大 4 倍。这是第一个灾难：<strong>参数量与图像像素数成正比，且没有任何空间结构的先验</strong>，参数间彼此独立，无法从「猫在左上角」泛化到「猫在右下角」。</p>
+  <p>第二个灾难是<strong>结构先验的缺失</strong>。图像有两种天然的统计规律：</p>
+  <ul>
+    <li><strong>局部相关性</strong>：有意义的模式（边缘、角点、纹理）只占几个到几十个像素的邻域，相距很远的像素基本无关；</li>
+    <li><strong>平移稳定性</strong>：同一个模式（同一只猫耳朵）可能出现在图像的任何位置，识别它的「检测器」应当是同一套。</li>
+  </ul>
+  <p>全连接层对这两条规律一无所知，只能靠海量数据和参数去「重新学会」它们。卷积层则把它们直接写进了结构里。</p>
+
+  <h3>1.2 数学定义：滑动窗口的加权求和</h3>
+  <p>单通道输入上，二维卷积（工程实现里实际计算的是互相关，二者只差核的翻转，深度学习语境下不区分）定义为：</p>
+
+  <div class="formula">
+    <span class="lbl">单通道二维卷积</span>
+    \[
+    y(i, j) = \sum_{m=0}^{K-1} \sum_{n=0}^{K-1} x(i+m,\; j+n) \cdot w(m, n) + b
+    \]
+  </div>
+
+  <p>即：输出位置 $(i,j)$ 的值，等于以输入 $(i,j)$ 为左上角的 $K \times K$ 邻域与核权重 $w$ 的对应元素乘积之和，再加偏置 $b$。多通道时，每个输出通道配一个完整的 $K \times K \times C_{\mathrm{in}}$ 三维核，<strong>在所有输入通道上求和</strong>：</p>
+
+  <div class="formula">
+    <span class="lbl">多通道卷积（标准卷积的完整形式）</span>
+    \[
+    y_c(i, j) = \sum_{c'=1}^{C_{\mathrm{in}}} \sum_{m=0}^{K-1} \sum_{n=0}^{K-1} x_{c'}(i+m,\; j+n) \cdot w_{c,\,c'}(m, n) + b_c,
+    \qquad c = 1, \dots, C_{\mathrm{out}}
+    \]
+  </div>
+
+  <p>注意这个公式里<strong>空间维（$m, n$）与通道维（$c'$）的求和是耦合在一个四维核张量 $w \in \mathbb{R}^{C_{\mathrm{out}} \times C_{\mathrm{in}} \times K \times K}$ 里的</strong>——空间滤波和通道混合同时发生。这一点是 §3 全部「运算方式」设计的突破口。输出特征图的空间尺寸由卷积的超参数决定：</p>
+
+  <div class="formula">
+    <span class="lbl">输出尺寸（$P$ 为 padding，$S$ 为步长）</span>
+    \[
+    H_{\mathrm{out}} = \left\lfloor \frac{H + 2P - K}{S} \right\rfloor + 1
+    \]
+  </div>
+
+  <div class="fig">
+<pre class="mermaid">
+flowchart TB
+  A["① 窗口对齐：输出位置 (i, j) 对应输入的一个 K×K×C_in 邻域"] --> B["② 对应相乘：邻域元素 × 核权重<br/>（同一组权重扫全图 = 参数共享）"]
+  B --> C["③ 求和 + 偏置：得到该位置、该输出通道的一个值"]
+  C --> D["④ 窗口按步长 S 滑动，遍历整个 H×W"]
+  D --> E["输出特征图：H_out × W_out × C_out<br/>（每个输出通道一个独立的核）"]
+</pre>
+    <div class="caption">图 1-1 · 标准卷积的计算流程。硬件实现上这一过程等价于 im2col 展开成矩阵后做一次 GEMM（矩阵乘），这也是 1×1 卷积和全连接层能共享高效内核的原因。</div>
+  </div>
+
+  <h3>1.3 三大结构先验：卷积为什么「天生适合」图像</h3>
+  <table>
+    <tr><th>先验</th><th>含义</th><th>带来的性质</th><th>代价函数中的对应</th></tr>
+    <tr>
+      <td><strong>稀疏连接</strong>（局部感受野）</td>
+      <td>每个输出值只依赖输入的一个 $K \times K$ 邻域，而非全部像素</td>
+      <td>参数与 $H \times W$ 无关；浅层学局部模式</td>
+      <td>空间求和只在 $K^2$ 个位置上进行</td>
+    </tr>
+    <tr>
+      <td><strong>参数共享</strong></td>
+      <td>同一个核在所有空间位置上重复使用</td>
+      <td>参数量从 $O(HW K^2 C^2)$ 降为 $O(K^2 C^2)$；存储与访存大幅减少</td>
+      <td>公式中 $w(m,n)$ 不带位置下标 $(i,j)$</td>
+    </tr>
+    <tr>
+      <td><strong>平移等变性</strong></td>
+      <td>$f(\mathrm{shift}(x)) = \mathrm{shift}(f(x))$：输入平移，输出特征等量平移</td>
+      <td>模式检测器位置无关；配合池化获得局部平移<strong>不变性</strong></td>
+      <td>由前两条先验自动导出，是卷积的「免费赠品」</td>
+    </tr>
+  </table>
+  <p>对比 Transformer 就能看清这些先验的分量：自注意力对每个像素对建模（全局连接），权重随内容动态变化（无参数共享于空间维），因此 ViT 需要更多数据才能追上卷积的样本效率——卷积的归纳偏置正是「用结构换数据」。</p>
+
+  <h3>1.4 成本模型：一切轻量化分析的工具</h3>
+  <p>对标准卷积（步长 1、same padding，输出 $H \times W \times C_{\mathrm{out}}$）：</p>
+  <ul>
+    <li><strong>参数量</strong> $\text{Params} = K^2 C_{\mathrm{in}} C_{\mathrm{out}} + C_{\mathrm{out}}$（核张量的元素数 + 每个输出通道一个偏置），决定<strong>模型大小与显存占用</strong>；</li>
+    <li><strong>计算量</strong> $\mathrm{MACs} = H \cdot W \cdot K^2 \cdot C_{\mathrm{in}} \cdot C_{\mathrm{out}}$（每个输出位置做一次 $K^2 C_{\mathrm{in}}$ 次乘加），决定<strong>理论算力需求</strong>。</li>
+  </ul>
+  <p>这个乘积有四个因子：$H W$（特征图面积）、$K^2$（空间维开销）、$C_{\mathrm{in}} C_{\mathrm{out}}$（通道维开销）、以及乘起来的总量。后续每一节的分析方法都一样：<strong>看该设计削减了哪个因子、牺牲了什么换取</strong>。本文 §3.5 会给出同一组输入下各设计的精确数值对比。</p>
+
+  <h3>1.5 感受野与层级特征：为什么「深度」有用</h3>
+  <p>单层卷积只能看到 $K \times K$ 的邻域，但感受野随层数<strong>叠加增长</strong>：</p>
+  <div class="formula">
+    <span class="lbl">第 $l$ 层的感受野</span>
+    \[
+    \mathrm{RF}_l = \mathrm{RF}_{l-1} + (K_l - 1) \cdot \prod_{i < l} S_i
+    \]
+  </div>
+  <p>例如步长为 1 时，两个 $3 \times 3$ 层的感受野是 $1 + 2 + 2 = 5$，三个是 $7 \times 7$——这是 §2.1「小核堆叠」的全部数学依据。与此同时，层级组织让特征逐级抽象：浅层感受野小，学到边缘、角点、颜色斑块；深层感受野大，组合出纹理、部件乃至物体语义。<strong>感受野的增长速率与「多快看到全局语义」直接相关</strong>，这也是核尺寸设计的核心矛盾：大核看得远但贵，小核便宜但需要堆深。</p>
+
+  <!-- ==================== §2 ==================== -->
+  <h2 id="s2"><span class="sec-no">2</span>卷积核尺寸的设计（空间轴）</h2>
+  <p>空间轴要回答的问题是：<strong>核应该在多大的空间范围、以什么形状、在哪些位置上采样？</strong>四个经典答案如下。</p>
+
+  <h3>2.1 小卷积核替代：VGG 的「更深的更小」</h3>
+  <p><span class="tag red">VGG · 2014</span>早期网络（AlexNet）混用 $11 \times 11$、$5 \times 5$、$3 \times 3$ 大核。VGG 系统性地证明：<strong>堆叠小核可以替代单个大核，且更便宜、更强</strong>。以「两层 $3 \times 3$ 替代一层 $5 \times 5$」为例，两者感受野相同（$1+2+2=5$），但成本对比是：</p>
+  <div class="formula">
+    <span class="lbl">参数对比（每个输出通道、通道数均为 $C$）</span>
+    \[
+    \underbrace{2 \times (3^2 C^2)}_{\text{两个 } 3\times 3} = 18C^2 \;\lt\; 25C^2 = \underbrace{(5^2 C^2)}_{\text{一个 } 5\times 5}, \qquad
+    \frac{18}{25} = 72\%
+    \]
+  </div>
+  <p>同理三个 $3 \times 3$（$27C^2$）替代一个 $7 \times 7$（$49C^2$），参数与计算量降到约 <strong>55%</strong>。除省钱之外还有两个隐性收益：</p>
+  <ul>
+    <li><strong>更多非线性</strong>：每层卷积后接 ReLU，三层堆叠比单层多出两次非线性变换，判别能力更强；</li>
+    <li><strong>更细的组合方式</strong>：三个小核的「边缘 → 纹理 → 部件」分解路径比一个 $7 \times 7$ 的直接映射更容易优化。</li>
+  </ul>
+
+  <div class="fig">
+<pre class="mermaid">
+flowchart LR
+  subgraph V7["单个大核"]
+    direction LR
+    a["7×7 Conv<br/>参数 49C² · 1 层<br/>感受野 7×7 · 1 次非线性"]
+  end
+  subgraph V3["小核堆叠"]
+    direction LR
+    b1["3×3"] --> b2["3×3"] --> b3["3×3"]
+  end
+</pre>
+    <div class="caption">图 2-1 · VGG 的核心论证：右侧三个 3×3 堆叠（参数 27C²，约 55%）与左侧单个 7×7 感受野完全相同，但多出 2 次非线性。自此 3×3 成为卷积网络的默认核尺寸。</div>
+  </div>
+
+  <h3>2.2 多尺寸卷积核：Inception 的「不确定就都要」</h3>
+  <p><span class="tag red">GoogLeNet / Inception · 2014</span>不同尺度的物体需要不同大小的感受野：判断「纹理」看 $1 \times 1$ 就够，判断「物体轮廓」可能要 $5 \times 5$ 以上。既然离线选定一个尺寸不划算，Inception 把选择权交给网络本身——<strong>并行放多个尺寸的核，把结果拼接起来</strong>，让梯度去决定各分支的权重：</p>
+
+  <div class="fig">
+<pre class="mermaid">
+flowchart LR
+  X["输入特征图"] --> B1["1×1 卷积"]
+  X --> B2["1×1 降维 → 3×3 卷积"]
+  X --> B3["1×1 降维 → 5×5 卷积"]
+  X --> B4["3×3 MaxPool → 1×1 卷积"]
+  B1 & B2 & B3 & B4 --> C["沿通道拼接 concat → 输出"]
+</pre>
+    <div class="caption">图 2-2 · Inception 模块：多尺度并行分支 + 通道拼接。注意每个昂贵分支前都先放 1×1 卷积降维——这是 §2.4 的思想与多尺度思想的首次组合。</div>
+  </div>
+
+  <p>这个设计的深意在于：它把「核尺寸」从<strong>超参数</strong>变成了<strong>可学习的结构</strong>——网络可以（通过分支权重的消长）学到偏向哪个尺度。后续 Inception-v3 进一步把大核做<strong>非对称分解</strong>：$n \times n$ 拆成 $1 \times n$ 与 $n \times 1$ 串联，参数从 $n^2 C^2$ 降到 $2n C^2$（$5 \times 5$ 的情形省 60%，$7 \times 7$ 省 71%），感受野不变、又多一层非线性——本质上是 §2.1 小核思想在「矩形核」上的延伸。</p>
+
+  <h3>2.3 可变形卷积：从「固定网格」到「内容自适应采样」</h3>
+  <p><span class="tag red">DCN · 2017 / DCNv2 · 2018</span>以上所有设计（无论核多大）共享一个隐含假设：<strong>采样点是固定的规则网格</strong> $\mathcal{R} = \{(-1,-1), \dots, (0,0), \dots, (1,1)\}$。但真实世界的几何是变形的：同一类物体在不同图像中有不同姿态、尺度和非刚性形变，规则网格对它们「一视同仁」，迫使网络靠堆容量去模拟几何变化。可变形卷积直接放开这个约束——在标准卷积的采样位置上加一个<strong>可学习的偏移</strong>：</p>
+
+  <div class="formula">
+    <span class="lbl">可变形卷积（$\Delta p_n$ 为可学习偏移，DCNv2 增加调制系数 $m_n \in [0,1]$）</span>
+    \[
+    y(p_0) = \sum_{p_n \in \mathcal{R}} w(p_n) \cdot x(p_0 + p_n + \Delta p_n)
+    \qquad \xrightarrow{\;\text{DCNv2}\;} \qquad
+    y(p_0) = \sum_{p_n \in \mathcal{R}} w(p_n) \cdot m_n \cdot x(p_0 + p_n + \Delta p_n)
+    \]
+  </div>
+
+  <p>关键机制：</p>
+  <ul>
+    <li>偏移 $\Delta p_n$ 不是人工设定的，而是<strong>由同一输入经一个普通卷积分支预测</strong>出来的（$3 \times 3$ 核输出 $2K^2=18$ 个通道，即 9 个采样点各自的 $x/y$ 偏移；v2 再加 9 个调制通道），随输入内容逐样本变化——感受野第一次「因图而异」；</li>
+    <li>偏移后的采样位置通常不是整数，需要<strong>双线性插值</strong>取值，因此整个操作仍可微、可端到端训练；</li>
+    <li>初始化时偏移为零（退化为标准卷积），训练中按需生长出形变能力。</li>
+  </ul>
+  <p>它的意义与轻量化正好相反：<strong>用少量额外计算换取几何建模能力</strong>——检测/分割中不规则物体（OCR 弯曲文本、可变形目标）受益显著（DCNv2 是不少检测冠军方案的标配）。它的代价同样典型：不规则访存让 GPU/端侧的实际延迟明显高于同等 FLOPs 的标准卷积，印证了「FLOPs ≠ 速度」（§5.3）。</p>
+
+  <div class="callout">
+    <strong>延伸：空洞卷积（Dilated Convolution）。</strong>空间轴上还有一个不增加参数的采样技巧——在核内每隔 $d$ 个位置取一个采样点，有效核尺寸变为 $K' = K + (K-1)(d-1)$。$3 \times 3$ 核取 $d=2$ 即获得 $5 \times 5$ 的感受野而参数仍为 $9C^2$。语义分割（DeepLab 系列）用它在不损失分辨率的前提下快速扩大感受野。
+  </div>
+
+  <h3>2.4 1×1 卷积：空间维退化为一，通道维全开</h3>
+  <p><span class="tag red">NiN · 2013 → ResNet Bottleneck · 2015</span>当 $K=1$ 时，卷积退化为<strong>对每个空间位置独立做的一次通道线性组合</strong>——一个逐像素作用的全连接层：</p>
+  <div class="formula">
+    <span class="lbl">1×1 卷积：每个像素位置的通道混合（$W \in \mathbb{R}^{C_{\mathrm{out}} \times C_{\mathrm{in}}}$）</span>
+    \[
+    y_{:, i, j} = W \, x_{:, i, j} + b, \qquad \mathrm{MACs} = H \cdot W \cdot C_{\mathrm{in}} C_{\mathrm{out}}
+    \]
+  </div>
+  <p>它的三个用途全部围绕<strong>通道维</strong>：</p>
+  <ul>
+    <li><strong>降维 / 升维（Bottleneck 的核心）</strong>：通道数先压后还原，把昂贵的 $3 \times 3$ 卷积「夹」在低维空间里做；</li>
+    <li><strong>跨通道信息交互</strong>：标准 $3 \times 3$ 卷积虽然也混合通道，但通道混合与空间滤波耦合在一起；1×1 把「纯通道运算」独立出来，后接 ReLU 还能增加跨通道非线性（NiN 称之为 mlpconv 层）；</li>
+    <li><strong>替代分类头的全连接层</strong>：NiN 用 1×1 + 全局平均池化（GAP）取代巨大 FC，从此分类头几乎不再占用参数主体。</li>
+  </ul>
+  <p>数值感受一下「先降维再卷积」的威力（每个空间位置的 MACs，$C = 256$）：</p>
+  <table>
+    <tr><th>结构</th><th>计算展开</th><th>每位置 MACs</th><th>相对直接卷积</th></tr>
+    <tr><td>直接 $3 \times 3$：$256 \to 256$</td><td>$9 \times 256 \times 256$</td><td>589,824</td><td>100%</td></tr>
+    <tr><td>Inception 式：$1{\times}1$ 降到 64 → $3 \times 3$（$64 \to 256$）</td><td>$256{\times}64 + 9 \times 64 \times 256$</td><td>163,840</td><td>27.8%（约 3.6×↓）</td></tr>
+    <tr><td>ResNet Bottleneck：$1{\times}1 \to 64$ → $3{\times}3$（$64 \to 64$）→ $1{\times}1 \to 256$</td><td>$256{\times}64 + 9{\times}64{\times}64 + 64{\times}256$</td><td>69,632</td><td>11.8%（约 8.5×↓）</td></tr>
+  </table>
+  <p>ResNet-50 的名字里「50」层中有一半以上是这些 1×1 层——<strong>没有瓶颈结构就没有 50/101/152 层的 ResNet</strong>。这也说明 1×1 卷积是连接空间轴与通道轴的枢纽：它在空间维上「什么都不看」，因此把全部预算花在通道维上。</p>
+
+  <h3>2.5 本节小结</h3>
+  <table>
+    <tr><th>设计</th><th>动的因子</th><th>核心原理</th><th>收益</th><th>代价 / 局限</th></tr>
+    <tr><td>小核堆叠（VGG）</td><td>$K^2 \downarrow$（配合更多层）</td><td>感受野线性叠加：$n$ 个 $3 \times 3$ = 一个 $(2n{+}1)^2$ 核</td><td>同感受野下参数约 55%–72%，非线性更多</td><td>层加深带来训练与延迟开销</td></tr>
+    <tr><td>多尺度并行（Inception）</td><td>$K$ 的集合</td><td>并行多个感受野分支，拼接让网络学权重</td><td>尺度自适应，核尺寸由超参数变结构</td><td>分支碎片化降低硬件并行度</td></tr>
+    <tr><td>非对称分解（v3）</td><td>$K^2 \to 2K$</td><td>$n \times n$ = $1 \times n$ + $n \times 1$ 串联</td><td>感受野不变，参数剩 $2/n$</td><td>极端长条核表达受限</td></tr>
+    <tr><td>可变形（DCN）</td><td>采样位置 $p_n + \Delta p_n$</td><td>偏移由输入预测，采样网格内容自适应</td><td>几何形变建模能力强</td><td>插值 + 不规则访存，FLOPs 低但延迟高</td></tr>
+    <tr><td>1×1 卷积（NiN/Bottleneck）</td><td>$K^2 = 1$，动 $C_{\mathrm{in}}, C_{\mathrm{out}}$</td><td>逐像素的通道线性组合</td><td>升降维、跨通道混合，约 8.5× 成本削减</td><td>无空间建模能力，必须与大核配合</td></tr>
+  </table>
+
+  <!-- ==================== §3 ==================== -->
+  <h2 id="s3"><span class="sec-no">3</span>卷积层运算的设计（通道轴）</h2>
+
+  <h3>3.0 动机：把「空间滤波」和「通道混合」解耦</h3>
+  <p>回看 §1.2 的完整公式：标准卷积的四维核 $w \in \mathbb{R}^{C_{\mathrm{out}} \times C_{\mathrm{in}} \times K \times K}$ 可以理解为<strong>$C_{\mathrm{out}}$ 组、每组 $C_{\mathrm{in}}$ 个的空间滤波器，滤波结果跨通道求和</strong>——空间滤波与通道混合<strong>耦合</strong>在一次张量积里，$K^2$ 与 $C_{\mathrm{in}} C_{\mathrm{out}}$ 相乘，成本昂贵。通道轴的全部设计来自同一个洞察：</p>
+  <div class="callout info">
+    <strong>解耦假设</strong>：把「每个通道内的空间滤波」与「跨通道的信息融合」拆成两步分别做，效果几乎不损，成本大幅下降。分组卷积、Depthwise + Pointwise、以及它们的修补者（通道混洗、通道加权）都是这个假设的不同「切法」。
+  </div>
+
+  <h3>3.1 分组卷积：通道分组、各自为政</h3>
+  <p><span class="tag blue">AlexNet · 2012 → ResNeXt · 2017</span>把输入输出通道各分成 $g$ 组，第 $k$ 组的输出只由第 $k$ 组的输入计算，组间零交互：</p>
+  <div class="formula">
+    <span class="lbl">分组卷积：参数与计算量都除以 $g$</span>
+    \[
+    \text{Params} = \frac{K^2 \, C_{\mathrm{in}} C_{\mathrm{out}}}{g}, \qquad
+    \mathrm{MACs} = \frac{H \, W \, K^2 \, C_{\mathrm{in}} C_{\mathrm{out}}}{g}
+    \]
+  </div>
+  <p>它的两次出场动机完全不同：</p>
+  <ul>
+    <li><strong>AlexNet（2012）——工程 necessity</strong>：当年单块 GTX 580 放不下整个模型，两个 GPU 各算一半通道，$g=2$ 的分组卷积是「显存不够、分组来凑」的产物；</li>
+    <li><strong>ResNeXt（2017）——表达结构</strong>：提出 cardinality（基数，即路径数）作为深度、宽度之外的第三个缩放维度。一个「$32 \times 4$d」模块 = 32 条并行路径、每条只处理 4 个通道（split–transform–merge），在<strong>与 ResNet-50 相近的计算量下精度更高</strong>——证明「多路小容量」优于「单路大容量」。</li>
+  </ul>
+  <p>但分组卷积有一个结构性缺陷：<strong>组间信息被彻底隔离</strong>——第 1 组的输出永远不会看到第 2 组的输入。如果整个网络都做分组，通道之间没有横向交流，表达能力的损失会随深度累积。这个缺陷直接催生了下一个小节的两项设计。</p>
+
+  <h3>3.2 Depthwise 卷积：分组到极致，再花 1×1 补回来</h3>
+  <p><span class="tag blue">MobileNet · 2017 / Xception · 2017</span>把分组卷积推到极限 $g = C_{\mathrm{in}}$：<strong>每个输入通道配一个独立的 $K \times K$ 核，只做空间滤波、完全不混合通道</strong>（这叫 Depthwise 卷积）；随后用一个 $1 \times 1$ 卷积（Pointwise）专门做通道混合。两步合称<strong>深度可分离卷积（Depthwise Separable Convolution）</strong>——正是 §3.0 解耦假设最彻底的实现：</p>
+
+  <div class="fig">
+<pre class="mermaid">
+flowchart TB
+  subgraph STD["标准卷积：耦合（一步做完）"]
+    direction LR
+    X1["输入 H×W×C_in"] --> Y1["输出 H×W×C_out<br/>MACs = H·W·K²·C_in·C_out"]
+  end
+  subgraph DWS["深度可分离卷积：解耦（两步各做一半）"]
+    direction LR
+    X2["输入 H×W×C_in"] --> DW["Depthwise：每通道一个 K×K 核<br/>只做空间滤波<br/>MACs = H·W·K²·C_in"] --> PW["Pointwise：1×1 卷积<br/>只做通道混合<br/>MACs = H·W·C_in·C_out"] --> Y2["输出 H×W×C_out"]
+  end
+  STD ~~~ DWS
+</pre>
+    <div class="caption">图 3-1 · 标准卷积 vs 深度可分离卷积：把一次耦合的 4 维张量积拆成「逐通道空间滤波 + 逐像素通道混合」两个便宜的张量积。</div>
+  </div>
+
+  <p>成本推导（这是轻量化文献中最常被引用的一条式子）：</p>
+  <div class="formula">
+    <span class="lbl">深度可分离卷积相对标准卷积的计算比例</span>
+    \[
+    \frac{H W K^2 C_{\mathrm{in}} + H W C_{\mathrm{in}} C_{\mathrm{out}}}{H W K^2 C_{\mathrm{in}} C_{\mathrm{out}}}
+    = \frac{1}{C_{\mathrm{out}}} + \frac{1}{K^2}
+    \;\xrightarrow{\;K=3,\; C_{\mathrm{out}}=256\;}\; \approx 0.115 \;\;(\text{约 } 8.7\times \downarrow)
+    \]
+  </div>
+  <p>实际效果（MobileNet 论文口径）：约 4.2M 参数 / 0.57 GMACs 取得 ImageNet top-1 70.6%，与 15.5 GMACs 量级的 VGG-16（71.5%）几乎持平——<strong>计算量降到约 1/27，精度只掉不到 1 个点</strong>。两个值得注意的细节：</p>
+  <ul>
+    <li><strong>Xception 的「极端 Inception」论证</strong>：Inception 模块里 1×1 分支已经把部分通道做成了逐点处理，Xception 指出分组卷积谱系的两端正是「普通卷积（$g=1$）」与「深度可分离卷积（$g=C_{\mathrm{in}}$）」，Inception 是中间态；它还发现 Depthwise 与 1×1 之间<strong>不加非线性</strong>（线性瓶颈）效果更好；</li>
+    <li><strong>代价</strong>：单通道滤波的表达能力弱于跨通道滤波，且 Depthwise 的访存/计算比很高（每个核只算一个通道，数据搬运相对更密集），因此<strong>实测加速比通常低于理论值</strong>——MobileNetV2 的倒残差（先 1×1 升维、再 DW、后线性投影）就是在补表达能力，并成为 MobileNetV3 / EfficientNet 的基本单元。</li>
+  </ul>
+
+  <h3>3.3 通道混洗：给分组卷积装上「信息交换机」</h3>
+  <p><span class="tag blue">ShuffleNet · 2017</span>分组卷积省了计算，但组间隔离（§3.1）。ShuffleNet 的解法便宜到极致：<strong>在两次分组卷积之间，把通道维做一次重排</strong>，让下一层的每个分组都恰好由来自不同原组的通道组成——不需要任何参数和乘加：</p>
+
+  <div class="fig">
+<pre class="mermaid">
+flowchart LR
+  A["分组卷积 1 输出<br/>通道按组连续排列"] --> B["reshape<br/>(C) → (g 组, 每组 C/g)"] --> C["transpose<br/>(C/g, g)"] --> D["flatten<br/>回到 (C)"] --> E["分组卷积 2<br/>每个输入组都混有各原组的通道"]
+</pre>
+    <div class="caption">图 3-2 · Channel Shuffle：reshape → transpose → flatten 三步完成的无参数通道重排。ShuffleNet 单元 = 分组 1×1 → 混洗 → Depthwise 3×3 → 分组 1×1（带残差捷径）。</div>
+  </div>
+
+  <p>ShuffleNet 单元把三项技术组合成了一个「便宜但通畅」的积木：<strong>分组 1×1</strong>（便宜的通道混合）→ <strong>通道混洗</strong>（恢复组间交流）→ <strong>Depthwise 3×3</strong>（便宜的空间滤波）。在相近精度下，其 FLOPs 约为 MobileNet 的一半左右（移动端实测算子也更少）。它的续作 ShuffleNetV2 更重要的贡献是一篇「檄文」，指出<strong>FLOPs 与实际延迟并不等价</strong>，我们放到 §5.3 详谈。</p>
+
+  <h3>3.4 通道加权：SENet 的「动态通道门控」</h3>
+  <p><span class="tag blue">SENet · 2017（ILSVRC-2017 冠军）</span>前三项设计都在改「通道怎么连接」，这一项改的是「通道<strong>该信多少</strong>」。动机：不同样本里各通道的重要性不同——一张草原照片里「绿色纹理」通道应当被放大，「海洋蓝」通道应当被抑制，而这种重要性是<strong>输入内容的函数</strong>，静态权重无法表达。SE（Squeeze-and-Excitation）模块用极小的代价把它显式建模出来：</p>
+
+  <div class="fig">
+<pre class="mermaid">
+flowchart LR
+  X["输入 X：H×W×C"] --> G["Squeeze：全局平均池化<br/>z = GAP(X)，把每张特征图压成 1 个数"] --> F1["Excitation：FC 降维 W₁<br/>C → C/r（r≈16）"] --> R["ReLU"] --> F2["FC 升维 W₂<br/>C/r → C"] --> SG["Sigmoid → s ∈ (0,1)^C"] --> SC["逐通道缩放：X̃ = X ⊙ s"]
+</pre>
+    <div class="caption">图 3-3 · SE 模块：GAP 把每个通道压缩成一个全局描述子，两层小 FC 学出每个通道的门控系数，再逐通道缩放原特征。</div>
+  </div>
+
+  <div class="formula">
+    <span class="lbl">Squeeze-and-Excitation 的核心计算</span>
+    \[
+    z = \operatorname{GAP}(X), \qquad
+    s = \sigma\big(W_2 \, \delta(W_1 z)\big), \qquad
+    \tilde{X} = X \odot s, \qquad
+    \text{Params} = \frac{2 C^2}{r}
+    \]
+  </div>
+
+  <p>其中 $\delta$ 是 ReLU、$\sigma$ 是 Sigmoid、$r$ 是缩减比。数字感受一下它有多便宜：$C = 256$、$r = 16$ 时仅增加 $2 \times 256^2 / 16 = 8192$ 个参数；加在 ResNet-50 上，计算量只增加约 0.26%，ImageNet top-1 误差却从 24.8% 降到 23.3%（约 1.5 个点）。<strong>几乎零成本涨点</strong>让 SE 成为之后几乎所有骨干网的标配（MobileNetV3、EfficientNet 的 MBConv 里都内嵌了 SE）。</p>
+  <p>原理上，SE 是把「通道维的注意力」压缩成了一个全局门控：GAP 提供<strong>全局上下文</strong>（每个通道「整张图上总体激活多强」），瓶颈式 FC 强制学习<strong>通道间的相互依赖</strong>（哪些通道组合起来有意义），Sigmoid 输出<strong>逐样本、逐通道</strong>的动态权重。它是「通道注意力」的开山之作，后续 ECA 用一维卷积替换 FC 进一步降价，CBAM 把通道注意力与空间注意力串联，动态卷积（CondConv / DynamicConv）则把「输入自适应」思想推进到了卷积核权重本身。</p>
+
+  <h3>3.5 本节小结：同一输入下的精确数值对比</h3>
+  <p>固定一个典型卷积层配置：$H = W = 56$、$C_{\mathrm{in}} = C_{\mathrm{out}} = 256$、$K = 3$、步长 1（这是 ResNet 中段一个标准卷积层的尺寸）：</p>
+  <table>
+    <tr><th>方法</th><th>MACs（近似）</th><th>参数量</th><th>相对标准卷积</th><th>原理一句话</th></tr>
+    <tr><td>标准卷积</td><td>1.85 G</td><td>0.59 M</td><td>1×</td><td>空间滤波 ⊗ 通道混合耦合</td></tr>
+    <tr><td>分组卷积 $g=4$</td><td>0.46 G</td><td>0.147 M</td><td>4×↓</td><td>通道分 4 组各自卷积，组间零交互</td></tr>
+    <tr><td>Depthwise + Pointwise</td><td>0.213 G</td><td>0.068 M</td><td>8.7×↓</td><td>逐通道滤波 + 1×1 混合（$1/C_{\mathrm{out}} + 1/K^2$）</td></tr>
+    <tr><td>1×1 瓶颈结构（256→64→3×3→64→256）</td><td>0.218 G</td><td>0.070 M</td><td>8.5×↓</td><td>把 3×3 夹进低维通道空间</td></tr>
+    <tr><td>纯 1×1 卷积（无空间建模）</td><td>0.206 G</td><td>0.066 M</td><td>9×↓</td><td>只做通道线性组合</td></tr>
+    <tr><td>标准卷积 + SE（$r=16$）</td><td>1.85 G（+0.00008 G）</td><td>+0.008 M</td><td>几乎不变</td><td>静态结构不变，动态加权通道</td></tr>
+  </table>
+  <p>两个观察：<strong>① Depthwise+PW 与 1×1 瓶颈在中等通道数下成本相当</strong>（都约 8.5–8.7 倍削减），前者靠「解耦」、后者靠「降维」，现代网络常混合使用；<strong>② SE 走的是完全不同的路线</strong>——它不减结构成本，而是几乎免费地加「动态性」，用注意力补回轻量化损失的表达能力。轻量化设计由此分成两族：减法（分组/DW/瓶颈）与乘法外的加法（SE 类注意力）。</p>
+
+  <!-- ==================== §4 ==================== -->
+  <h2 id="s4"><span class="sec-no">4</span>卷积层连接的设计（拓扑轴）</h2>
+  <p>前两轴改造的是「一层内部怎么算」，拓扑轴改造的是「层与层之间怎么连」。串联链 $x \to f_1 \to f_2 \to \dots$ 只是最朴素的选择。</p>
+
+  <h3>4.1 跳跃连接：ResNet 与「恒等捷径」</h3>
+  <p><span class="tag green">ResNet · 2015</span>背景是一个反直觉的实验事实：<strong>退化问题（degradation）</strong>—— plain 网络加深到 56 层时，<em>训练</em>误差（不是测试误差）反而比 20 层更高。这不是过拟合（过拟合是训练好、测试差），也不是梯度爆炸（BN 已基本解决），而是<strong>优化困难</strong>：深层串联网络很难把「多余层」优化成恒等映射——理论上多出的层学成 $f(x) = x$ 即可退化回浅网络，但 SGD 拟合「恒等」这项目标出奇地难。</p>
+  <p>ResNet 的解法优雅到只剩一行公式：<strong>把「学恒等」改成「学增量」</strong>，恒等通路免费提供、只需学残差：</p>
+  <div class="formula">
+    <span class="lbl">残差块：$F$ 是需要学的残差映射，$\mathcal{F}(x) = 0$ 时块退化为恒等</span>
+    \[
+    y = \mathcal{F}(x, \{W_i\}) + x
+    \qquad \Rightarrow \qquad
+    \mathcal{F}(x) = y - x
+    \]
+  </div>
+  <p>反向传播时对输入求导，出现了那个决定性的「1」：</p>
+  <div class="formula">
+    <span class="lbl">梯度沿捷径无损回传</span>
+    \[
+    \frac{\partial L}{\partial x} = \frac{\partial L}{\partial y} \cdot \left( 1 + \frac{\partial \mathcal{F}}{\partial x} \right)
+    \]
+  </div>
+  <p>梯度 = 「直接来自捷径的分量（系数恒为 1，永不衰减）」 + 「经由残差分支的分量」。无论 $\mathcal{F}$ 的雅可比多小，梯度都不会消失——<strong>恒等捷径是一条梯度高速公路</strong>。三个层面的理解：</p>
+  <ul>
+    <li><strong>优化视角</strong>：学「$y - x$ 的增量」比学完整映射容易——参照物 $x$ 已经给出，网络只需修正误差。类似Boosted Trees的思想：每个块只拟合当前还差的部分；</li>
+    <li><strong>集成视角</strong>（Veit et al., 2016）：删除 ResNet 的单个块，输出几乎不变——它的行为更像<strong>许多浅网络的隐式集成</strong>，而非一条脆弱的深链；</li>
+    <li><strong>与轻量化的关系</strong>：跳跃连接本身不省任何计算（只多一次加法），但它让「窄而深」的网络变得可训练——<strong>同样的参数预算下，深而窄通常比浅而宽的表示效率更高</strong>，这才是它在轻量化故事里的位置；同时它成就了 Bottleneck（§2.4 的三层结构正是套在残差块里的），两者组合即 ResNet-50/101/152 的标准块。</li>
+  </ul>
+
+  <h3>4.2 密集连接：DenseNet 的「特征复用」</h3>
+  <p><span class="tag green">DenseNet · 2017</span>ResNet 的捷径「跳一层」，DenseNet 干脆让<strong>每层与之前所有层直连</strong>，且连接方式从「相加」改为「<strong>沿通道拼接</strong>」：</p>
+  <div class="formula">
+    <span class="lbl">密集块内第 $l$ 层的输入是此前所有层输出的拼接；$L$ 层网络共有 $L(L+1)/2$ 条连接</span>
+    \[
+    x_l = H_l\big([\,x_0,\; x_1,\; \dots,\; x_{l-1}\,]\big)
+    \]
+  </div>
+  <p>相加与拼接的差别是本质性的：相加要求两路通道数相同、且是<strong>算术融合</strong>（信息彼此加权抵消）；拼接是<strong>特征级联</strong>（信息无损保留、可供后层随意取用），因此允许每层只输出很少的新通道（增长率 growth rate $k$，典型仅 12–32）。由此带来三个收益：</p>
+  <ul>
+    <li><strong>参数与计算效率</strong>：每层只生产 $k$ 个「增量特征」，此前的特征全部复用而不重算。DenseNet-121 仅约 8.0M 参数、约 2.9 GFLOPs，精度与 25.6M 参数、约 4.1 GFLOPs 的 ResNet-50 相当（论文口径）；</li>
+    <li><strong>梯度与信息流</strong>：loss 到每个早期层都有短路径（隐式深度监督），浅层特征可以「跳过」中间层直接被分类头使用——浅层特征（边缘、纹理）在深层依然可及，缓解了特征被逐层「洗掉」的问题；</li>
+    <li><strong>正则效应</strong>：拼接迫使各层学出<strong>互不冗余</strong>的增量特征（冗余特征对拼接无益），一定程度上内置了特征多样性约束，在小数据集上抗过拟合更好。</li>
+  </ul>
+  <p>代价同样直白：拼接意味着<strong>所有中间特征都要保存</strong>，训练显存高、实现上 concat 也访存密集——这也是 DenseNet 没能像 ResNet 一样成为万能骨架的主要原因（后续 CondenseNet 等工作专门学习「哪些拼接通道可以剪掉」）。</p>
+
+  <h3>4.3 本节小结：三种拓扑的对照</h3>
+
+  <div class="fig">
+<pre class="mermaid">
+flowchart TB
+  subgraph P["普通串联（plain）"]
+    direction LR
+    a1["x"] --> a2["Conv"] --> a3["Conv"] --> a4["Conv"] --> a5["y"]
+  end
+  subgraph S["跳跃连接（ResNet）：相加"]
+    direction LR
+    b1["x"] --> b2["Conv"] --> b3["Conv"] --> b5(("＋")) --> b6["y"]
+    b1 -.恒等捷径.-> b5
+  end
+  subgraph D["密集连接（DenseNet）：拼接"]
+    direction LR
+    c1["x₀"] --> c2["x₁"] --> c3["x₂"] --> c4["x₃"]
+    c1 -.-> c3
+    c1 -.-> c4
+    c2 -.-> c4
+  end
+</pre>
+    <div class="caption">图 4-1 · 三种层间拓扑。ResNet 捷径上流动的是「梯度」（反向）与「原始信号」（前向）；DenseNet 的跨层边上是「特征本身」（拼接保留）。</div>
+  </div>
+
+  <table>
+    <tr><th>维度</th><th>普通串联</th><th>跳跃连接（ResNet）</th><th>密集连接（DenseNet）</th></tr>
+    <tr><td>连接数</td><td>$L-1$</td><td>约 $2L$（每块一条捷径）</td><td>$L(L+1)/2$</td></tr>
+    <tr><td>融合方式</td><td>—</td><td>逐元素<strong>相加</strong></td><td>沿通道<strong>拼接</strong></td></tr>
+    <tr><td>解决什么</td><td>—</td><td>退化问题：梯度消失、深层难优化</td><td>特征复用：参数效率、特征多样性</td></tr>
+    <tr><td>单层输出</td><td>完整特征图</td><td>完整特征图</td><td>仅 $k$ 个增量通道（$k$=12–32）</td></tr>
+    <tr><td>代价</td><td>—</td><td>几乎为零（一次加法）</td><td>显存与访存（所有特征常驻）</td></tr>
+  </table>
+
+  <!-- ==================== §5 ==================== -->
+  <h2 id="s5"><span class="sec-no">5</span>全景总结：统一视角、大对比表、轻量化的本质与陷阱</h2>
+
+  <h3>5.1 统一视角：三个正交轴，可以自由组合</h3>
+  <p>把 §2–§4 合起来看：空间轴改「核怎么采样」（$K$ 的大小、形状、位置），通道轴改「通道怎么耦合」（$C_{\mathrm{in}} \times C_{\mathrm{out}}$ 的耦合程度从全耦合 → 分组 → 逐通道 → 动态加权），拓扑轴改「信息怎么跨层流动」（串联 → 绕过 → 复用）。三轴彼此正交，现代网络都是它们的组合：ShuffleNet 单元 = 分组 1×1（通道轴）+ 混洗（通道轴）+ DW 3×3（通道轴极致解耦）+ 残差捷径（拓扑轴）；MobileNetV3 的 bneck = 倒残差瓶颈（通道轴 + 拓扑轴）+ DW（通道轴）+ SE（通道轴动态加权）。看懂三轴，就看懂了任何一篇新 backbone 论文的结构部分。</p>
+
+  <h3>5.2 大对比总表</h3>
+  <table>
+    <tr><th>设计</th><th>轴</th><th>代表模型</th><th>原理（一句话）</th><th>主要收益</th><th>主要代价</th></tr>
+    <tr><td>小卷积核堆叠</td><td><span class="tag red">空间</span></td><td>VGG</td><td>感受野随层数叠加：$n$ 个 $3{\times}3$ = 一个 $(2n{+}1)^2$ 核</td><td>同感受野参数降至 55%–72%，非线性更多</td><td>层数深，延迟与训练成本</td></tr>
+    <tr><td>多尺度卷积核</td><td><span class="tag red">空间</span></td><td>GoogLeNet / Inception</td><td>多尺寸分支并行 + 拼接，尺度权重可学习</td><td>核尺寸从超参数变成可学习结构</td><td>分支碎片化，并行度低</td></tr>
+    <tr><td>非对称分解</td><td><span class="tag red">空间</span></td><td>Inception-v3</td><td>$n{\times}n$ = $1{\times}n$ + $n{\times}1$</td><td>参数剩 $2/n$，感受野不变</td><td>极端分解表达受限</td></tr>
+    <tr><td>可变形卷积</td><td><span class="tag red">空间</span></td><td>DCN / DCNv2</td><td>采样点偏移可学习（+ 调制系数），感受野内容自适应</td><td>几何形变建模能力强</td><td>插值与不规则访存，延迟 &gt; 同 FLOPs 标准卷积</td></tr>
+    <tr><td>1×1 卷积 / 瓶颈</td><td><span class="tag red">空间</span><span class="tag blue">通道</span></td><td>NiN · ResNet</td><td>逐像素的通道线性组合，先降维再做昂贵卷积</td><td>约 8.5× 削减；跨通道混合与非线性</td><td>自身无空间建模能力</td></tr>
+    <tr><td>分组卷积</td><td><span class="tag blue">通道</span></td><td>AlexNet · ResNeXt</td><td>通道分 $g$ 组隔离卷积，成本 ÷$g$</td><td>计算参数线性下降；多路径表达</td><td>组间信息隔离</td></tr>
+    <tr><td>Depthwise+Pointwise</td><td><span class="tag blue">通道</span></td><td>MobileNet · Xception</td><td>空间滤波与通道混合解耦（$1/C_{\mathrm{out}} + 1/K^2$）</td><td>约 8–9× 削减（$K{=}3$）</td><td>单通道表达弱；访存密集，实测加速 &lt; 理论</td></tr>
+    <tr><td>通道混洗</td><td><span class="tag blue">通道</span></td><td>ShuffleNet</td><td>reshape/transpose/flatten 无参数重排通道</td><td>零成本恢复组间信息流通</td><td>依赖分组结构才有意义</td></tr>
+    <tr><td>通道加权（SE）</td><td><span class="tag blue">通道</span></td><td>SENet</td><td>GAP + 瓶颈 FC + Sigmoid 学逐样本通道门控</td><td>+0.26% 计算换约 1.5 个点精度</td><td>只重加权、不改变结构容量</td></tr>
+    <tr><td>跳跃连接</td><td><span class="tag green">拓扑</span></td><td>ResNet</td><td>$y = \mathcal{F}(x) + x$，恒等捷径保梯度、学增量</td><td>百层网络可训练；窄深结构可行</td><td>本身不省计算（仅一次加法）</td></tr>
+    <tr><td>密集连接</td><td><span class="tag green">拓扑</span></td><td>DenseNet</td><td>跨层拼接复用特征，每层只产 $k$ 个增量通道</td><td>参数效率高、特征多样、隐式深监督</td><td>显存与访存大（特征全保留）</td></tr>
+  </table>
+
+  <h3>5.3 轻量化的本质与两个陷阱</h3>
+  <p>所有结构轻量化方法可以用一个词概括：<strong>削减卷积的冗余</strong>。特征图里有三类冗余，恰好对应三个轴：</p>
+  <ul>
+    <li><strong>空间冗余</strong>（邻近位置高度相似、最优感受野因内容而异）→ 小核堆叠、多尺度、可变形采样；</li>
+    <li><strong>通道冗余</strong>（特征图之间高度相关，全耦合的 $C_{\mathrm{in}} C_{\mathrm{out}}$ 大部分是浪费）→ 1×1 降维、分组、Depthwise；GhostNet 更进一步：学一半通道，另一半用廉价线性变换「复制」出来；</li>
+    <li><strong>层间冗余</strong>（不同层学出相似特征）→ 跳跃/密集连接复用旧特征，让新层只学增量。</li>
+  </ul>
+  <p>但有两个经典陷阱，工程上必须警惕：</p>
+  <div class="callout red">
+    <strong>陷阱一：FLOPs ≠ 延迟。</strong>FLOPs 只数乘加次数，不数<strong>访存</strong>（Memory Access Cost）、不管<strong>并行度</strong>。ShuffleNetV2 用四条实测准则纠正了行业的「唯 FLOPs 论」：① 输入输出通道数相等时 MAC 最小（1×1 卷积的通道配平）；② 分组越多 MAC 越大，盲目加分组会变慢；③ 网络碎片化（多分支小算子）降低 GPU 并行度；④ 元素级操作（ReLU、加法、拼接、GAP）不可忽视。DW 与 DCN 都是「FLOPs 大降、延迟降幅远小于理论」的典型。评估轻量化必须在<strong>目标硬件上实测</strong>。
+  </div>
+  <div class="callout">
+    <strong>陷阱二：结构设计只是轻量化的一维。</strong>与本文的三轴并行的还有另外三条路线——<strong>量化</strong>（低比特数值格式）、<strong>剪枝</strong>（删冗余权重/通道，结构化剪枝与通道轴设计思想相通）、<strong>蒸馏</strong>（小网络学大网络的输出分布）。生产级压缩几乎总是「结构设计 × 量化 × 剪枝」的叠加。
+  </div>
+
+  <h3>5.4 时间线：设计轴如何被逐个发现</h3>
+  <div class="fig">
+<pre class="mermaid">
+flowchart LR
+  M1["1998<br/>LeNet-5<br/>卷积·权值共享·池化"] --> M2["2012<br/>AlexNet<br/>分组卷积·ReLU·GPU"] --> M3["2013<br/>NiN<br/>1×1 卷积·GAP"] --> M4["2014<br/>VGG · GoogLeNet<br/>小核堆叠 · 多尺度+瓶颈"] --> M5["2015<br/>ResNet<br/>跳跃连接·Bottleneck·BN"] --> M6["2016<br/>SqueezeNet · Xception · ResNeXt · DenseNet<br/>瓶颈策略 · 极致分组 · 基数 · 密集连接"] --> M7["2017<br/>MobileNet · ShuffleNet · DCN · SENet<br/>DW+PW · 通道混洗 · 可变形 · 通道加权"] --> M8["2018<br/>MobileNetV2 · ShuffleNetV2 · DCNv2<br/>倒残差 · 延迟导向四准则 · 调制"] --> M9["2019<br/>EfficientNet · GhostNet<br/>复合缩放 · 冗余特征利用"] --> M10["2022<br/>ConvNeXt<br/>卷积现代化对标 ViT"]
+</pre>
+    <div class="caption">图 5-1 · 按 arXiv 首发年排列的卷积设计里程碑（ResNeXt/DenseNet/Xception 均为 2016 年挂出、CVPR 2017 发表）。规律清晰：2014 年解决「核怎么定」，2015–2016 年解决「层怎么连」，2017 年集中爆发「通道怎么省」，2018 年后转向「实测延迟导向」与「自动化缩放」。</div>
+  </div>
+
+  <h3>5.5 经典论文速查表</h3>
+  <table>
+    <tr><th>论文</th><th>年份</th><th>核心贡献</th><th>链接</th></tr>
+    <tr><td>LeNet-5 (LeCun et al.)</td><td>1998</td><td>卷积 + 权值共享 + 池化的原型</td><td><a href="https://doi.org/10.1109/5.726791">IEEE</a></td></tr>
+    <tr><td>AlexNet (Krizhevsky et al.)</td><td>2012</td><td>深度 CNN 首夺 ImageNet；分组卷积、ReLU、Dropout、GPU 训练</td><td><a href="https://papers.nips.cc/paper_files/paper/2012/hash/c399862d3b9d6b76c8436e924a68c45b-Abstract.html">NeurIPS</a></td></tr>
+    <tr><td>Network in Network</td><td>2013</td><td>1×1 卷积（mlpconv）、全局平均池化替代 FC</td><td><a href="https://arxiv.org/abs/1312.4400">arXiv:1312.4400</a></td></tr>
+    <tr><td>VGG</td><td>2014</td><td>小卷积核堆叠、统一 3×3、深度的重要性</td><td><a href="https://arxiv.org/abs/1409.1556">arXiv:1409.1556</a></td></tr>
+    <tr><td>GoogLeNet (Inception v1)</td><td>2014</td><td>多尺度并行分支 + 1×1 瓶颈 + 高效分类头</td><td><a href="https://arxiv.org/abs/1409.4842">arXiv:1409.4842</a></td></tr>
+    <tr><td>ResNet</td><td>2015</td><td>跳跃连接 / 残差学习、Bottleneck、152 层网络</td><td><a href="https://arxiv.org/abs/1512.03385">arXiv:1512.03385</a></td></tr>
+    <tr><td>Inception-v3</td><td>2015</td><td>非对称卷积分解、标签平滑、RMSProp</td><td><a href="https://arxiv.org/abs/1512.00567">arXiv:1512.00567</a></td></tr>
+    <tr><td>SqueezeNet</td><td>2016</td><td>Fire 模块（1×1 压缩 + 扩张），AlexNet 级精度 50× 更少参数</td><td><a href="https://arxiv.org/abs/1602.07360">arXiv:1602.07360</a></td></tr>
+    <tr><td>Xception</td><td>2016</td><td>Inception 的极限形式 = 深度可分离卷积；线性瓶颈直觉</td><td><a href="https://arxiv.org/abs/1610.02357">arXiv:1610.02357</a></td></tr>
+    <tr><td>ResNeXt</td><td>2016</td><td>基数（cardinality）维度；split–transform–merge</td><td><a href="https://arxiv.org/abs/1611.05431">arXiv:1611.05431</a></td></tr>
+    <tr><td>DenseNet</td><td>2016</td><td>密集连接、特征复用、增长率</td><td><a href="https://arxiv.org/abs/1608.06993">arXiv:1608.06993</a></td></tr>
+    <tr><td>Deformable ConvNets</td><td>2017</td><td>可学习采样偏移，内容自适应感受野</td><td><a href="https://arxiv.org/abs/1703.06211">arXiv:1703.06211</a></td></tr>
+    <tr><td>MobileNetV1</td><td>2017</td><td>深度可分离卷积的系统化与宽度/分辨率乘子</td><td><a href="https://arxiv.org/abs/1704.04861">arXiv:1704.04861</a></td></tr>
+    <tr><td>ShuffleNet V1</td><td>2017</td><td>分组 1×1 + 通道混洗 + DW 的组合单元</td><td><a href="https://arxiv.org/abs/1707.01083">arXiv:1707.01083</a></td></tr>
+    <tr><td>SENet</td><td>2017</td><td>Squeeze-and-Excitation 通道注意力，ILSVRC-2017 冠军</td><td><a href="https://arxiv.org/abs/1709.01507">arXiv:1709.01507</a></td></tr>
+    <tr><td>DCNv2</td><td>2018</td><td>可变形卷积 + 调制系数与训练改进</td><td><a href="https://arxiv.org/abs/1811.11168">arXiv:1811.11168</a></td></tr>
+    <tr><td>MobileNetV2</td><td>2018</td><td>倒残差 + 线性瓶颈</td><td><a href="https://arxiv.org/abs/1801.04381">arXiv:1801.04381</a></td></tr>
+    <tr><td>ShuffleNet V2</td><td>2018</td><td>FLOPs ≠ 延迟的四条硬件实测准则</td><td><a href="https://arxiv.org/abs/1807.11164">arXiv:1807.11164</a></td></tr>
+    <tr><td>EfficientNet</td><td>2019</td><td>深度 × 宽度 × 分辨率复合缩放</td><td><a href="https://arxiv.org/abs/1905.11946">arXiv:1905.11946</a></td></tr>
+    <tr><td>GhostNet</td><td>2019</td><td>冗余「幽灵特征」的廉价线性变换生成</td><td><a href="https://arxiv.org/abs/1911.11907">arXiv:1911.11907</a></td></tr>
+    <tr><td>ConvNeXt</td><td>2022</td><td>吸收 Transformer 训练配方后卷积网络追平 ViT</td><td><a href="https://arxiv.org/abs/2201.03545">arXiv:2201.03545</a></td></tr>
+  </table>
+
+  <h3>5.6 这些设计思想在 Transformer 时代的回响</h3>
+  <p>卷积的这些设计思想并未随注意力崛起而退场，它们以新形态活在 Transformer 与混合架构里：</p>
+  <ul>
+    <li><strong>跳跃连接</strong> → Transformer 每个子层都是 $\mathrm{LayerNorm}(x + \mathrm{Sublayer}(x))$，残差流（residual stream）就是恒等捷径的堆叠；可以说没有 ResNet 就没有可训练的百层 Transformer；</li>
+    <li><strong>通道加权</strong> → SE 是通道维的静态注意力；自注意力可看作「token 维 + 通道维」的动态加权，注意力机制是通道加权思想的极致推广；</li>
+    <li><strong>1×1 卷积</strong> → 逐 token 的 MLP / 通道混合层（SwiGLU 等前馈结构）在数学上正是 1×1 卷积作用于 token 序列；</li>
+    <li><strong>DW+PW 解耦</strong> → ConvNeXt、MobileViT 等现代混合架构的核心块仍是「Depthwise 卷积做空间 + 逐点层做通道」，解耦思想原封不动；甚至状态空间模型（Mamba 等）与长卷积序列模型中的短卷积层，也是 Depthwise 形态。</li>
+  </ul>
+  <p>换言之，<strong>卷积层的三个设计轴——空间采样、通道耦合、跨层连接——是视觉（乃至序列）网络的不变骨架</strong>，变的只是每一轴上可选的值域。</p>
+
+  <div class="footer">
+    生成日期 2026-10-30 · 归属：<a href="https://luxiangz.github.io/llm-tech-map/">大模型技术地图</a> · 深度学习基础 · 卷积网络与轻量化设计 ·
+    本文所有数值均按文中标注的口径（论文原文或按公式直接计算）给出，压缩比按 MACs 计。
+  </div>
+
+</div>
+</body>
+</html>
