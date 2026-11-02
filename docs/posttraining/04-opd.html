@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>04 · OPD 深度机制：在线策略蒸馏</title>
+
+<!-- 霞鹜文楷：开源可商用的中文楷体风格字体；加载失败时自动回退到微软雅黑 -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/lxgw-wenkai-webfont@1.7.0/style.css">
+
+<script>
+window.MathJax = {
+  tex: { inlineMath: [['$','$'],['\\(','\\)']], displayMath: [['$$','$$'],['\\[','\\]']], processEscapes: true },
+  svg: { fontCache: 'global' }
+};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js" async></script>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+<script>mermaid.initialize({ startOnLoad: true, theme: "neutral", fontFamily: '"Microsoft YaHei", "PingFang SC", sans-serif' });</script>
+
+<style>
+  body { font-family: "LXGW WenKai", "Microsoft YaHei", "PingFang SC", "Segoe UI", sans-serif; font-size: 17.5px; line-height: 1.85; letter-spacing: 0.01em; color: #26292e; background: #fdfdfd; max-width: 1000px; margin: 0 auto; padding: 56px 28px 96px; }
+  h1, h2, h3, h4, .kicker { font-family: "Microsoft YaHei", "PingFang SC", sans-serif; line-height: 1.4; }
+  h1 { font-size: 30px; margin: 10px 0 6px; color: #1a1d21; }
+  h2 { font-size: 23px; margin-top: 2.4em; padding-bottom: 6px; border-bottom: 2px solid #e8eaee; color: #1f2733; }
+  h3 { font-size: 19px; margin-top: 1.8em; color: #2c3e50; }
+  h4 { font-size: 17.5px; margin-top: 1.4em; color: #3a4a5c; }
+  .kicker { font-size: 13px; letter-spacing: 0.22em; text-transform: uppercase; color: #7a8699; margin-bottom: 4px; }
+  code, pre { font-family: "Cascadia Code", Consolas, "Microsoft YaHei", monospace; }
+  code { background: #f2f4f7; padding: 1px 6px; border-radius: 5px; font-size: 0.88em; color: #35414f; }
+  pre { background: #f7f8fa; border: 1px solid #e6e9ee; border-radius: 10px; padding: 14px 16px; overflow-x: auto; font-size: 14.5px; line-height: 1.6; }
+  pre.mermaid { background: #fbfcfd; text-align: center; }
+  .formula { background: #f6f8fb; border: 1px solid #e6ebf2; border-radius: 10px; padding: 14px 18px; margin: 14px 0; overflow-x: auto; font-size: 1.02em; }
+  table { border-collapse: collapse; width: 100%; margin: 16px 0; font-size: 14.8px; }
+  th, td { border: 1px solid #dfe3ea; padding: 7px 11px; text-align: left; vertical-align: top; }
+  th { background: #f0f3f7; font-family: "Microsoft YaHei", "PingFang SC", sans-serif; font-weight: 600; }
+  tr:nth-child(even) td { background: #fafbfd; }
+  blockquote { margin: 16px 0; padding: 10px 18px; border-left: 4px solid #4a7dbd; background: #f3f7fc; border-radius: 0 8px 8px 0; color: #33414f; }
+  blockquote p { margin: 6px 0; }
+  a { color: #2c5fa8; text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  .evi { display: inline-block; font-family: "Microsoft YaHei", sans-serif; font-size: 11.5px; border-radius: 4px; padding: 0 5px; margin-left: 4px; vertical-align: 1px; border: 1px solid; line-height: 1.5; }
+  .eviA { color: #1c7a43; border-color: #9fd6b6; background: #f0faf4; }
+  .eviB { color: #9c6b0f; border-color: #ecd39a; background: #fdf8ec; }
+  .eviC { color: #a0522d; border-color: #e8c4ab; background: #fdf4ee; }
+  .fig { border: 1px solid #e2e6ec; border-radius: 12px; background: #fff; padding: 18px 14px 8px; margin: 22px 0; }
+  .figcap { font-family: "Microsoft YaHei", "PingFang SC", sans-serif; font-size: 14px; color: #5a6572; text-align: center; padding: 8px 12px 10px; line-height: 1.6; }
+  .topnav { position: sticky; top: 0; z-index: 50; background: rgba(253,253,253,.96); border-bottom: 1px solid #e8eaee; padding: 8px 0 6px; margin: 0 -6px 18px; font-family: "Microsoft YaHei", sans-serif; font-size: 13.5px; display: flex; flex-wrap: wrap; gap: 4px 12px; justify-content: center; }
+  .topnav a { color: #2c5fa8; }
+  .topnav a.here { color: #111; font-weight: 700; border-bottom: 2px solid #4a7dbd; padding-bottom: 2px; }
+  .pager { display: flex; justify-content: space-between; margin-top: 48px; font-family: "Microsoft YaHei", sans-serif; font-size: 14.5px; }
+  .footer-note { margin-top: 28px; padding-top: 12px; border-top: 1px dashed #d8dde5; color: #7a8699; font-size: 13.5px; }
+  .term { font-weight: 700; }
+</style>
+</head>
+<body>
+
+<a href="https://luxiangz.github.io/llm-tech-map/" style="position:fixed;top:12px;right:14px;z-index:99;background:#f6f7f9;border:1px solid #e2e5ea;border-radius:999px;padding:4px 12px;font-size:14px;color:#2c5fa8;text-decoration:none;box-shadow:0 1px 4px rgba(0,0,0,.08)">← 技术地图首页</a>
+
+<nav class="topnav">
+  <a href="index.html">总览</a><a href="01-concepts-case.html">概念与案例</a><a href="02-sft.html">SFT</a><a href="03-rl.html">RL</a><a href="04-opd.html" class="here">OPD</a><a href="05-opsd.html">OPSD</a><a href="06-related.html">偏好与相关</a><a href="07-theory.html">理论统一</a><a href="08-evidence-cost.html">证据与成本</a><a href="09-evolution.html">演进与争议</a><a href="10-selection.html">选型</a><a href="comparison.html">对照表</a><a href="literature.html">文献库</a><a href="gaps.html">缺口</a>
+</nav>
+
+<p class="kicker">大语言模型后训练技术体系深度调研 · 第 4 章</p>
+<h1>OPD 深度机制：在线策略蒸馏</h1>
+
+<p><strong>本章结论：</strong>OPD 的定义性机制只有一句话——<strong>轨迹由学生采样，监督由教师在学生的每个前缀上逐 token 给出</strong>。它的研究史是三个设计轴的逐步探索：<strong>散度方向</strong>（前向 KL→反向 KL→广义 JSD/skew KL）、<strong>数据来源</strong>（固定集→教师采样→学生 on-policy）、<strong>优化算法</strong>（监督梯度 vs 策略梯度）。GKD（<a href="https://arxiv.org/abs/2306.13649">2306.13649</a>，原标题即 "On-Policy Distillation of Language Models"）2023 年完成系统化；2025 年 Thinking Machines 博客（10-27）把它重述为"per-token 反向 KL = 密集奖励的 RL"，实现上是 KL 正则 RL 代码的"一行改动"；Qwen3 技术报告 Table 21 给出迄今最重要的工业对照：<strong>同起点下 on-policy 蒸馏以 1,800 GPU 时（RL 的 1/10）在 AIME'24 上 74.4 分超过 RL 的 67.6，且把 pass@64 从 90.0 提到 93.3（RL 不提升 pass@64）</strong>。<span class="evi eviA">A</span> 注意：不同论文的"OPD"在损失、粒度、流程上并不相同，本章逐篇记录实现，不归并为唯一流程。</p>
+
+<h2>4.1 谱系：三个轴上的演化</h2>
+
+<table>
+<tr><th style="width:15%">方法</th><th style="width:16%">散度方向</th><th style="width:17%">数据来源</th><th style="width:15%">优化算法</th><th>一句话定位</th></tr>
+<tr><td><a href="https://arxiv.org/abs/1503.02531">Hinton KD [1503.02531]</a></td><td>前向 KL（软目标）</td><td>固定数据集</td><td>监督梯度</td><td>dark knowledge：错误类之间的相对概率藏于 logits</td></tr>
+<tr><td><a href="https://arxiv.org/abs/1606.07947">SeqKD [1606.07947]</a></td><td>—（硬标签 CE）</td><td><strong>教师生成</strong></td><td>监督梯度</td><td>教师序列作标签 = 数据级 off-policy 蒸馏 ≡ SFT；2024–25 工业界蒸馏的默认形态（R1、Llama 3）</td></tr>
+<tr><td><a href="https://arxiv.org/abs/2306.08543">MiniLLM [2306.08543]</a></td><td><strong>反向 KL</strong>（序列级）</td><td>学生采样</td><td><strong>策略梯度</strong>（REINFORCE 变体）</td><td>教师−学生逐步 log-ratio 充当累积回报；防学生高估教师低概率区；v6 已更名 "On-Policy Distillation of LLMs"</td></tr>
+<tr><td><a href="https://arxiv.org/abs/2306.13649">GKD [2306.13649]</a></td><td>前向/反向/<strong>广义 JSD</strong>（可调）</td><td>λ 混合固定集与学生采样（λ 可调度）</td><td>监督式梯度（teacher-forced 散度）</td><td>三轴框架的系统化；与 RLHF 可联合训练</td></tr>
+<tr><td><a href="https://arxiv.org/abs/2402.03898">DistiLLM [2402.03898]</a></td><td>skew KL / skew RVKL（α=0.1）</td><td>学生采样 + 自适应回放（早期新鲜 on-policy、后期复用）</td><td>监督梯度</td><td>把 on-policy 采样开销降下来：最高 4.3× 训练加速</td></tr>
+<tr><td><a href="https://thinkingmachines.ai/blog/on-policy-distillation/">TM OPD 博客 (2025)</a></td><td><strong>逐 token 反向 KL</strong>（γ=0）</td><td>学生采样</td><td>RL 式更新（advantage = −revKL）</td><td>"把 KL 正则 RL 做一行改动"；O(N) bits/episode 信号密度论证</td></tr>
+</table>
+
+<h2>4.2 机制拆解：以统一案例走一遍 GKD 与 TM-OPD</h2>
+
+<h3>4.2.1 GKD 的三轴框架（<a href="https://arxiv.org/abs/2306.13649">Agarwal et al., ICLR 2024 [2306.13649]</a>）</h3>
+<div class="formula">
+$$
+\mathcal{L}_{\text{GKD}}(\theta)=(1-\lambda)\,\mathbb{E}_{(x,y)\sim\mathcal{D}}\big[\mathcal{D}(p_T\|p_S^\theta)\big]+\lambda\,\mathbb{E}_{x\sim\mathcal{D},\,y\sim p_S(\cdot|x)}\big[\mathcal{D}(p_T\|p_S^\theta)\big],
+\quad \mathcal{D}(p_T\|p_S)=\frac{1}{|y|}\sum_n \mathcal{D}\big(p_T(\cdot|y_{&lt;n},x)\,\|\,p_S^\theta(\cdot|y_{&lt;n},x)\big)
+$$
+$$
+\mathcal{D}_{JSD}^{(\beta)}(P\|Q)=\beta\,\mathrm{KL}\big(P\,\|\,\beta P+(1-\beta)Q\big)+(1-\beta)\,\mathrm{KL}\big(Q\,\|\,\beta P+(1-\beta)Q\big)
+$$
+</div>
+<p>λ=0 退化为标准监督 KD；λ=1 为纯 on-policy KD；教师采样数据对应 SeqKD。广义 JSD 有界（支撑不相交时仍有限），这是 GKD 能绕开策略梯度、用监督式梯度反传的关键。论文对分布失配的原文论述（HTML 核验）："distilling auto-regressive student models using such approaches results in <strong>train-inference distribution mismatch</strong>"；on-policy 训练形成 "a form of feedback loop <strong>akin to what we observe in RL</strong>"；把 KD 视为 "imitation learning with an <strong>interactive expert</strong>"（DAgger 系）。<strong>实验</strong>（T5 家族，教师 T5-XL≈3B）：on-policy GKD 相对基线 KD 平均相对增益 2.1×/1.7×/1.9×（摘要/翻译/推理）；只用 5% XSum 数据（无 gold 摘要）超过全量监督 KD；GSM8K 自蒸馏（教师=同规模）学生反超教师。<span class="evi eviA">A</span></p>
+
+<h3>4.2.2 Thinking Machines 的 OPD（<a href="https://thinkingmachines.ai/blog/on-policy-distillation/">2025-10-27，Lu/Peng/Schulman</a>）</h3>
+<div class="formula">
+$$
+r_t=-\,\mathrm{KL}\big(\pi_\theta(\cdot\mid y_{\le t},x)\,\|\,\pi_T(\cdot\mid y_{\le t},x)\big),\qquad A_t=r_t,\qquad \gamma=0
+$$
+<p>实现："a <strong>one-line change</strong> on top of RL implementations which use KL regularization"——把正则模型换成教师、查询教师 logprob、per-token advantage 设为负反向 KL，沿用重要性采样损失。信息密度论证原文："RL only teaches <strong>O(1) bits per episode</strong>. In contrast, distillation teaches <strong>O(N) bits per episode</strong>." 反向 KL 的不可 hack 性："low KL always corresponds to a high probability of desirable behavior from the teacher's point of view"。</p>
+</div>
+<p><strong>四组实验</strong>（博客数字，B 级；引用 Qwen3 TR 的数字为 A 级）：</p>
+<ul>
+<li><strong>数学推理</strong>：学生 Qwen3-8B-Base，OpenThoughts-3 400k SFT 至 AIME'24 ~60%，OPD 约 150 步 / 77k prompts 达 70%。引用 Qwen3 Table 21：RL 17,920 GPU 时→67.6/61.3（AIME'24/GPQA），OPD 1,800 GPU 时→74.4/63.3。</li>
+<li><strong>个性化/灾难回退</strong>：Qwen3-8B 中途微调后 IF-eval 85%→79%；以微调前模型为教师做 OPD：79%→83%，且内部 QA 知识保持（41% vs 教师 43%）；对照"在自己的样本上 SFT"任何非零学习率都继续退化——有限 batch 使 SFT 训练逐渐偏离 on-policy。</li>
+<li><strong>效率</strong>：对齐外推 SFT-2M 同水平：9× FLOPs / 18× GPU 时；计入教师造数据成本约 30×；学习 RL 训好的策略只需 7–10× 更少梯度步（累计 50–100× 算力）；单 prompt 5,120 条 rollout 逼近教师。</li>
+<li><strong>逐 token 信用分配案例</strong>：教师惩罚的是"把推理引向歧途的起始短语 token"（forking tokens），对学生"前缀给定后已不可避免的错误答案"不罚——比 outcome 奖励的信用分配精细得多。</li>
+</ul>
+
+<h2>4.3 为什么可能比结果奖励更密集：信号密度与信用分配</h2>
+<p>统一案例：学生第三步写错。RL 的处理——整条轨迹 −1，正确的第一、二步也被压低；OPD 的处理——教师在每个前缀给出完整分布，第三步处教师的"应为 120×0.8=96"分布与学生分布的 KL 大、前两步 KL 小，梯度自动集中错误处。两条形式化支撑：(1) $O(1)$ vs $O(N)$ bits/episode（TM 博客）；(2) MiniLLM 的策略梯度展开中教师−学生 log-ratio 即逐步回报（第 7 章 T4 给推导）。注意边界：<strong>OPD 的信号密度来自教师分布，因此渐近上限是教师</strong>——RL 可超越教师（Stiennon 摘要实验），蒸馏不能。<span class="evi eviA">A</span></p>
+
+<h2>4.4 off-policy vs on-policy 蒸馏：分布失配论证汇总</h2>
+<table>
+<tr><th>论点</th><th>出处</th><th>级别</th></tr>
+<tr><td>teacher-forcing 训练 vs 自回归推理的 partial sequence 分布不同（总论）；KD = interactive expert 的模仿学习（须在学习者状态上查询）</td><td>GKD 正文 <span class="evi eviA">A</span></td><td>A</td></tr>
+<tr><td>前向 KL 使学生覆盖教师低概率区（幻觉/低质）；反向 KL + on-policy 降低 exposure bias</td><td>MiniLLM <span class="evi eviA">A</span></td><td>A</td></tr>
+<tr><td>"学生学在教师常去的上下文里，而非自己常去的上下文"→长序列复合误差</td><td>TM 博客 <span class="evi eviB">B</span></td><td>B</td></tr>
+<tr><td>长 CoT 的 off-policy 蒸馏"极其困难"（学生遇到自己不会生成的前缀）→ 2507 版转 on-policy</td><td>Qwen3-4B-Thinking-2507 博客（URL 经 Wayback 确认存在；正文未直接读取）<span class="evi eviC">C</span></td><td>C（与 Qwen3 TR on-policy 阶段互证）</td></tr>
+<tr><td>师生分布差过大时 on-policy 信号也会失效（需 SFT 冷启动对齐）："fails to provide meaningful guidance"</td><td><a href="https://arxiv.org/abs/2510.23497">VOLD [2510.23497]</a> <span class="evi eviA">A</span></td><td>A</td></tr>
+<tr><td>师生容量差过大/自蒸馏无效："training Llama 3 405B on its own generated data is not helpful"</td><td><a href="https://arxiv.org/abs/2407.21783">Llama 3 [2407.21783]</a> <span class="evi eviA">A</span></td><td>A</td></tr>
+</table>
+
+<h2>4.5 工业实践：off-policy 与 on-policy 的对照数据</h2>
+<table>
+<tr><th style="width:15%">系统</th><th>蒸馏形态</th><th>关键数字（条件）</th></tr>
+<tr><td><a href="https://arxiv.org/abs/2505.09388">Qwen3 [2505.09388]</a></td><td>小模型两阶段：① off-policy（教师 /think+/no_think 双模式生成，response 蒸馏≈SeqKD）② on-policy（学生采样，与教师 logits 对齐最小化 KL）</td><td>Table 21（8B 同起点）：off-policy 55.0 → +RL 67.6（17,920 GPU 时）→ +on-policy 蒸馏 74.4（1,800 GPU 时）；AIME'25 65.5、MATH500 97.0、LCB v5 60.3、GPQA 63.3；pass@64：RL 90.0（不变）vs 蒸馏 93.3。<span class="evi eviA">A</span></td></tr>
+<tr><td><a href="https://arxiv.org/abs/2501.12948">DeepSeek-R1 [2501.12948]</a></td><td>纯 off-policy 序列级：804,745 条样本 SFT 六个学生（1.5B–70B）</td><td>R1-Distill-Qwen-32B AIME24 72.6 vs 直接 RL 47.0；"distilling more powerful models into smaller ones yields excellent results"。<span class="evi eviA">A</span></td></tr>
+<tr><td><a href="https://arxiv.org/abs/2407.21783">Llama 3 [2407.21783]</a></td><td>数据级蒸馏：405B 合成 SFT 数据 + RM 过滤；无 logit 蒸馏</td><td>自蒸馏无效（同规模教师无益），必须更大教师。<span class="evi eviA">A</span></td></tr>
+<tr><td><a href="https://arxiv.org/abs/2502.08606">Apple 蒸馏缩放律 [2502.08606]</a></td><td>off-policy logit 蒸馏的算力最优分配律</td><td>教师不是越强越好（capacity gap 相对学习能力而言）；"教师现成/多学生"时蒸馏胜监督学习，单学生且须自训教师时监督学习通常更优。<span class="evi eviA">A</span></td></tr>
+</table>
+
+<h2>4.6 计算开销结构与失败模式</h2>
+<ul>
+<li><strong>开销</strong>：学生采样（DistiLLM 报告可占 on-policy 训练总时长 ~80%）+ 教师对学生每个前缀的一次 forward（可并行、可 top-K logprob 截断、可用部分 rollout）；无 RM、无 critic、无组内多 rollout（对比 GRPO 每题 8 条 × 16k token）。</li>
+<li><strong>失败模式</strong>：① 教师 OOD——学生前缀对教师非自然，教师须仍给出良构分布（TM 博客与 VOLD 共同强调）；② mode-seeking 反向 KL 牺牲多样性（GKD 权衡讨论）；③ 师生差距过大→信号失效（VOLD：无 SFT 冷启动时 OPD 无有效指导）；④ 黑盒教师无 logits → 需对抗式判别器替代（<a href="https://arxiv.org/abs/2511.10643">GAD [2511.10643]</a>：判别器=与学生共同进化的 on-policy RM，GPT-5 级教师可用）；⑤ 渐近上限=教师（不能超越教师，除非教师本身来自 RL）。</li>
+</ul>
+
+<h2>4.7 图 3：OPD 训练数据流与闭环</h2>
+
+<div class="fig">
+<pre class="mermaid">
+flowchart TB
+  X["题目 x（如 96 元题）"] --> S1
+  subgraph LOOP["训练循环（每步重复）"]
+    S1["① 学生策略 π_θ 采样<br/>生成轨迹 ŷ（可能中途出错）"] --> S2["② 学生轨迹及全部前缀<br/>（x, ŷ_&lt;1）,（x, ŷ_&lt;2）, …"]
+    S2 --> S3["③ 冻结教师 π_T 对每个前缀前向<br/>给出下一 token 完整分布<br/>（top-K logprob 可截断）"]
+    S3 --> S4["④ 蒸馏损失：逐 token 反向 KL<br/>（GKD 可选广义 JSD / λ 混合数据）"]
+    S4 --> S5["⑤ 梯度只流向学生 θ<br/>（教师冻结；等价地 advantage = −revKL<br/>复用 RL 更新器，γ=0）"]
+    S5 -->|"参数更新后回到采样"| S1
+  end
+  S5 --> OUT["训练后学生：逼近教师行为<br/>每条轨迹获 O(N) bits 监督"]
+  classDef data fill:#f2f7f2,stroke:#a8c8a8;
+  classDef sig fill:#eef4fb,stroke:#9db8d9;
+  classDef obj fill:#fdf6ec,stroke:#e3c89a;
+  classDef upd fill:#f5eff8,stroke:#c3a8d8;
+  class S1,S2 data;
+  class S3 sig;
+  class S4 obj;
+  class S5 upd;
+</pre>
+<p class="figcap"><strong>图 3 · OPD 完整训练数据流与闭环图</strong>（以 <a href="https://thinkingmachines.ai/blog/on-policy-distillation/">Thinking Machines 2025</a> 的 per-token 反向 KL 实现为基准流程；GKD <a href="https://arxiv.org/abs/2306.13649">[2306.13649]</a> 的差异在④：散度可选前向/反向/JSD，且数据来源可按 λ 混入固定数据集；MiniLLM <a href="https://arxiv.org/abs/2306.08543">[2306.08543]</a> 的差异在⑤：用策略梯度而非监督梯度）。绿=数据流（学生侧），蓝=监督信号（教师侧，冻结），黄=损失，紫=梯度更新。训练循环边界即虚线框：每步"采样→教师打分→损失→更新"；DistiLLM 的自适应回放在①与②之间加入 replay buffer 以摊薄采样开销。图中不包含 RM/critic/组内多 rollout——这是 OPD 与 GRPO 类 RL 的结构差异（第 3 章对照）。</p>
+</div>
+
+<h2>4.8 回答任务书 5.2 节问题</h2>
+<table>
+<tr><th style="width:34%">问题</th><th>要点（出处见上文）</th></tr>
+<tr><td>on-policy 属性体现在哪里？</td><td>被监督的前缀由<strong>学生当前策略</strong>采样（GKD λ=1 / TM OPD / Qwen3 on-policy 阶段），梯度在学生自己访问的状态分布上求期望——DAgger 意义上的 on-policy 修正。教师采样（SeqKD/R1 蒸馏）不是。</td></tr>
+<tr><td>学生轨迹如何进入训练？</td><td>作为"状态载体"：训练不打分整条轨迹，而是沿学生轨迹的每个前缀取教师分布做逐 token 损失（GKD：teacher-forced 散度反传）。</td></tr>
+<tr><td>教师针对什么提供监督？</td><td>学生的每个前缀（学生真实到达的状态），不是教师自己的生成。</td></tr>
+<tr><td>教师输出什么？</td><td>逐 token 完整分布（白盒 logits / top-K / API logprob）；变体：黑盒对抗判别器（GAD）；序列级硬标签是 off-policy 的 SeqKD，不属 OPD。</td></tr>
+<tr><td>与 KD/SFT/模仿/KL-RL 的区别？</td><td>与 KD/SFT：数据分布轴（学生 vs 教师/固定集）；与模仿学习：OPD=interactive expert 的 DAgger 式实现；与 KL-RL：形式等价（第 7 章 T4），差别在信号来源（教师 vs 奖励）与上限（教师 vs 可超教师）。</td></tr>
+<tr><td>损失/散度/粒度差异？</td><td>前向 KL（覆盖、幻觉风险）vs 反向 KL（集中、多样性损失）vs JSD/skew KL（折中、有界可监督梯度）；序列级 vs token 级粒度在自回归下不等价（GKD §3）。</td></tr>
+<tr><td>为何比结果奖励密集？</td><td>$O(N)$ vs $O(1)$ bits/episode；信用分配自动落在 KL 大的位置（forking tokens 案例）。</td></tr>
+<tr><td>教师能力/兼容性/成本/分布的影响？</td><td>教师须对学生前缀稳健（OOD）；师生差距过大信号失效（VOLD 冷启动必要性）；教师逐前缀前向是吞吐瓶颈（DistiLLM 4.3× 缓解）；白盒兼容性（词表/架构）决定能否全词表蒸馏。</td></tr>
+</table>
+
+<div class="pager">
+  <a href="03-rl.html">← 第 3 章 · RL</a>
+  <a href="05-opsd.html">第 5 章 · OPSD 深度机制 →</a>
+</div>
+
+<p class="footer-note">后训练技术体系深度调研 · 检索截止 2026-10-22 · 编号勘误：DistiLLM=2402.03898（非 2401.05978）；Apple 蒸馏缩放律=2502.08606（非 2501.16294）· <a href="literature.html">完整文献库</a></p>
+
+</body>
+</html>

@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>05 · OPSD 深度机制：在线策略自蒸馏</title>
+
+<!-- 霞鹜文楷：开源可商用的中文楷体风格字体；加载失败时自动回退到微软雅黑 -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/lxgw-wenkai-webfont@1.7.0/style.css">
+
+<script>
+window.MathJax = {
+  tex: { inlineMath: [['$','$'],['\\(','\\)']], displayMath: [['$$','$$'],['\\[','\\]']], processEscapes: true },
+  svg: { fontCache: 'global' }
+};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js" async></script>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+<script>mermaid.initialize({ startOnLoad: true, theme: "neutral", fontFamily: '"Microsoft YaHei", "PingFang SC", sans-serif' });</script>
+
+<style>
+  body { font-family: "LXGW WenKai", "Microsoft YaHei", "PingFang SC", sans-serif; font-size: 17.5px; line-height: 1.85; letter-spacing: 0.01em; color: #26292e; background: #fdfdfd; max-width: 1000px; margin: 0 auto; padding: 56px 28px 96px; }
+  h1, h2, h3, h4, .kicker { font-family: "Microsoft YaHei", "PingFang SC", sans-serif; line-height: 1.4; }
+  h1 { font-size: 30px; margin: 10px 0 6px; color: #1a1d21; }
+  h2 { font-size: 23px; margin-top: 2.4em; padding-bottom: 6px; border-bottom: 2px solid #e8eaee; color: #1f2733; }
+  h3 { font-size: 19px; margin-top: 1.8em; color: #2c3e50; }
+  h4 { font-size: 17.5px; margin-top: 1.4em; color: #3a4a5c; }
+  .kicker { font-size: 13px; letter-spacing: 0.22em; text-transform: uppercase; color: #7a8699; margin-bottom: 4px; }
+  code, pre { font-family: "Cascadia Code", Consolas, "Microsoft YaHei", monospace; }
+  code { background: #f2f4f7; padding: 1px 6px; border-radius: 5px; font-size: 0.88em; color: #35414f; }
+  pre { background: #f7f8fa; border: 1px solid #e6e9ee; border-radius: 10px; padding: 14px 16px; overflow-x: auto; font-size: 14.5px; line-height: 1.6; }
+  pre.mermaid { background: #fbfcfd; text-align: center; }
+  .formula { background: #f6f8fb; border: 1px solid #e6ebf2; border-radius: 10px; padding: 14px 18px; margin: 14px 0; overflow-x: auto; font-size: 1.02em; }
+  table { border-collapse: collapse; width: 100%; margin: 16px 0; font-size: 14.8px; }
+  th, td { border: 1px solid #dfe3ea; padding: 7px 11px; text-align: left; vertical-align: top; }
+  th { background: #f0f3f7; font-family: "Microsoft YaHei", "PingFang SC", sans-serif; font-weight: 600; }
+  tr:nth-child(even) td { background: #fafbfd; }
+  blockquote { margin: 16px 0; padding: 10px 18px; border-left: 4px solid #4a7dbd; background: #f3f7fc; border-radius: 0 8px 8px 0; color: #33414f; }
+  blockquote p { margin: 6px 0; }
+  a { color: #2c5fa8; text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  .evi { display: inline-block; font-family: "Microsoft YaHei", sans-serif; font-size: 11.5px; border-radius: 4px; padding: 0 5px; margin-left: 4px; vertical-align: 1px; border: 1px solid; line-height: 1.5; }
+  .eviA { color: #1c7a43; border-color: #9fd6b6; background: #f0faf4; }
+  .eviB { color: #9c6b0f; border-color: #ecd39a; background: #fdf8ec; }
+  .eviC { color: #a0522d; border-color: #e8c4ab; background: #fdf4ee; }
+  .fig { border: 1px solid #e2e6ec; border-radius: 12px; background: #fff; padding: 18px 14px 8px; margin: 22px 0; }
+  .figcap { font-family: "Microsoft YaHei", "PingFang SC", sans-serif; font-size: 14px; color: #5a6572; text-align: center; padding: 8px 12px 10px; line-height: 1.6; }
+  .topnav { position: sticky; top: 0; z-index: 50; background: rgba(253,253,253,.96); border-bottom: 1px solid #e8eaee; padding: 8px 0 6px; margin: 0 -6px 18px; font-family: "Microsoft YaHei", sans-serif; font-size: 13.5px; display: flex; flex-wrap: wrap; gap: 4px 12px; justify-content: center; }
+  .topnav a { color: #2c5fa8; }
+  .topnav a.here { color: #111; font-weight: 700; border-bottom: 2px solid #4a7dbd; padding-bottom: 2px; }
+  .pager { display: flex; justify-content: space-between; margin-top: 48px; font-family: "Microsoft YaHei", sans-serif; font-size: 14.5px; }
+  .footer-note { margin-top: 28px; padding-top: 12px; border-top: 1px dashed #d8dde5; color: #7a8699; font-size: 13.5px; }
+  .term { font-weight: 700; }
+</style>
+</head>
+<body>
+
+<a href="https://luxiangz.github.io/llm-tech-map/" style="position:fixed;top:12px;right:14px;z-index:99;background:#f6f7f9;border:1px solid #e2e5ea;border-radius:999px;padding:4px 12px;font-size:14px;color:#2c5fa8;text-decoration:none;box-shadow:0 1px 4px rgba(0,0,0,.08)">← 技术地图首页</a>
+
+<nav class="topnav">
+  <a href="index.html">总览</a><a href="01-concepts-case.html">概念与案例</a><a href="02-sft.html">SFT</a><a href="03-rl.html">RL</a><a href="04-opd.html">OPD</a><a href="05-opsd.html" class="here">OPSD</a><a href="06-related.html">偏好与相关</a><a href="07-theory.html">理论统一</a><a href="08-evidence-cost.html">证据与成本</a><a href="09-evolution.html">演进与争议</a><a href="10-selection.html">选型</a><a href="comparison.html">对照表</a><a href="literature.html">文献库</a><a href="gaps.html">缺口</a>
+</nav>
+
+<p class="kicker">大语言模型后训练技术体系深度调研 · 第 5 章</p>
+<h1>OPSD 深度机制：在线策略自蒸馏</h1>
+
+<p><strong>本章结论：</strong>OPSD 是 2026 年 1 月才被正式命名的新范式，存在<strong>两个同期独立起点</strong>：<a href="https://arxiv.org/abs/2601.18734">Zhao et al.（2026-01-26）[2601.18734]</a> 定义"特权参考解教师"，<a href="https://arxiv.org/abs/2601.20802">Hübotter et al.（2026-01-28）[2601.20802]</a>（SDPO）定义"环境反馈教师"。其定义性机制是<strong>同一权重、双上下文</strong>：教师分支看到特权信息（参考解/报错/技能/反馈）从而比学生分支"更知情"，学生在自己的轨迹上向知情版自己逐 token 靠拢——既不需要外部教师（区别于 OPD），也不需要奖励模型（区别于 RLVR）。9 个月内 arXiv 上"on-policy self-distillation"匹配文献已达 234 篇，按特权形态分化出参考解类/反馈类/技能类/自构造类/多模态类等亚族。但<strong>批判文献同期出现</strong>：OP²SD 解剖（<a href="https://arxiv.org/abs/2608.09228">[2608.09228]</a>）发现把特权解换成别的题的 worked example 效果几乎不降——增益来源存疑；另有"只压实不修复"“增益多为过拟合”等复评。引用 OPSD 结果时必须携带这些边界条件。</p>
+
+<blockquote><p><strong>术语查证（重要）：</strong>常见说法"Learning by Distilling Context (LDC, 2025)"经 arXiv 标题精确检索、Semantic Scholar、OpenReview 三路查证<strong>不存在</strong>2025 年同名 OPSD 论文；唯一同名论文是 <a href="https://arxiv.org/abs/2209.15189">Snell, Klein, Zhong 2022 [2209.15189]</a>——一篇 <strong>off-policy、硬标签</strong>的上下文蒸馏论文（OPSD 原文引为最近先行工作）。"同一模型 + 特权上下文 + 学生自采样轨迹 + 软分布监督"的机制描述与 Zhao et al. 2026 [2601.18734] 逐条吻合。本报告以 2601.18734 为该线的原始引用。</p></blockquote>
+
+<h2>5.1 判别框架：什么才算 OPSD</h2>
+<p>OPSD 在文献中没有统一注册的定义；本报告用"五问"判别框架，四问同时满足才计为严格 OPSD：</p>
+<table>
+<tr><th style="width:8%">判据</th><th>问题</th><th>常见取值</th></tr>
+<tr><td>Q1</td><td>教师与学生是否<strong>同一模型</strong>？</td><td>同权重双条件 / 冻结初始副本 / EMA 副本 / 外部更强模型（→OPD）</td></tr>
+<tr><td>Q2</td><td>教师分支的<strong>输入条件</strong>多了什么？</td><td>参考解 / 答案 hint / 环境文本反馈 / 技能库 / 高分辨率视角 / 可学习 latent / 无差异（→非特权，只是副本）</td></tr>
+<tr><td>Q3</td><td>训练轨迹由<strong>谁采样</strong>？</td><td>学生 on-policy（必需）/ 教师生成（→离线上下文蒸馏）/ 数据集</td></tr>
+<tr><td>Q4</td><td>监督信号是<strong>软分布</strong>还是硬标签？</td><td>逐 token KL/JSD（必需）/ 硬标签 CE（→自训练 RFT）</td></tr>
+<tr><td>Q5</td><td>参数如何更新？</td><td>教师冻结·只更新学生 / 教师 EMA / 双方同步 / 学生=教师逐步自举</td></tr>
+</table>
+
+<h2>5.2 双起点原始论文</h2>
+
+<h3>5.2.1 OPSD（<a href="https://arxiv.org/abs/2601.18734">"Self-Distilled Reasoner", Zhao et al. 2026 [2601.18734]</a>，Meta/UCLA；ICML 2026 据后续文献转引）</h3>
+<p><strong>动机</strong>（摘要原文）：策略蒸馏虽以学生自采样轨迹+教师 token 级稠密监督解决了离线蒸馏的分布失配，但"typically requires a separate, often larger, teacher LLM and does not explicitly leverage ground-truth solutions"。直觉："a single LLM acts as both teacher and student with different contexts"——足够强的 LLM 可以消化外部特权推理轨迹并教导自己较弱的版本。</p>
+<div class="formula">
+$$
+\mathcal{L}(\theta)=\mathbb{E}_{(x,y^*)\sim\mathcal{D},\ \hat y\sim p_S(\cdot\mid x)}\ \frac{1}{|\hat y|}\sum_{n}\sum_{v}\min\!\big(\ell_{n,v},\ \tau\big),\qquad
+\ell_{n,v}=p_T(v\,|\,x,y^*,\hat y_{&lt;n})\,f\!\Big(\tfrac{p_S(v\,|\,x,\hat y_{&lt;n})}{p_T(v\,|\,x,y^*,\hat y_{&lt;n})}\Big)
+$$
+<p>即<strong>逐 token 前向 KL</strong> $D_{KL}(p_T\Vert p_S)$（消融：Qwen3-1.7B AIME25 上前向 KL 43.9 &gt; 反向 KL 37.5 &gt; JSD 36.9），叠加<strong>逐 token、逐词表项的 KL 裁剪</strong> $\tau$——因为风格 token（wait/think）的 KL 高达数学 token 的 6–15 倍，不裁剪会主导训练信号。</p>
+</div>
+<ul>
+<li><strong>教师条件</strong>：$p_T(\cdot\mid x, y^*)$——额外见数据集参考解 $y^*$（OpenThoughts 数学子集，≤30K 对）；教师用 prefill"合理化"参考解，不实际生成。</li>
+<li><strong>教师固定为初始策略</strong>（LoRA 训练下即冻结 base 模型），梯度只过学生分支。</li>
+<li><strong>采样</strong>：学生 on-policy，每题 1 条 rollout × 1024 token（对比 GRPO 的 8 条 × 16k）。</li>
+<li><strong>结果</strong>：Qwen3-8B（LoRA）AIME24/25+HMMT25 平均 61.8→64.8（GRPO 64.0、SFT 59.8）；Qwen3-1.7B 37.1→43.4（GRPO 仅 37.7）；~100 步即达峰值（1.7B 上 4×H100 约 15 分钟）。<span class="evi eviA">A</span></li>
+<li><strong>开销结构</strong>：每步 2 次前向（双分支）+1 次学生采样；无 critic、无 RM、无多 rollout；论文报告 GRPO 前 100 步内过半 batch 组内奖励标准差为零（无梯度停滞），OPSD 无此病理。</li>
+</ul>
+
+<h3>5.2.2 SDPO（<a href="https://arxiv.org/abs/2601.20802">"Reinforcement Learning via Self-Distillation", Hübotter et al. 2026 [2601.20802]</a>，ETH/Stanford 系）</h3>
+<div class="formula">
+$$
+\mathcal{L}_{\text{SDPO}}(\theta)=\mathbb{E}\ \sum_t \mathrm{KL}\Big(\pi_\theta(\cdot\mid x,y_{&lt;t})\ \Big\Vert\ \mathrm{stopgrad}\big(\pi_\theta(\cdot\mid x,f,y_{&lt;t})\big)\Big)
+$$
+<p>教师 = 同一模型以<strong>环境文本反馈 $f$</strong>（运行时报错、单测失败信息、judge 评语）为条件的重评分分支；等价 advantage 视角：$A_{\text{SDPO}}=\log\pi_\theta(\hat y\mid x,f,y_{&lt;t})-\log\pi_\theta(\hat y\mid x,y_{&lt;t})$——即<strong>把 RLVR 的标量 advantage 换成"反馈条件自教师"的逐 token 密集 advantage</strong>（每序列 $|\hat y|\cdot(K{+}1)$ 个信号 vs GRPO 的 1 个常数），是 RLVR 管线的 drop-in 修改。</p>
+</div>
+<ul>
+<li><strong>教师不冻结</strong>：EMA 或 trust-region 插值正则（消融 LiveCodeBench v6：无正则塌到 36.1% &lt; 冻结初始 48.8% &lt; EMA 49.3% &lt; trust-region 50.6%）——允许教师进步，学生才能超过初始教师。<span class="evi eviA">A</span></li>
+<li><strong>结果</strong>：Qwen3-8B 上 LCBv6 48.8% vs GRPO 41.2%（超 Claude Sonnet 4 公开榜 40.5%）；科学/工具任务 70.2% vs 66.6%；响应最长缩短 11×；test-time SDPO 用 3× 更少尝试匹配 best-of-k。边界：<strong>弱模型（Qwen2.5-1.5B 级）上不敌 GRPO</strong>，需 SDPO+GRPO 混合（λ=0.9）。</li>
+</ul>
+
+<h2>5.3 谱系：从 context distillation 到特权形态爆发</h2>
+<table>
+<tr><th style="width:17%">节点</th><th style="width:16%">机制要点</th><th>与严格 OPSD 的差距</th></tr>
+<tr><td><a href="https://arxiv.org/abs/2112.00861">Askell et al. 2021 [2112.00861]</a></td><td>context distillation 概念：以助手语境/人格前缀 $a$ 条件化的分布为教师，KL 内化进无条件策略</td><td><strong>概念先驱</strong>：同模型双上下文 + 学生采样 + 软监督俱全，但"特权"是风格语境而非任务信息，目的在对齐人格</td></tr>
+<tr><td><a href="https://arxiv.org/abs/2209.15189">Snell et al. 2022 [2209.15189]</a></td><td>教师分支带指令/scratchpad/ICL 示例生成数据，硬标签 SFT 内化（Text-to-SQL 上示例内化比梯度学习好 9%）</td><td><strong>离线上下文蒸馏</strong>：教师生成（非学生轨迹）+ 硬标签。OPSD 原文明确引用对比的最近先行工作</td></tr>
+<tr><td><a href="https://arxiv.org/abs/2203.14465">STaR hint 模式 [2203.14465]</a></td><td>解不出的题把<strong>标准答案放进上下文</strong>让模型生成能到达该答案的推理，微调时去掉 hint</td><td><strong>特权答案教师的思想先声</strong>：硬标签、教师生成、需正确性过滤——STaR=特权思想×RFT 实现；OPSD=特权思想×OPD 实现</td></tr>
+<tr><td><a href="https://arxiv.org/abs/2601.18734">OPSD / SDPO（2026-01）</a></td><td>特权教师 × 学生轨迹 × 软分布</td><td>严格 OPSD 起点</td></tr>
+<tr><td>2026 follow-up（234+ 篇）</td><td>特权形态分化：技能类（<a href="https://arxiv.org/abs/2604.10674">Skill-SD [2604.10674]</a>：轨迹提炼的自然语言技能；SGSD、AtomSD）、latent 类（<a href="https://arxiv.org/abs/2608.13040">LOPD [2608.13040]</a>：可学习特权上下文，rollout 预算 &lt;Skill-SD 30%）、自构造类（<a href="https://arxiv.org/abs/2608.06296">U-OPSD [2608.06296]</a>：自洽多数票伪参考解，零外部监督）、多模态类（RP-OPSD 高分辨率特权等）、时间类（Train-Ahead-Distill-Back）、与 RL 融合（SRPO：正确样本走 GRPO、失败样本走 SDPO；SC-SDPO 按 pass rate 加权）</td><td>均为严格 OPSD 的变体/扩展（B 级摘要核验）</td></tr>
+</table>
+
+<h2>5.4 批判文献：引用 OPSD 结果前必读</h2>
+<table>
+<tr><th style="width:22%">论文</th><th>发现</th><th>级别</th></tr>
+<tr><td><a href="https://arxiv.org/abs/2608.09228">OP²SD 解剖 [2608.09228]</a></td><td>把教师上下文里的"本题参考解"换成<strong>别的题</strong>的 worked example，9 组模型-基准中 8 组效果不降甚至更好；琐碎示例（1+1）则完全失效→ 增益或主要来自"数学 worked-example 上下文诱导的教师行为"而非特权解的内容本身</td><td><span class="evi eviA">A</span></td></tr>
+<tr><td>Hindsight 只压缩不修复（<a href="https://arxiv.org/abs/2605.06188">[2605.06188]</a>）</td><td>OPSD 的 hindsight 蒸馏只是把"本可答对的轨迹"压实，修不了失败轨迹</td><td><span class="evi eviB">B</span></td></tr>
+<tr><td>Denser ≠ Better（<a href="https://arxiv.org/abs/2607.01763">[2607.01763]</a>）</td><td>持续后训练场景 SDPO 引发遗忘与塌缩，GRPO 更稳</td><td><span class="evi eviB">B</span></td></tr>
+<tr><td>Does self-distillation improve reasoning?（<a href="https://arxiv.org/abs/2610.18613">[2610.18613]</a>）</td><td>SDPO/OPSD 增益大部分可解释为过拟合的批判性复评</td><td><span class="evi eviB">B</span></td></tr>
+<tr><td>Many Faces of OPD（<a href="https://arxiv.org/abs/2605.11182">[2605.11182]</a>）</td><td>特权信息编码"共享规则"时有效、编码"实例特定事实"时失效</td><td><span class="evi eviB">B</span></td></tr>
+</table>
+
+<h2>5.5 与相邻方法的机制差异（不能混淆的清单）</h2>
+<table>
+<tr><th style="width:14%">方法</th><th style="width:19%">教师/信号来源</th><th style="width:15%">轨迹</th><th style="width:15%">监督形式</th><th>关键差异</th></tr>
+<tr><td>SFT</td><td>示范数据</td><td>他人</td><td>硬标签</td><td>off-policy；无特权概念</td></tr>
+<tr><td>OPD（GKD/TM）</td><td><strong>外部</strong>教师分布</td><td>学生</td><td>逐 token 软</td><td>OPSD = 把外部教师换成"自身+特权条件"</td></tr>
+<tr><td>RLVR（GRPO）</td><td>验证器标量</td><td>学生</td><td>序列级标量</td><td>SDPO = 把标量 advantage 换成自教师逐 token advantage</td></tr>
+<tr><td>RFT/STaR/ReST</td><td>自身生成+正确性过滤</td><td>学生（滞后）</td><td>硬标签</td><td>过滤丢掉失败轨迹信息；无分布监督</td></tr>
+<tr><td>Self-Rewarding</td><td>LLM-as-Judge 自评</td><td>学生</td><td>偏好对（DPO）</td><td>判分而非分布；特权=自评能力</td></tr>
+<tr><td>SDFT（<a href="https://arxiv.org/abs/2402.13669">[2402.13669]</a>）</td><td>冻结 seed 模型自改写数据</td><td>模型自改写</td><td>硬标签 CE</td><td><strong>数据空间</strong>自蒸馏（防遗忘），无教师分支、无特权</td></tr>
+<tr><td>经典自蒸馏（<a href="https://arxiv.org/abs/1805.04770">BAN [1805.04770]</a>/<a href="https://arxiv.org/abs/1905.08094">BYOT [1905.08094]</a>）</td><td>自身代际/层间</td><td>数据集</td><td>软标签</td><td>层级间/代际间自蒸馏；OPSD 的新颖性在<strong>上下文间</strong>（特权信息）</td></tr>
+</table>
+
+<h2>5.6 图 4：OPSD 教师—学生双上下文机制</h2>
+
+<div class="fig">
+<pre class="mermaid">
+flowchart TB
+  M["共享权重 π_θ（同一模型）<br/>Zhao 2026: 教师侧 = 初始权重（LoRA 下冻结 base）<br/>SDPO: 教师侧 = 同权重 EMA/信赖域正则"]
+  subgraph TEACHER["教师分支（训练时专用）"]
+    TI["输入条件：x + 特权信息<br/>· 参考解 y*（OPSD 原文）<br/>· 环境反馈 f：报错/评测（SDPO）<br/>· 技能库（Skill-SD）· latent（LOPD）<br/>· 多数票伪解（U-OPSD）"]
+    TI --> TD["教师条件分布<br/>p_T(·∣x, y*, ŷ_&lt;n)<br/>（对同一学生前缀重打分，prefill 消化参考解）"]
+  end
+  subgraph STUDENT["学生分支（部署时唯一存在）"]
+    SI["输入条件：仅 x（部署时同此）"] --> SS["学生 on-policy 采样轨迹 ŷ"]
+    SS --> SD2["学生分布 p_S(·∣x, ŷ_&lt;n)"]
+  end
+  SS -->|"学生轨迹决定训练状态分布（on-policy）"| TD
+  SD2 --> LOSS
+  TD -->|"stopgrad：教师分支不回传（SDPO）<br/>或教师=冻结初始权重（Zhao 2026）"| LOSS["蒸馏目标：逐 token 匹配<br/>Zhao 2026：前向 KL + 逐 token 裁剪 τ<br/>（风格 token KL 是数学 token 的 6–15 倍）<br/>SDPO：KL/对称 JSD + top-K logits"]
+  LOSS --> UPD["参数更新：只更新 θ（学生侧）<br/>教师侧冻结或 EMA 慢速跟随"]
+  UPD -->|"更新后回到采样"| SS
+  UPD --> OUT["推理时：无特权信息<br/>特权诱导的行为已内化进权重"]
+  classDef t fill:#fdf6ec,stroke:#e3c89a;
+  classDef s fill:#f2f7f2,stroke:#a8c8a8;
+  classDef l fill:#f5eff8,stroke:#c3a8d8;
+  class TI,TD t;
+  class SI,SS,SD2 s;
+  class LOSS,UPD l;
+</pre>
+<p class="figcap"><strong>图 4 · OPSD 教师—学生双上下文机制图</strong>（以 <a href="https://arxiv.org/abs/2601.18734">Zhao et al. 2026 [2601.18734]</a> 为基准绘制，SDPO <a href="https://arxiv.org/abs/2601.20802">[2601.20802]</a> 差异在框内注明）。三要素：<strong>同一权重（左侧）× 不同输入条件（上特权/下裸输入）× 在学生自采样轨迹上的逐 token 分布匹配（中部）</strong>。特权信息形态是家族分化的主轴（教师分支内列出）；教师侧参数处理是第二大分化轴（冻结初始 vs EMA/信赖域——SDPO 消融显示无正则的自教师会塌缩）。批判提示（<a href="https://arxiv.org/abs/2608.09228">OP²SD [2608.09228]</a>）：特权解换成别题 worked example 效果几乎不降，图中"特权信息→教师行为"的因果链尚存争议。部署时教师分支与特权信息均不出现。</p>
+</div>
+
+<h2>5.7 回答任务书 5.3 节问题</h2>
+<table>
+<tr><th style="width:36%">问题</th><th>要点</th></tr>
+<tr><td>同一模型如何形成教师与学生？</td><td>同一权重的两个<strong>条件分支</strong>：教师=权重+特权上下文（Zhao：初始权重；SDPO：EMA/信赖域），学生=当前权重+裸输入。</td></tr>
+<tr><td>两分支输入/输出分布的差别？</td><td>仅差特权信息（参考解/反馈/技能/latent）；教师条件分布在特权下显著更准——"知情的自己教不知情的自己"。</td></tr>
+<tr><td>学生轨迹如何决定状态分布？</td><td>损失期望在 $\hat y\sim p_S(\cdot\mid x)$ 上取——被监督的前缀全部落在学生访问分布上（与 OPD 相同的 on-policy 逻辑）。</td></tr>
+<tr><td>教师是否用特权/验证信息？</td><td>是，且形态是家族主轴：参考解类（OPSD）、环境反馈类（SDPO）、技能类（Skill-SD）、latent 类（LOPD）、自构造类（U-OPSD）、多模态类（RP-OPSD）。注意 SDPO 不需要独立验证器，反馈来自环境本身。</td></tr>
+<tr><td>训练目标如何比较两个分支？</td><td>Zhao：前向 KL $D_{KL}(p_T\Vert p_S)$+逐 token 裁剪（风格 token 失衡）；SDPO：KL/对称 JSD，等价于把 advantage 换成反馈条件自教师的逐 token 密集信号。</td></tr>
+<tr><td>是否需要独立教师/外部奖励/标签/验证器？</td><td>严格 OPSD 均不需要：教师=自身，特权来自数据集参考解或环境反馈。U-OPSD 连参考解都不需要（多数票自构造）。</td></tr>
+<tr><td>与 SFT/KD/Self-Training/Self-Rewarding/RL 的差异？</td><td>见 5.5 节表——依次差异在：轨迹来源与信号形式（SFT）、教师身份（KD/OPD）、过滤丢信息（Self-Training）、分布 vs 偏好（Self-Rewarding）、信号密度与无 RM（RLVR）。</td></tr>
+<tr><td>性能/token 效率/成本是否充分验证？</td><td>部分：原论文报告 token 效率显著优于 GRPO（1 条×1024 vs 8 条×16k；~100 步达峰）；但批判文献（OP²SD、过拟合复评、持续训练塌缩）提示增益来源与稳健性尚未定论——<strong>B 级证据，引用须带条件</strong>。</td></tr>
+<tr><td>变体间不能混淆的机制差异？</td><td>①特权形态（解内容 vs 上下文诱导行为）；②教师参数处理（冻结初始 vs EMA vs 信赖域 vs 同步）；③散度方向（前向 KL vs KL vs JSD）与裁剪；④是否依赖外部信号（参考解/反馈/无）。任何一条都不可从单篇论文推广为家族属性。</td></tr>
+</table>
+
+<div class="pager">
+  <a href="04-opd.html">← 第 4 章 · OPD</a>
+  <a href="06-related.html">第 6 章 · 偏好优化与相关方法 →</a>
+</div>
+
+<p class="footer-note">后训练技术体系深度调研 · 检索截止 2026-10-22 · 2026 年 OPSD 文献 234+ 篇仅核心链逐篇核验（A 级），follow-up 为摘要级（B 级）· <a href="literature.html">完整文献库</a></p>
+
+</body>
+</html>

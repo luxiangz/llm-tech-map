@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>总览 · 大语言模型后训练技术体系深度调研（SFT / RL / OPD / OPSD）</title>
+
+<!-- 霞鹜文楷：开源可商用的中文楷体风格字体；加载失败时自动回退到微软雅黑 -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/lxgw-wenkai-webfont@1.7.0/style.css">
+
+<script>
+window.MathJax = {
+  tex: { inlineMath: [['$','$'],['\\(','\\)']], displayMath: [['$$','$$'],['\\[','\\]']], processEscapes: true },
+  svg: { fontCache: 'global' }
+};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js" async></script>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+<script>mermaid.initialize({ startOnLoad: true, theme: "neutral", fontFamily: '"Microsoft YaHei", "PingFang SC", sans-serif' });</script>
+
+<style>
+  body { font-family: "LXGW WenKai", "Microsoft YaHei", "PingFang SC", "Segoe UI", sans-serif; font-size: 17.5px; line-height: 1.85; letter-spacing: 0.01em; color: #26292e; background: #fdfdfd; max-width: 1000px; margin: 0 auto; padding: 56px 28px 96px; }
+  h1, h2, h3, h4, .kicker { font-family: "Microsoft YaHei", "PingFang SC", sans-serif; line-height: 1.4; }
+  h1 { font-size: 31px; margin: 10px 0 6px; color: #1a1d21; }
+  h2 { font-size: 23px; margin-top: 2.4em; padding-bottom: 6px; border-bottom: 2px solid #e8eaee; color: #1f2733; }
+  h3 { font-size: 19px; margin-top: 1.8em; color: #2c3e50; }
+  .kicker { font-size: 13px; letter-spacing: 0.22em; text-transform: uppercase; color: #7a8699; margin-bottom: 4px; }
+  code, pre { font-family: "Cascadia Code", Consolas, "Microsoft YaHei", monospace; }
+  code { background: #f2f4f7; padding: 1px 6px; border-radius: 5px; font-size: 0.88em; color: #35414f; }
+  table { border-collapse: collapse; width: 100%; margin: 16px 0; font-size: 14.8px; }
+  th, td { border: 1px solid #dfe3ea; padding: 7px 11px; text-align: left; vertical-align: top; }
+  th { background: #f0f3f7; font-family: "Microsoft YaHei", "PingFang SC", sans-serif; font-weight: 600; }
+  tr:nth-child(even) td { background: #fafbfd; }
+  blockquote { margin: 16px 0; padding: 10px 18px; border-left: 4px solid #4a7dbd; background: #f3f7fc; border-radius: 0 8px 8px 0; color: #33414f; }
+  a { color: #2c5fa8; text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  .evi { display: inline-block; font-family: "Microsoft YaHei", sans-serif; font-size: 11.5px; border-radius: 4px; padding: 0 5px; margin-left: 4px; vertical-align: 1px; border: 1px solid; line-height: 1.5; }
+  .eviA { color: #1c7a43; border-color: #9fd6b6; background: #f0faf4; }
+  .eviB { color: #9c6b0f; border-color: #ecd39a; background: #fdf8ec; }
+  .eviC { color: #a0522d; border-color: #e8c4ab; background: #fdf4ee; }
+  .topnav { position: sticky; top: 0; z-index: 50; background: rgba(253,253,253,.96); border-bottom: 1px solid #e8eaee; padding: 8px 0 6px; margin: 0 -6px 18px; font-family: "Microsoft YaHei", sans-serif; font-size: 13.5px; display: flex; flex-wrap: wrap; gap: 4px 12px; justify-content: center; }
+  .topnav a { color: #2c5fa8; }
+  .topnav a.here { color: #111; font-weight: 700; border-bottom: 2px solid #4a7dbd; padding-bottom: 2px; }
+  .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 12px; margin: 18px 0; }
+  .card { border: 1px solid #e2e6ec; border-radius: 12px; padding: 14px 16px; background: #fff; }
+  .card h3 { margin: 0 0 6px; font-size: 16.5px; }
+  .card p { margin: 4px 0; font-size: 14.5px; color: #4a5563; }
+  .card .tag { font-family: "Microsoft YaHei", sans-serif; font-size: 11.5px; color: #7a8699; letter-spacing: .08em; }
+  ol.keyfindings li { margin: 10px 0; }
+  .footer-note { margin-top: 28px; padding-top: 12px; border-top: 1px dashed #d8dde5; color: #7a8699; font-size: 13.5px; }
+</style>
+</head>
+<body>
+
+<a href="https://luxiangz.github.io/llm-tech-map/" style="position:fixed;top:12px;right:14px;z-index:99;background:#f6f7f9;border:1px solid #e2e5ea;border-radius:999px;padding:4px 12px;font-size:14px;color:#2c5fa8;text-decoration:none;box-shadow:0 1px 4px rgba(0,0,0,.08)">← 技术地图首页</a>
+
+<nav class="topnav">
+  <a href="index.html" class="here">总览</a><a href="01-concepts-case.html">概念与案例</a><a href="02-sft.html">SFT</a><a href="03-rl.html">RL</a><a href="04-opd.html">OPD</a><a href="05-opsd.html">OPSD</a><a href="06-related.html">偏好与相关</a><a href="07-theory.html">理论统一</a><a href="08-evidence-cost.html">证据与成本</a><a href="09-evolution.html">演进与争议</a><a href="10-selection.html">选型</a><a href="comparison.html">对照表</a><a href="literature.html">文献库</a><a href="gaps.html">缺口</a>
+</nav>
+
+<p class="kicker">深度文献调研 · 执行摘要与导航</p>
+<h1>大语言模型后训练技术体系：<br>SFT · RL · OPD · OPSD</h1>
+
+<p style="font-size:15px;color:#5a6572">检索截止 <strong>2026-10-22</strong> · 7 个并行检索分支 · 125+ 篇核验文献 · 全部 arXiv 编号经 API/官网逐一核验 · 证据分级 A/B/C（内部规范）</p>
+
+<h2>执行摘要</h2>
+<p>本调研以<strong>机制解释</strong>为主线，用统一分析框架（范式/数据生成/监督信号/优化目标/优化算法五层分解 + 统一案例）系统梳理了 SFT、RL、OPD、OPSD 及偏好优化、传统蒸馏、自训练等相关方法，全部结论以原始论文为证据并标注证据等级。十条核心发现：</p>
+<ol class="keyfindings">
+<li><strong>四范式是三个正交设计维度的组合，不是四个平行选项。</strong>SFT=示范硬标签×他人轨迹×极大似然；RL=标量奖励×自己轨迹×策略梯度；OPD=外部教师逐 token 分布×自己轨迹×分布匹配；OPSD 把外部教师换成"同一权重+特权上下文"的自己。<span class="evi eviA">A</span>（<a href="01-concepts-case.html">第 1 章</a>）</li>
+<li><strong>SFT 的数学身份是行为克隆+预训练先验</strong>：主要教格式与覆盖内行为（LIMA/InstructGPT），分布外退回记忆化（Chu et al.），但它是 RL 生效的前提（格式锚定）。示范来自教师时 SFT≡SeqKD（目标恒等）。<span class="evi eviA">A</span>（<a href="02-sft.html">第 2 章</a>）</li>
+<li><strong>RL 算法十年演进是三条线</strong>：去 critic（PPO→GRPO/RLOO）、奖励客观化（RM→规则验证器 RLVR）、偏差修补（Dr.GRPO/DAPO）。已证的是"潜力提取+可靠性"（pass@1）；"扩展能力边界"在标准算法+常规题池下证据偏向否定，扩边界需长时程/外部注入/更强 base。<span class="evi eviB">B</span>（<a href="03-rl.html">第 3 章</a>、<a href="09-evolution.html">第 9 章</a>）</li>
+<li><strong>OPD 的定义机制：学生采样、教师在学生每个前缀逐 token 监督。</strong>术语源自 GKD（2023，原标题即 On-Policy Distillation of Language Models）；2025 年 Thinking Machines 重述为"per-token 反向 KL=密集奖励 RL"（O(N) vs O(1) bits/episode）。<span class="evi eviA">A</span>（<a href="04-opd.html">第 4 章</a>）</li>
+<li><strong>最重要的工业对照：Qwen3 Table 21</strong>——同起点 8B：RL 17,920 GPU 时→AIME'24 67.6，on-policy 蒸馏 1,800 GPU 时→74.4；且 RL 不提升 pass@64（90.0 不变）而蒸馏提升（93.3）——<strong>RL 锐化分布、蒸馏回收覆盖</strong>。<span class="evi eviA">A</span></li>
+<li><strong>OPSD 是 2026 年 1 月才定名的新范式，双起点</strong>：Zhao et al.（特权=参考解，前向 KL+逐 token 裁剪）与 Hübotter et al. SDPO（特权=环境反馈，教师 EMA/信赖域）。9 个月 234+ 篇 follow-up 按特权形态分化；<strong>批判文献同期出现</strong>（OP²SD：换成别题 worked example 不掉点——增益来源存疑）。<span class="evi eviA">A</span>/<span class="evi eviB">B</span>（<a href="05-opsd.html">第 5 章</a>）</li>
+<li><strong>DPO 与 RM+PPO 解同一个数学目标</strong>（闭式重参数化，非近似）；在线 vs 离线偏好的共识：分布漂移小/指令遵循类离线够用，漂移大/需探索时迭代在线显著更优。<span class="evi eviA">A</span>（<a href="06-related.html">第 6 章</a>）</li>
+<li><strong>统一理论图景</strong>：$\beta\log\frac{\pi}{\pi_{ref}}$ 同一个量是 DPO 的隐式奖励、隐式过程奖励（PRM）、又是蒸馏信号；off-policy 监督=缺重要性校正的有偏策略梯度；一切"on-policy 化"都是 DAgger（2011）预言的分布修正。<span class="evi eviA">A</span>（各等价）/ <span class="evi eviB">B</span>（串联）（<a href="07-theory.html">第 7 章</a>）</li>
+<li><strong>成本结构差一个数量级</strong>：PPO 驻留 4 模型、GRPO 3 个、OPD 2 个（教师只前向）、DPO 2 个、SFT 1 个；rollout 生成可占 RLHF 迭代 81.2%。小模型+强教师→蒸馏优先（R1：72.6 vs 47.0）；推边界→大模型+大规模 RL。<span class="evi eviA">A</span>（<a href="08-evidence-cost.html">第 8 章</a>）</li>
+<li><strong>检索勘误</strong>：核验纠正了十余个流传的错误 arXiv 编号（SDFT=2402.13669 非 2404.10631；DistiLLM=2402.03898；FPR=2412.01981；Apple DSL=2502.08606；RLOO=2402.14740 等），并查证"Learning by Distilling Context (2025)"不存在——其机制描述对应 Zhao et al. 2026 [2601.18734]。<span class="evi eviA">A</span>（<a href="literature.html">文献库</a>）</li>
+</ol>
+
+<h2>交付物地图</h2>
+<div class="cards">
+  <div class="card"><span class="tag">交付物 A · 研究报告</span>
+    <h3>第 1–10 章</h3>
+    <p><a href="01-concepts-case.html">01 概念体系与统一案例</a>（图1·图2）</p>
+    <p><a href="02-sft.html">02 SFT</a> · <a href="03-rl.html">03 RL</a> · <a href="04-opd.html">04 OPD</a>（图3） · <a href="05-opsd.html">05 OPSD</a>（图4）</p>
+    <p><a href="06-related.html">06 偏好优化与相关方法</a> · <a href="07-theory.html">07 理论统一</a>（图5·图6）</p>
+    <p><a href="08-evidence-cost.html">08 证据与成本</a> · <a href="09-evolution.html">09 演进与争议</a>（图7）</p>
+  </div>
+  <div class="card"><span class="tag">交付物 B · 技术对照表</span>
+    <h3><a href="comparison.html">统一维度对照表</a></h3>
+    <p>四范式 15 维精查表 + RL 算法/偏好优化/蒸馏/自训练四张家族变体表 + 易混淆概念速查。</p>
+  </div>
+  <div class="card"><span class="tag">交付物 C · 文献数据库</span>
+    <h3><a href="literature.html">可检索文献库（125+ 条）</a></h3>
+    <p>标题/作者/venue/核验编号/分类/贡献机制/关系，支持全文搜索与分类过滤；勘误条目注明。</p>
+  </div>
+  <div class="card"><span class="tag">交付物 D · 八张框架图</span>
+    <h3>图1–图8（嵌于各章）</h3>
+    <p>图1 全景 · 图2 四范式泳道（<a href="01-concepts-case.html">ch1</a>）；图3 OPD 闭环（<a href="04-opd.html">ch4</a>）；图4 OPSD 双上下文（<a href="05-opsd.html">ch5</a>）；图5 数学目标 · 图6 数据分布（<a href="07-theory.html">ch7</a>）；图7 演进（<a href="09-evolution.html">ch9</a>）；图8 选型决策（<a href="10-selection.html">ch10</a>）。统一 Mermaid、白底、论文式图注。</p>
+  </div>
+  <div class="card"><span class="tag">交付物 E · 选型指南</span>
+    <h3><a href="10-selection.html">决策图 + 建议表</a></h3>
+    <p>按任务类型/资源条件的候选方案、前置条件、成本、风险；常见误用检查点；无无条件最优。</p>
+  </div>
+  <div class="card"><span class="tag">交付物 F · 研究缺口</span>
+    <h3><a href="gaps.html">共识/未验证/可比性/边界/方向</a></h3>
+    <p>八条共识结论、七项未充分验证主张、六类实验可比性问题、OPD/OPSD 定义边界、理论与工程方向、调研方法学局限。</p>
+  </div>
+</div>
+
+<h2>方法学与证据规范</h2>
+<ul>
+<li><strong>检索</strong>：2026-10-22 单日，7 个并行分支（SFT/RL 基础/RLVR/偏好优化/KD-OPD/OPSD-自训练/理论-成本），arXiv API（export.arxiv.org）id_list 批量核验 + 标题检索；Semantic Scholar 当日持续 429 限流，venue 多数未在线核实（引用以 arXiv ID 为准）。</li>
+<li><strong>核验</strong>：每篇关键论文打开 abs 页或抓取 HTML 全文比对标题/作者/日期；公式与关键数字取自论文原文（GRPO 目标函数、Qwen3 Table 21、DPO 推导链等均逐式核对）；三个关键来源（OPSD 2601.18734、SDPO 2601.20802、TM OPD 博客）由主笔二次独立核验。</li>
+<li><strong>证据分级</strong>（内部规范，非学术评级）：A=数学推导或直接实验支持且出处原文核验；B=作者报告，条件有限或缺独立验证；C=机制解释/推断/未充分验证。博客类证据最高记 B。</li>
+<li><strong>边界</strong>：本报告是结构化文献综合，无独立复现；性能数字一律带模型/基准/基线/预算条件；2026 年 OPSD follow-up（234+ 篇）仅核心链 A 级核验。</li>
+</ul>
+
+<blockquote><p><strong>一句话总结：</strong>每种后训练方法的本质差异只在三件事——<strong>从哪里获得学习信号（示范/偏好/奖励/教师分布）、如何把信号转化为参数更新（监督梯度/策略梯度/闭式重参数化）、为此付出什么结构与成本（几个模型驻留、谁的轨迹、多密的监督）</strong>——而 2011 年的 DAgger、2015 年的 KD、2017 年的 PPO 到 2026 年的 OPSD，都是这三件事在不同约束下的重新组合。</p></blockquote>
+
+<p class="footer-note">大语言模型后训练技术体系深度调研 · 检索截止 2026-10-22 · 中间研究笔记（7 份约 2100 行）存于本地调研工作区，未随站点发布 · 本页面与各章均为自包含 HTML（字体/MathJax/Mermaid 走 CDN，断网自动回退）</p>
+
+</body>
+</html>

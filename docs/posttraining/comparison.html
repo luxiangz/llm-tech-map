@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>交付物 B · 技术对照表：统一分析维度下的核心方法与变体</title>
+
+<!-- 霞鹜文楷：开源可商用的中文楷体风格字体；加载失败时自动回退到微软雅黑 -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/lxgw-wenkai-webfont@1.7.0/style.css">
+
+<script>
+window.MathJax = {
+  tex: { inlineMath: [['$','$'],['\\(','\\)']], displayMath: [['$$','$$'],['\\[','\\]']], processEscapes: true },
+  svg: { fontCache: 'global' }
+};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js" async></script>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+<script>mermaid.initialize({ startOnLoad: true, theme: "neutral", fontFamily: '"Microsoft YaHei", "PingFang SC", sans-serif' });</script>
+
+<style>
+  body { font-family: "LXGW WenKai", "Microsoft YaHei", "PingFang SC", sans-serif; font-size: 17.5px; line-height: 1.85; letter-spacing: 0.01em; color: #26292e; background: #fdfdfd; max-width: 1180px; margin: 0 auto; padding: 56px 28px 96px; }
+  h1, h2, h3, h4, .kicker { font-family: "Microsoft YaHei", "PingFang SC", sans-serif; line-height: 1.4; }
+  h1 { font-size: 30px; margin: 10px 0 6px; color: #1a1d21; }
+  h2 { font-size: 23px; margin-top: 2.4em; padding-bottom: 6px; border-bottom: 2px solid #e8eaee; color: #1f2733; }
+  h3 { font-size: 19px; margin-top: 1.8em; color: #2c3e50; }
+  .kicker { font-size: 13px; letter-spacing: 0.22em; text-transform: uppercase; color: #7a8699; margin-bottom: 4px; }
+  code, pre { font-family: "Cascadia Code", Consolas, "Microsoft YaHei", monospace; }
+  code { background: #f2f4f7; padding: 1px 6px; border-radius: 5px; font-size: 0.88em; color: #35414f; }
+  table { border-collapse: collapse; width: 100%; margin: 16px 0; font-size: 13.8px; }
+  th, td { border: 1px solid #dfe3ea; padding: 6px 9px; text-align: left; vertical-align: top; }
+  th { background: #f0f3f7; font-family: "Microsoft YaHei", "PingFang SC", sans-serif; font-weight: 600; }
+  tr:nth-child(even) td { background: #fafbfd; }
+  th.dimh { width: 9.5%; background: #eaf0f8; }
+  blockquote { margin: 16px 0; padding: 10px 18px; border-left: 4px solid #4a7dbd; background: #f3f7fc; border-radius: 0 8px 8px 0; color: #33414f; }
+  a { color: #2c5fa8; text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  .topnav { position: sticky; top: 0; z-index: 50; background: rgba(253,253,253,.96); border-bottom: 1px solid #e8eaee; padding: 8px 0 6px; margin: 0 -6px 18px; font-family: "Microsoft YaHei", sans-serif; font-size: 13.5px; display: flex; flex-wrap: wrap; gap: 4px 12px; justify-content: center; }
+  .topnav a { color: #2c5fa8; }
+  .topnav a.here { color: #111; font-weight: 700; border-bottom: 2px solid #4a7dbd; padding-bottom: 2px; }
+  .pager { display: flex; justify-content: space-between; margin-top: 48px; font-family: "Microsoft YaHei", sans-serif; font-size: 14.5px; }
+  .footer-note { margin-top: 28px; padding-top: 12px; border-top: 1px dashed #d8dde5; color: #7a8699; font-size: 13.5px; }
+  .term { font-weight: 700; }
+</style>
+</head>
+<body>
+
+<a href="https://luxiangz.github.io/llm-tech-map/" style="position:fixed;top:12px;right:14px;z-index:99;background:#f6f7f9;border:1px solid #e2e5ea;border-radius:999px;padding:4px 12px;font-size:14px;color:#2c5fa8;text-decoration:none;box-shadow:0 1px 4px rgba(0,0,0,.08)">← 技术地图首页</a>
+
+<nav class="topnav">
+  <a href="index.html">总览</a><a href="01-concepts-case.html">概念与案例</a><a href="02-sft.html">SFT</a><a href="03-rl.html">RL</a><a href="04-opd.html">OPD</a><a href="05-opsd.html">OPSD</a><a href="06-related.html">偏好与相关</a><a href="07-theory.html">理论统一</a><a href="08-evidence-cost.html">证据与成本</a><a href="09-evolution.html">演进与争议</a><a href="10-selection.html">选型</a><a href="comparison.html" class="here">对照表</a><a href="literature.html">文献库</a><a href="gaps.html">缺口</a>
+</nav>
+
+<p class="kicker">大语言模型后训练技术体系深度调研 · 交付物 B</p>
+<h1>技术对照表：统一分析维度下的核心方法与变体</h1>
+
+<p>本页用任务书第 4 节的统一维度比较核心方法。表 1 为 SFT / RL / OPD / OPSD 四范式的逐维度精查表；表 2 按家族列出主要变体的差异列。详细机制与证据见对应章节。<strong>概念层级标注约定：</strong>【范式】=训练范式层；【算法】=范式内的优化算法；【损失】=目标函数层的具体形式；【数据策略】=数据生成方式。</p>
+
+<h2>表 1 · 四大核心范式逐维度对照</h2>
+<table>
+<tr><th class="dimh">维度</th><th>SFT（监督微调）</th><th>RL（RLHF/RLVR）</th><th>OPD（在线策略蒸馏）</th><th>OPSD（在线策略自蒸馏）</th></tr>
+<tr><td class="term">概念层级</td><td>【范式】示范模仿</td><td>【范式】奖励驱动；PPO/GRPO/RLOO 为其下【算法】</td><td>【范式】教师分布匹配（GKD 框架下的 λ=1 端点）</td><td>【范式】同模型特权条件蒸馏（OPD 的教师自身化）</td></tr>
+<tr><td class="term">研究动机</td><td>让预训练模型按指令/格式行为（FLAN/InstructGPT）</td><td>超越示范质量、注入偏好（Christiano/Stiennon）；RLVR 去除 RM hacking 风险（Tulu 3）</td><td>修复蒸馏/SFT 的 train-inference 分布失配（GKD/DAgger）</td><td>去掉 OPD 的外部教师依赖；把参考解/反馈转化为密集信号（Zhao/Hübotter 2026）</td></tr>
+<tr><td class="term">训练目标</td><td>学会示范分布覆盖的行为</td><td>最大化期望奖励，约束在 $\pi_{ref}$ 邻域</td><td>学生分布逼近教师在学生状态上的分布</td><td>学生分布逼近"知情版自己"（特权分支）的分布</td></tr>
+<tr><td class="term">数据来源</td><td>固定数据集（人工/教师生成/合成）</td><td>学生自采样 rollout（+环境/验证器反馈）</td><td>学生自采样 rollout</td><td>学生自采样 rollout</td></tr>
+<tr><td class="term">监督信号</td><td>token 硬标签（one-hot）</td><td>标量：RM 分数/规则判分/逐步 PRM</td><td>外部教师逐 token 软分布</td><td>同模型特权分支逐 token 软分布</td></tr>
+<tr><td class="term">数据分布</td><td>off-policy（示范/教师诱导状态）</td><td>on-policy（轻微 off-policy 由 clip 容忍）</td><td>on-policy（DistiLLM 变体为自适应混合）</td><td>on-policy</td></tr>
+<tr><td class="term">教师机制</td><td>无显式教师（数据即教师；=SeqKD 当数据来自教师）</td><td>无教师；参考模型只提供 KL 负反馈（不是教师）</td><td>独立外部教师，冻结，只前向</td><td>同一权重双上下文；教师=初始权重（Zhao）或 EMA/信赖域（SDPO）</td></tr>
+<tr><td class="term">优化目标</td><td>$-\sum_t\log\pi(y_t\mid y_{&lt;t},x)$（交叉熵）</td><td>$\max\mathbb{E}[r]-\beta\mathrm{KL}(\pi\Vert\pi_{ref})$，clipped 策略梯度</td><td>$\mathbb{E}_{y\sim\pi_S}[\mathrm{KL}(\pi_S\Vert\pi_T)]$（rev）或 fwd/JSD/skew</td><td>$\mathbb{E}_{\hat y\sim p_S}[\mathrm{KL}(p_T(\cdot\mid x,y^*)\Vert p_S)]$（fwd+裁剪；SDPO 为 KL/JSD）</td></tr>
+<tr><td class="term">优化算法</td><td>监督梯度（AdamW）</td><td>REINFORCE/PPO-clip/GRPO 组基线/RLOO-LOO</td><td>监督式梯度（GKD）或策略梯度（MiniLLM）或 RL 更新器（TM：$A_t{=}-$revKL, $\gamma{=}0$）</td><td>监督梯度（双分支前向，stopgrad 教师侧）</td></tr>
+<tr><td class="term">训练流程</td><td>离线单阶段（可多轮迭代换数据）</td><td>在线循环：采样→判分→更新；管线常 SFT→RM→RL</td><td>在线循环：采样→教师打分→损失→更新</td><td>在线循环：采样→双分支前向→损失→更新（教师侧可选 EMA）</td></tr>
+<tr><td class="term">计算开销</td><td>最低（1 模型）</td><td>最高（3–4 模型 + 每题 G 条 rollout；Qwen3：17,920 GPU 时）</td><td>低-中（2 模型，教师只前向；Qwen3：1,800 GPU 时；TM：省 9–100×）</td><td>低（1 权重双分支 + 采样；OPSD：1 条×1024 token vs GRPO 8×16k）</td></tr>
+<tr><td class="term">性能机制</td><td>复制覆盖内行为+格式锚定；不注入超出示范的信息</td><td>锐化既有能力（pass@1↑）；可超教师；能力扩展存争议</td><td>密集纠错（$O(N)$ bits/轨迹）；逼近教师；可回收教师分布（pass@64↑）</td><td>内化特权条件行为；密集信用分配（SDPO 每序列 $|y|\cdot(K{+}1)$ 个信号）</td></tr>
+<tr><td class="term">失败模式</td><td>覆盖外记忆化；复制示范错误；exposure bias</td><td>reward hacking；熵坍缩；伪奖励；大 k 不升</td><td>上限=教师；师生差距过大失效（VOLD）；多样性损失</td><td>特权内容 vs 上下文诱导存疑（OP²SD）；风格 token 主导；自教师塌缩（无正则 36.1%）；弱模型不敌 GRPO</td></tr>
+<tr><td class="term">实验证据（代表）</td><td>InstructGPT 1.3B&gt;175B【B】；LIMA 1k【B】；OMI-2 14M 消融【A】；Chu SFT 记忆化【B】</td><td>Stiennon 超人工参考【A】；R1 AIME 79.8【A】；Tulu 3 阶段增益【A】；Qwen3 RL 67.6【A】</td><td>GKD 2.1×/1.7×/1.9×【A】；Qwen3 Table 21 74.4@1/10 成本【A】；TM 复现 70%@150 步【B】</td><td>OPSD 64.8 vs GRPO 64.0（8B）【A】；SDPO 48.8 vs 41.2【A】；批判文献【A/B】</td></tr>
+<tr><td class="term">技术关系</td><td>=BC；=SeqKD（教师数据）；RLHF 管线第一阶段</td><td>与 DPO 同目标（闭式重参）；与 OPD 密集奖励等价（T4）；OPSD 的 advantage 对照</td><td>SFT 的 on-policy 软监督推广；RL 的密集奖励变体；OPSD 的外部教师版</td><td>OPD 教师自身化；STaR-hint/Askell/Snell 谱系；SDPO=RLVR 信号升维</td></tr>
+</table>
+
+<h2>表 2 · 家族变体差异表</h2>
+
+<h3>2a · RL 家族（算法层）</h3>
+<table>
+<tr><th style="width:10%">算法</th><th style="width:13%">对 PPO 的改动</th><th style="width:15%">优势估计</th><th style="width:12%">KL 处理</th><th style="width:25%">已知偏差/改进点</th><th>代表证据</th></tr>
+<tr><td><a href="https://arxiv.org/abs/1707.06347">PPO</a></td><td>—</td><td>GAE + 独立 critic</td><td>摊入 per-token 奖励</td><td>4 模型驻留；critic 难训；clip 在 RLHF 中触发率&lt;5%</td><td>InstructGPT/Tulu 3 RLVR【A】</td></tr>
+<tr><td><a href="https://arxiv.org/abs/2402.03300">GRPO</a></td><td>去 critic</td><td>组内 (r−mean)/std</td><td>k3 估计器入损失</td><td>长度/std 归一化拉长错误输出；全对全错零梯度；熵坍缩</td><td>DeepSeekMath 51.7%、R1【A】</td></tr>
+<tr><td><a href="https://arxiv.org/abs/2402.14740">RLOO</a></td><td>去 critic，bandit 化</td><td>leave-one-out 均值（无偏）</td><td>同 PPO（保留参考）</td><td>理论最干净；"PPO 不是 RLHF 的正确工具"</td><td>TL;DR 77.9 vs PPO 67.6【A】</td></tr>
+<tr><td><a href="https://arxiv.org/abs/2310.10505">ReMax</a></td><td>去 critic</td><td>贪心 rollout 奖励为基线（有偏）</td><td>同上</td><td>+长度惩罚；零额外 RM 调用</td><td>ICML 2024【B】</td></tr>
+<tr><td><a href="https://arxiv.org/abs/2503.20783">Dr.GRPO</a></td><td>GRPO 去偏</td><td>去 std 归一化</td><td>—</td><td>去长度归一化；token 效率↑；7B AIME 43.3</td><td>【A】</td></tr>
+<tr><td><a href="https://arxiv.org/abs/2503.14476">DAPO</a></td><td>GRPO 工程化</td><td>同 GRPO+动态采样</td><td><strong>去 KL</strong>（规则奖励）</td><td>clip-higher/动态采样/token-loss/超长整形四件套</td><td>32B AIME 50（朴素 GRPO 30）【A】</td></tr>
+<tr><td><a href="https://arxiv.org/abs/2507.18071">GSPO</a></td><td>比率序列级化</td><td>序列级似然比</td><td>—</td><td>稳 MoE RL；用于 Qwen3</td><td>【B】</td></tr>
+<tr><td><a href="https://arxiv.org/abs/2502.01456">PRIME</a></td><td>奖励逐步化</td><td>隐式 PRM 逐步 $r^t$（在线更新）</td><td>同基线</td><td>免过程标注；样本效率 2.5×</td><td>Eurus-2-7B AIME 26.7【A】</td></tr>
+</table>
+
+<h3>2b · 偏好优化家族（损失层）</h3>
+<table>
+<tr><th style="width:9%">方法</th><th style="width:11%">监督信号</th><th style="width:8%">参考模型</th><th style="width:8%">在线属性</th><th style="width:26%">关键差异</th><th>代表数字（条件）</th></tr>
+<tr><td><a href="https://arxiv.org/abs/2305.18290">DPO</a></td><td>成对偏好</td><td>需</td><td>离线（可迭代）</td><td>KL-RL 目标的闭式重参数化；隐式 RM 动态加权</td><td>TL;DR 人评胜 PPO（≤6B）【A】</td></tr>
+<tr><td><a href="https://arxiv.org/abs/2310.12036">IPO</a></td><td>成对</td><td>需</td><td>离线</td><td>回归式目标修 DPO 过拟合</td><td>受控示例为主【A】</td></tr>
+<tr><td><a href="https://arxiv.org/abs/2402.01306">KTO</a></td><td><strong>二元好/坏</strong></td><td>需</td><td>离线</td><td>前景理论；批内错配估计参考点 $z_0$；失衡数据稳</td><td>1B–30B 匹配 DPO【A】</td></tr>
+<tr><td><a href="https://arxiv.org/abs/2403.07691">ORPO</a></td><td>成对</td><td><strong>免</strong></td><td>离线单阶段</td><td>SFT 损失 + odds ratio 惩罚一体</td><td>MT-Bench 7.32（Mistral-7B）【A】</td></tr>
+<tr><td><a href="https://arxiv.org/abs/2405.14734">SimPO</a></td><td>成对</td><td><strong>免</strong></td><td>离线</td><td>长度归一化奖励+margin γ 修长度偏置</td><td>Gemma-2-9B LC 72.4%【A】</td></tr>
+<tr><td><a href="https://arxiv.org/abs/2402.13228">Smaug/DPOP</a></td><td>成对</td><td>需</td><td>离线</td><td>证明并修 DPO 的 chosen 似然下降（+NLL 正则）</td><td>被 Llama 3 采纳（系数 0.2）【A】</td></tr>
+<tr><td><a href="https://arxiv.org/abs/2312.11456">迭代 online DPO</a></td><td>成对（每轮新采）</td><td>需（每轮重置）</td><td><strong>在线</strong></td><td>理论：离线缺探索；收敛保证</td><td>胜 DPO/RSO【A】</td></tr>
+<tr><td><a href="https://arxiv.org/abs/2402.04792">OAIF</a></td><td>成对（AI 在线判）</td><td>需</td><td><strong>在线</strong></td><td>每轮当前策略采样 2 条+LLM 选优；风格可控</td><td>人评胜离线 DAP 与 RLHF【A】</td></tr>
+<tr><td><a href="https://arxiv.org/abs/2401.10020">Self-Rewarding</a></td><td>自评偏好对</td><td>需</td><td>在线迭代</td><td>LLM-as-Judge 自标注+DPO；奖励能力共同进化</td><td>70B 三轮 AlpacaEval 2 胜多系统【A】</td></tr>
+</table>
+
+<h3>2c · 蒸馏家族（数据来源 × 散度）</h3>
+<table>
+<tr><th style="width:11%">方法</th><th style="width:13%">轨迹来源</th><th style="width:14%">散度/信号</th><th style="width:10%">优化器</th><th style="width:24%">关键差异</th><th>代表数字</th></tr>
+<tr><td><a href="https://arxiv.org/abs/1503.02531">Hinton KD</a></td><td>固定数据集</td><td>前向 KL（软目标）</td><td>监督</td><td>dark knowledge；τ 温度</td><td>分类时代【A】</td></tr>
+<tr><td><a href="https://arxiv.org/abs/1606.07947">SeqKD</a></td><td><strong>教师生成</strong></td><td>硬标签 CE</td><td>监督</td><td>≡SFT on 教师输出；工业蒸馏默认形态</td><td>WMT14 +4.2 BLEU【A】；R1 蒸馏 72.6【A】</td></tr>
+<tr><td><a href="https://arxiv.org/abs/2306.08543">MiniLLM</a></td><td>学生采样</td><td>序列反向 KL</td><td>策略梯度</td><td>教师−学生 log-ratio 作回报；3 稳定技巧</td><td>120M–13B 质量/校准↑【A】</td></tr>
+<tr><td><a href="https://arxiv.org/abs/2306.13649">GKD</a></td><td>λ 混合</td><td>fwd/rev/<strong>JSD</strong></td><td>监督（teacher-forced）</td><td>三轴系统化；可与 RLHF 联合</td><td>相对 KD 增益 1.7–2.1×【A】</td></tr>
+<tr><td><a href="https://arxiv.org/abs/2402.03898">DistiLLM</a></td><td>学生采样+回放</td><td>skew KL/RVKL</td><td>监督</td><td>自适应 off-policy 摊薄采样开销</td><td>4.3× 加速【A】</td></tr>
+<tr><td><a href="https://thinkingmachines.ai/blog/on-policy-distillation/">TM-OPD</a></td><td>学生采样</td><td>逐 token rev KL</td><td>RL 更新器（$A_t{=}-$revKL）</td><td>"一行改动"；$O(N)$ bits 论证</td><td>150 步 60→70 AIME【B】</td></tr>
+<tr><td><a href="https://arxiv.org/abs/2511.10643">GAD（黑盒）</a></td><td>学生采样</td><td>对抗判别器（=动态 RM）</td><td>对抗+策略</td><td>黑盒教师（GPT-5 级）可用</td><td>逼近教师（LMSYS 评测）【B】</td></tr>
+<tr><td><a href="https://arxiv.org/abs/2601.18734">OPSD</a></td><td>学生采样</td><td>fwd KL+逐 token 裁剪</td><td>监督（stopgrad）</td><td>教师=初始权重+参考解特权</td><td>64.8 vs GRPO 64.0【A】</td></tr>
+<tr><td><a href="https://arxiv.org/abs/2601.20802">SDPO</a></td><td>学生采样</td><td>KL/对称 JSD（等价逐 token advantage）</td><td>RL 式更新</td><td>特权=环境反馈；教师 EMA/信赖域</td><td>LCBv6 48.8 vs 41.2【A】</td></tr>
+<tr><td><a href="https://arxiv.org/abs/2402.13669">SDFT</a></td><td>模型自改写数据</td><td>硬标签 CE（数据空间）</td><td>监督</td><td>防灾难遗忘；无教师分支</td><td>任务性能持平+遗忘↓【A】</td></tr>
+</table>
+
+<h3>2d · 自训练/数据筛选家族</h3>
+<table>
+<tr><th style="width:11%">方法</th><th style="width:12%">过滤信号</th><th style="width:13%">监督形式</th><th style="width:10%">采样滞后</th><th style="width:24%">关键差异</th><th>代表数字</th></tr>
+<tr><td><a href="https://arxiv.org/abs/2203.14465">STaR</a></td><td>终答正确</td><td>硬标签（hint 模式=特权先声）</td><td>一轮</td><td>rationale 自举；hint 后微调去 hint</td><td>GSM8K/Commonsense↑【A】</td></tr>
+<tr><td><a href="https://arxiv.org/abs/2308.01825">RFT</a></td><td>正确+推理等价类去重</td><td>硬标签</td><td>一轮</td><td>保留多样性；K=100 采样</td><td>GSM8K 49.3%【A】</td></tr>
+<tr><td><a href="https://arxiv.org/abs/2308.08998">ReST</a></td><td>RM 二值过滤</td><td>硬标签</td><td>Grow/FI 解耦</td><td>离线化避免 over-optimization</td><td>MT 对齐【A】</td></tr>
+<tr><td><a href="https://arxiv.org/abs/2312.06585">ReST-EM</a></td><td>正确性二值</td><td>硬标签</td><td>2–4 轮</td><td>EM 视角；超人类数据 SFT</td><td>MATH/代码【A】</td></tr>
+<tr><td><a href="https://arxiv.org/abs/2402.06457">V-STaR</a></td><td>对错皆用（DPO 验证器）</td><td>偏好对</td><td>迭代</td><td>生成器-验证器互促</td><td>best-of-n 提升【A】</td></tr>
+<tr><td><a href="https://arxiv.org/abs/2401.01335">SPIN</a></td><td>真假判别（人类=真）</td><td>logistic 对比</td><td>一轮</td><td>无需 RM；上限=人类数据</td><td>胜 DPO/SFT【A】</td></tr>
+<tr><td><a href="https://arxiv.org/abs/2505.03335">Absolute Zero</a></td><td>代码执行器</td><td>RL 奖励（自博弈）</td><td>在线</td><td>零外部数据；出题-解题双角色</td><td>小模型 SOTA 级【B】</td></tr>
+</table>
+
+<h2>表 3 · 横切维度速查（易混淆概念对照）</h2>
+<table>
+<tr><th style="width:22%">易混淆对</th><th>判别</th></tr>
+<tr><td>on-policy vs 在线产生数据</td><td>判据是采样策略与更新策略是否同一：SeqKD 教师采样虽"在线产生"仍 off-policy；PPO minibatch 复用是轻微 off-policy（clip 容忍）</td></tr>
+<tr><td>参考模型 vs 教师</td><td>参考模型只给 KL 负反馈（RLHF/DPO），教师给被匹配的目标分布（OPD/OPSD）</td></tr>
+<tr><td>结果监督 vs 过程监督</td><td>每轨迹 $O(1)$ vs 每步 $O(T)$ 比特；隐式 PRM 用对数概率差免标注获得过程信号</td></tr>
+<tr><td>软监督 vs 硬监督</td><td>分布（logits）vs 选定 token；同一轨迹上信息量与信用分配精度完全不同</td></tr>
+<tr><td>独立教师 vs 同模型自蒸馏</td><td>OPD（外部）/ OPSD（同权重特权分支）/ SDFT（数据空间）/ BAN-BYOT（层级或代际）——四种"自"都不同</td></tr>
+<tr><td>训练目标 vs 损失函数</td><td>目标=要优化的量（期望奖励、分布距离）；损失=可计算的形式（同一目标可有多个估计器/重参数化，如 RLHF↔DPO）</td></tr>
+<tr><td>理论上等价 vs 工程采用</td><td>例：蒸馏≡密集奖励 RL 在数学上成立（T4），但工程上因教师前向吞吐、top-K 截断、部分 rollout 等与 RL 实现差异巨大</td></tr>
+</table>
+
+<div class="pager">
+  <a href="10-selection.html">← 第 10 章 · 选型指南</a>
+  <a href="literature.html">交付物 C · 文献数据库 →</a>
+</div>
+
+<p class="footer-note">后训练技术体系深度调研 · 检索截止 2026-10-22 · 所有编号经核验；性能数字均带条件 · <a href="literature.html">完整文献库</a></p>
+
+</body>
+</html>

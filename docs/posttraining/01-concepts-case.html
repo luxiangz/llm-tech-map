@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>01 · 概念体系与统一案例：SFT / RL / OPD / OPSD</title>
+
+<!-- 霞鹜文楷：开源可商用的中文楷体风格字体；加载失败时自动回退到微软雅黑 -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/lxgw-wenkai-webfont@1.7.0/style.css">
+
+<script>
+window.MathJax = {
+  tex: {
+    inlineMath: [['$', '$'], ['\\(', '\\)']],
+    displayMath: [['$$', '$$'], ['\\[', '\\]']],
+    processEscapes: true
+  },
+  svg: { fontCache: 'global' }
+};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js" async></script>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+<script>mermaid.initialize({ startOnLoad: true, theme: "neutral", fontFamily: '"Microsoft YaHei", "PingFang SC", sans-serif' });</script>
+
+<style>
+  body {
+    font-family: "LXGW WenKai", "Microsoft YaHei", "PingFang SC", "Segoe UI", sans-serif;
+    font-size: 17.5px;
+    line-height: 1.85;
+    letter-spacing: 0.01em;
+    color: #26292e;
+    background: #fdfdfd;
+    max-width: 1000px;
+    margin: 0 auto;
+    padding: 56px 28px 96px;
+  }
+  h1, h2, h3, h4, .kicker {
+    font-family: "Microsoft YaHei", "PingFang SC", sans-serif;
+    line-height: 1.4;
+  }
+  h1 { font-size: 30px; margin: 10px 0 6px; color: #1a1d21; }
+  h2 { font-size: 23px; margin-top: 2.4em; padding-bottom: 6px; border-bottom: 2px solid #e8eaee; color: #1f2733; }
+  h3 { font-size: 19px; margin-top: 1.8em; color: #2c3e50; }
+  h4 { font-size: 17.5px; margin-top: 1.4em; color: #3a4a5c; }
+  .kicker {
+    font-size: 13px; letter-spacing: 0.22em; text-transform: uppercase;
+    color: #7a8699; margin-bottom: 4px;
+  }
+  code, pre {
+    font-family: "Cascadia Code", Consolas, "Microsoft YaHei", monospace;
+  }
+  code { background: #f2f4f7; padding: 1px 6px; border-radius: 5px; font-size: 0.88em; color: #35414f; }
+  pre { background: #f7f8fa; border: 1px solid #e6e9ee; border-radius: 10px; padding: 14px 16px; overflow-x: auto; font-size: 14.5px; line-height: 1.6; }
+  pre.mermaid { background: #fbfcfd; text-align: center; }
+  .formula {
+    background: #f6f8fb;
+    border: 1px solid #e6ebf2;
+    border-radius: 10px;
+    padding: 14px 18px;
+    margin: 14px 0;
+    overflow-x: auto;
+    font-size: 1.02em;
+  }
+  table { border-collapse: collapse; width: 100%; margin: 16px 0; font-size: 14.8px; }
+  th, td { border: 1px solid #dfe3ea; padding: 7px 11px; text-align: left; vertical-align: top; }
+  th { background: #f0f3f7; font-family: "Microsoft YaHei", "PingFang SC", sans-serif; font-weight: 600; }
+  tr:nth-child(even) td { background: #fafbfd; }
+  blockquote {
+    margin: 16px 0; padding: 10px 18px; border-left: 4px solid #4a7dbd;
+    background: #f3f7fc; border-radius: 0 8px 8px 0; color: #33414f;
+  }
+  blockquote p { margin: 6px 0; }
+  a { color: #2c5fa8; text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  .evi {
+    display: inline-block; font-family: "Microsoft YaHei", sans-serif; font-size: 11.5px;
+    border-radius: 4px; padding: 0 5px; margin-left: 4px; vertical-align: 1px;
+    border: 1px solid; line-height: 1.5;
+  }
+  .eviA { color: #1c7a43; border-color: #9fd6b6; background: #f0faf4; }
+  .eviB { color: #9c6b0f; border-color: #ecd39a; background: #fdf8ec; }
+  .eviC { color: #a0522d; border-color: #e8c4ab; background: #fdf4ee; }
+  .fig {
+    border: 1px solid #e2e6ec; border-radius: 12px; background: #fff;
+    padding: 18px 14px 8px; margin: 22px 0;
+  }
+  .figcap {
+    font-family: "Microsoft YaHei", "PingFang SC", sans-serif;
+    font-size: 14px; color: #5a6572; text-align: center; padding: 8px 12px 10px;
+    line-height: 1.6;
+  }
+  .topnav {
+    position: sticky; top: 0; z-index: 50; background: rgba(253,253,253,.96);
+    border-bottom: 1px solid #e8eaee; padding: 8px 0 6px; margin: 0 -6px 18px;
+    font-family: "Microsoft YaHei", sans-serif; font-size: 13.5px;
+    display: flex; flex-wrap: wrap; gap: 4px 12px; justify-content: center;
+  }
+  .topnav a { color: #2c5fa8; }
+  .topnav a.here { color: #111; font-weight: 700; border-bottom: 2px solid #4a7dbd; padding-bottom: 2px; }
+  .pager { display: flex; justify-content: space-between; margin-top: 48px; font-family: "Microsoft YaHei", sans-serif; font-size: 14.5px; }
+  .footer-note { margin-top: 28px; padding-top: 12px; border-top: 1px dashed #d8dde5; color: #7a8699; font-size: 13.5px; }
+  .term { font-weight: 700; }
+  .dim { color: #5a6572; font-size: 0.92em; }
+</style>
+</head>
+<body>
+
+<a href="https://luxiangz.github.io/llm-tech-map/" style="position:fixed;top:12px;right:14px;z-index:99;background:#f6f7f9;border:1px solid #e2e5ea;border-radius:999px;padding:4px 12px;font-size:14px;color:#2c5fa8;text-decoration:none;box-shadow:0 1px 4px rgba(0,0,0,.08)">← 技术地图首页</a>
+
+<nav class="topnav">
+  <a href="index.html">总览</a><a href="01-concepts-case.html" class="here">概念与案例</a><a href="02-sft.html">SFT</a><a href="03-rl.html">RL</a><a href="04-opd.html">OPD</a><a href="05-opsd.html">OPSD</a><a href="06-related.html">偏好与相关</a><a href="07-theory.html">理论统一</a><a href="08-evidence-cost.html">证据与成本</a><a href="09-evolution.html">演进与争议</a><a href="10-selection.html">选型</a><a href="comparison.html">对照表</a><a href="literature.html">文献库</a><a href="gaps.html">缺口</a>
+</nav>
+
+<p class="kicker">大语言模型后训练技术体系深度调研 · 第 1 章</p>
+<h1>概念体系与统一案例：先分清层级，再谈机制</h1>
+
+<p><strong>本章结论（先读这段）：</strong>SFT、RL、OPD、OPSD 不是同一层级上的四个"平行选项"，而是"监督信号类型 × 数据生成方式 × 优化目标"三个正交设计维度上的不同取值组合。SFT 用<strong>示范的硬标签</strong>在<strong>别人的轨迹</strong>上做极大似然；RL 用<strong>标量奖励</strong>在<strong>自己采样的轨迹</strong>上做策略优化；OPD 用<strong>外部教师的逐 token 分布</strong>在<strong>学生自己的轨迹</strong>上做分布匹配；OPSD 把外部教师换成<strong>同一模型在更丰富上下文（特权信息）下的自己</strong>。四者的数学目标可以在同一个 KL 框架下统一表述（第 7 章），但工程实现、成本结构与失败模式差异巨大。本章先建立术语分层与统一案例，后续各章在同一套维度下逐个深挖。</p>
+
+<h2>1.1 概念分层：范式、数据、信号、目标、算法是五件事</h2>
+
+<p>调研文献时最容易混淆的是把不同层级的概念放在同一句话里比较。本报告统一使用以下五层分解，每个方法都要在每一层上说清楚自己的取值：</p>
+
+<table>
+<tr><th style="width:15%">层级</th><th>含义</th><th>例子（同一方法在不同层可以自由组合）</th></tr>
+<tr><td><span class="term">① 训练范式</span></td><td>回答"学习信号的本质是什么"：模仿示范、匹配偏好、最大化奖励、匹配教师分布</td><td>模仿学习、偏好学习、奖励驱动 RL、知识蒸馏</td></tr>
+<tr><td><span class="term">② 数据生成方式</span></td><td>训练样本由谁的分布产生：固定数据集 / 教师生成 / 当前学生采样（on-policy）/ 环境交互</td><td>UltraFeedback 离线偏好对 vs Llama 3 每轮重新采样的偏好对</td></tr>
+<tr><td><span class="term">③ 监督信号</span></td><td>信号本身长什么样：token 硬标签、token 软分布、成对偏好、二元好/坏、序列级标量奖励、逐步骤分数、文本反馈</td><td>PRM800K 的逐步标注 vs GSM8K 验证器的终答对错</td></tr>
+<tr><td><span class="term">④ 优化目标（损失）</span></td><td>把信号变成数的数学形式：交叉熵、各方向 KL/JSD、Bradley–Terry 损失、clipped 策略梯度</td><td>同为"偏好"信号，DPO 与 ORPO 的损失完全不同</td></tr>
+<tr><td><span class="term">⑤ 优化算法</span></td><td>如何估计梯度并更新：监督梯度、策略梯度（REINFORCE/PPO/GRPO）、闭式重参数化</td><td>同为反向 KL 蒸馏目标，MiniLLM 用策略梯度、GKD 用监督式梯度</td></tr>
+</table>
+
+<p>由此得到几条本报告反复使用的辨析规则：</p>
+<ul>
+<li><strong>训练范式 ≠ 优化算法。</strong>PPO/GRPO/RLOO 只是 RL 范式下的算法选择；把 GRPO 与 DPO 并称为"两种训练方法"没有错，但要清楚它们处在不同层（一个是算法，一个是从目标函数推导出的损失）。</li>
+<li><strong>在线采样 ≠ on-policy 更新。</strong>"训练中产生了新数据"不等于 on-policy：教师生成的数据在训练循环内产生，但对更新而言仍是 off-policy（生成分布是教师的）。on-policy 的严格定义是<strong>采样策略与被更新策略为同一策略（或近似同一策略）</strong>（详见第 7 章图 6）。</li>
+<li><strong>数据生成方式 ≠ 监督信号。</strong>都在学生轨迹上训练，RL 给标量、OPD 给逐 token 分布、RFT 给过滤后的硬标签——三者的学习信号密度完全不同。</li>
+<li><strong>独立教师蒸馏 ≠ 同模型自蒸馏。</strong>OPD 的教师是另一个（通常更强的）模型；OPSD 的教师是同一权重在不同输入条件下的分支。混用"自蒸馏"一词时必须注明是数据空间（SDFT）、层级间（Born-Again）还是上下文间（OPSD 原义）。</li>
+</ul>
+
+<h2>1.2 四个核心对象的严格定义</h2>
+
+<table>
+<tr><th style="width:9%">缩写</th><th style="width:22%">全称与出处</th><th>严格定义（本报告采用）</th></tr>
+<tr>
+<td><span class="term">SFT</span></td>
+<td>Supervised Fine-Tuning（监督微调）；现代形态定型于 <a href="https://arxiv.org/abs/2203.02155">InstructGPT [2203.02155]</a> 的 SFT 阶段，思想源于指令微调 <a href="https://arxiv.org/abs/2109.01652">FLAN [2109.01652]</a>/<a href="https://arxiv.org/abs/2110.08207">T0 [2110.08207]</a></td>
+<td>在示范数据集 $\mathcal{D}=\{(x^{(i)},y^{(i)})\}$ 上最小化 token 级交叉熵（等价于对示范极大似然）的微调。等价于行为克隆（BC）+ 预训练先验：不提供高于示范质量的监督信号，上限由示范的覆盖与正确性决定。<span class="evi eviA">A</span></td>
+</tr>
+<tr>
+<td><span class="term">RL</span></td>
+<td>Reinforcement Learning；LLM 语境指 <a href="https://arxiv.org/abs/1706.03741">RLHF [1706.03741]</a> 谱系与可验证奖励 RLVR（命名自 <a href="https://arxiv.org/abs/2411.15124">Tulu 3 [2411.15124]</a>）</td>
+<td>在当前策略自采样（on-policy rollout）的轨迹上，以标量奖励（学习式 RM 分数或规则验证器输出）为目标、带 KL/信任域约束地更新策略参数。奖励是序列级稀疏信号（outcome）或逐步信号（process）。</td>
+</tr>
+<tr>
+<td><span class="term">OPD</span></td>
+<td>On-Policy Distillation（在线策略蒸馏）；术语最早作为标题出现于 <a href="https://arxiv.org/abs/2306.13649">GKD "On-Policy Distillation of Language Models" [2306.13649]</a>（2023），2025 年经 <a href="https://thinkingmachines.ai/blog/on-policy-distillation/">Thinking Machines 博客</a>（2025-10-27）与 <a href="https://arxiv.org/abs/2505.09388">Qwen3 技术报告 [2505.09388]</a> 的实践重新定义为主流范式</td>
+<td>学生模型自己采样轨迹，<strong>外部教师</strong>在学生访问的每个前缀上提供监督（最典型：逐 token 的反向 KL / 广义 JSD 损失），学生只在该信号上更新参数、教师冻结。等价视角：把每 token 的"负反向 KL"当作密集奖励的 RL（第 4、7 章）。<span class="evi eviA">A</span></td>
+</tr>
+<tr>
+<td><span class="term">OPSD</span></td>
+<td>On-Policy Self-Distillation（在线策略自蒸馏）；术语与方法的原始论文为 <a href="https://arxiv.org/abs/2601.18734">"Self-Distilled Reasoner"（Zhao et al., 2026）[2601.18734]</a>，同期独立起点为 <a href="https://arxiv.org/abs/2601.20802">SDPO（Hübotter et al., 2026）[2601.20802]</a></td>
+<td><strong>同一模型</strong>在两种上下文中分别充当学生与教师：教师分支额外看到特权信息（数据集参考解、环境文本反馈、技能库等）从而获得更强的条件分布；在学生自己采样的轨迹上做逐 token 分布匹配，梯度只更新学生侧。判别要件：同模型 + 特权条件 + 学生轨迹 + 软分布监督（第 5 章）。</td>
+</tr>
+</table>
+
+<blockquote><p><strong>检索勘误提示：</strong>调研中核验并纠正了多个流传的错误 arXiv 编号，正文引用一律以核验过的编号为准。重要勘误包括：SDFT 是 <a href="https://arxiv.org/abs/2402.13669">2402.13669</a>（非 2404.10631）；ReST 是 <a href="https://arxiv.org/abs/2308.08998">2308.08998</a>（非 2307.14551）；ReST-EM 是 <a href="https://arxiv.org/abs/2312.06585">2312.06585</a>（非 2312.06562）；V-STaR 是 <a href="https://arxiv.org/abs/2402.06457">2402.06457</a>（一作 Hosseini，非 2410.06161）；DistiLLM 是 <a href="https://arxiv.org/abs/2402.03898">2402.03898</a>（非 2401.05978）；Free Process Rewards 是 <a href="https://arxiv.org/abs/2412.01981">2412.01981</a>（非 2502.19295）；Apple 蒸馏缩放律是 <a href="https://arxiv.org/abs/2502.08606">2502.08606</a>（非 2501.16294）；RLOO 是 <a href="https://arxiv.org/abs/2402.14740">2402.14740</a>（非 2402.14730）。完整清单见<a href="literature.html">文献库</a>。</p></blockquote>
+
+<h2>1.3 统一案例：一道贯穿全文的数学题</h2>
+
+<div class="formula">
+<p><strong>问题 $x$：</strong>商品原价为 100 元，先涨价 20%，再降价 20%，最终价格是多少？<br>
+<strong>参考答案 $y^{gold}$：</strong>$100\times 1.2 = 120$ 元；$120\times 0.8 = 96$ 元。最终价格 <strong>96 元</strong>（不是直觉错误答案 100 元）。<br>
+<strong>基础模型 $M$：</strong>已完成预训练、尚未后训练；设定它可以被微调，且训练时可访问一个（可选的）教师 $T$ 与一个规则验证器 $V$（比对最终答案是否为 96）。</p>
+</div>
+
+<p>下面用通俗语言把六类方法在同一道题上过一遍。每种方法都回答同样九个问题：输入是什么 / 训练数据从哪来 / 谁生成样本 / 谁提供监督信号 / 优化目标是什么 / 哪些参数更新 / 推理行为如何变化 / 需要什么额外资源 / 什么条件下失效。<strong>案例只用于解释机制，不代表各方法在这道题上有一致的性能提升</strong>——性能结论一律以对应论文实验为准。</p>
+
+<h3>1.3.1 SFT：把写好的解答"抄"进模型</h3>
+<p>准备几千道类似题目的高质量人工解答（每一步清晰、格式统一），在 $(x, y^{gold})$ 对上最小化交叉熵：模型逐步学会在"涨价 20%"之后输出"$100 \times 1.2 = 120$"。监督信号就是示范 token 本身；样本由人类（或教师模型）生成，与模型当前状态无关（off-policy）。<strong>推理变化：</strong>输出格式稳定、风格统一；但若示范只覆盖"先乘后乘"一种写法，模型遇到需要不同解法的变体时只能靠预训练先验兜底——行为克隆的复合误差理论（<a href="https://arxiv.org/abs/1011.0686">DAgger [1011.0686]</a>）指出，per-step 误差 $\varepsilon$ 会沿序列复合为 $O(T^2\varepsilon)$。<span class="evi eviA">A</span> <strong>失效条件：</strong>示范覆盖不足或含系统性错误（如把降价 20% 写成 $100-20$）；此时 SFT 会忠实复制错误，且没有任何纠错信号。</p>
+
+<h3>1.3.2 RL：让答对的解法被强化</h3>
+<p>把题目交给模型自己采样 $G$ 条完整解答，用验证器 $V$ 判分：最终答案等于 96 得 +1，否则 −1（DeepSeek-R1 的规则奖励即此形态 <a href="https://arxiv.org/abs/2501.12948">[2501.12948]</a>）。组内比较（GRPO：<a href="https://arxiv.org/abs/2402.03300">[2402.03300]</a>）：比同组平均分高的解答整体概率上升，低的整体下降。监督信号是<strong>每条轨迹一个标量</strong>——哪一步算错并不知道（credit assignment 病理）。<strong>推理变化：</strong>模型被"锐化"到更可靠地走通自己本来就会的解法；是否能学会全新解法存在争议（pass@k 争论，第 9 章）。<strong>失效条件：</strong>验证器不可得或可被钻空子（reward hacking <a href="https://arxiv.org/abs/2209.13085">[2209.13085]</a>）；探索坍缩；奖励噪声下 GRPO 的 clip 偏置可能放大预训练先验而非真学（spurious rewards <a href="https://arxiv.org/abs/2506.10947">[2506.10947]</a>）。<span class="evi eviB">B</span></p>
+
+<h3>1.3.3 OPD：学生做题，教师逐字批改</h3>
+<p>模型（学生）自己采样一条推理——可能第三步写错了。外部教师 $T$（如一个 RL 训好的同规模或更大模型）<strong>不动学生的文字</strong>，而是在学生的每个前缀（题目 + 学生已写的每一步）上给出"下一个 token 应该是什么"的完整分布，学生最小化自己分布与教师分布的反向 KL。哪怕学生第 2 步已偏离，教师也会针对"从那个错误状态出发该怎么走"给出密集修正——这正是 <a href="https://thinkingmachines.ai/blog/on-policy-distillation/">Thinking Machines</a> 说的"sample trajectories from the student and use a teacher to grade each token"。<strong>信号密度：</strong>RL 每条轨迹传 $O(1)$ 比特（一个分数），OPD 传 $O(N)$ 比特（每个位置一个分布）。<span class="evi eviB">B</span>（博客+论文交叉）<strong>失效条件：</strong>教师必须能对学生造成的（对教师而言不自然的）前缀给出良构分布，师生差距过大时信号失效（<a href="https://arxiv.org/abs/2510.23497">VOLD [2510.23497]</a>：无 SFT 冷启动对齐时 OPD "fails to provide meaningful guidance"）；教师逐前缀推理是吞吐瓶颈。</p>
+
+<h3>1.3.4 OPSD：看得到答案的自己，教看不到答案的自己</h3>
+<p>不引入外部教师。同一权重两个分支：<strong>学生分支</strong>只见题目；<strong>教师分支</strong>额外看到参考解 $y^*$（含 $120\times 0.8=96$ 的完整过程）——"特权信息"。教师分支由于看了答案，能在学生的任意前缀上给出更可靠的下一 token 分布；学生在自己采样的轨迹上逐 token 向教师分支靠拢（<a href="https://arxiv.org/abs/2601.18734">Zhao et al. 2026 [2601.18734]</a>）。变体 SDPO（<a href="https://arxiv.org/abs/2601.20802">[2601.20802]</a>）把特权信息换成<strong>环境文本反馈</strong>：教师分支看到"你第三步算错，正确应为 96"的报错后重打分，学生向"知情版自己"学习。<strong>推理变化：</strong>推理时不带特权信息，但"消化"了特权信息的行为被内化进权重。<strong>失效条件：</strong>特权信息与题目无关时（OP²SD 解剖 <a href="https://arxiv.org/abs/2608.09228">[2608.09228]</a>：换成别的题的 worked example 效果几乎不降）——增益来源存疑；风格 token 的 KL 失衡（原文报告 wait/think 类 token KL 是数学 token 的 6–15 倍，须逐 token 裁剪）。<span class="evi eviB">B</span></p>
+
+<h3>1.3.5 传统 KD：教师写范文，学生背范文</h3>
+<p>教师 $T$ 先生成一批解答（序列级蒸馏 <a href="https://arxiv.org/abs/1606.07947">SeqKD [1606.07947]</a>），或在固定题库上输出软标签（<a href="https://arxiv.org/abs/1503.02531">Hinton KD [1503.02531]</a>）。学生在这个<strong>与自己的状态分布无关</strong>的数据上训练——学生从未在自己会到达的前缀上被纠正，长链推理时分布失配复合（GKD 论文的核心批评，<a href="https://arxiv.org/abs/2306.13649">[2306.13649]</a>）。<span class="evi eviA">A</span></p>
+
+<h3>1.3.6 DPO 等偏好优化：在"96 分回答"与"100 分回答"之间选边</h3>
+<p>收集成对比较：$(x, y_w=$ 解到 96 的回答$)$ vs $(x, y_l=$ 解到 100 的回答$)$。DPO（<a href="https://arxiv.org/abs/2305.18290">[2305.18290]</a>）直接增大隐式奖励差 $\beta\log\frac{\pi(y_w|x)}{\pi_{ref}(y_w|x)}-\beta\log\frac{\pi(y_l|x)}{\pi_{ref}(y_l|x)}$，无需 RM 与采样。监督信号是<strong>相对偏好</strong>（谁更好），不含绝对分数；离线数据上无探索。<strong>失效条件：</strong>偏好数据 off-policy 漂移、chosen 似然坍缩、长度偏置（第 6 章）。</p>
+
+<h3>1.3.7 九维对照总表</h3>
+
+<table>
+<tr><th>维度</th><th>SFT</th><th>RL（RLVR）</th><th>OPD</th><th>OPSD</th><th>传统 KD</th><th>DPO</th></tr>
+<tr><td><span class="term">输入</span></td><td>题目 + 示范</td><td>题目（+验证器）</td><td>题目</td><td>题目 + 参考解/反馈（教师分支）</td><td>题目（固定数据集）</td><td>题目 + 成对回答</td></tr>
+<tr><td><span class="term">训练数据来源</span></td><td>人工/教师示范</td><td>学生自采样 rollout</td><td>学生自采样 rollout</td><td>学生自采样 rollout</td><td>固定数据集或教师生成</td><td>静态偏好对（或迭代新采）</td></tr>
+<tr><td><span class="term">谁生成样本</span></td><td>人/教师（off-policy）</td><td>学生（on-policy）</td><td>学生（on-policy）</td><td>学生（on-policy）</td><td>数据集/教师（off-policy）</td><td>既有模型或当前策略</td></tr>
+<tr><td><span class="term">监督信号</span></td><td>token 硬标签</td><td>序列级标量（或逐步）奖励</td><td>教师逐 token 软分布</td><td>同模型特权分支逐 token 软分布</td><td>教师软分布/序列硬标签</td><td>成对偏好序</td></tr>
+<tr><td><span class="term">优化目标</span></td><td>$-\sum_t \log\pi(y_t\mid y_{&lt;t},x)$</td><td>$\max \mathbb{E}[r]-\beta\,\mathrm{KL}(\pi\Vert\pi_{ref})$</td><td>$\mathbb{E}_{y\sim\pi_S}\!\left[\mathrm{KL}(\pi_S\Vert\pi_T)\right]$（或 JSD）</td><td>$\mathbb{E}_{\hat y\sim p_S}\!\left[\mathrm{KL}(p_T(\cdot\mid x,y^*)\Vert p_S)\right]$（含逐 token 裁剪）</td><td>$\tau^2\,\mathrm{KL}(q_T^{(\tau)}\Vert q_S^{(\tau)})$ 或 CE on 教师序列</td><td>$-\log\sigma(\beta\log\frac{\pi(y_w)}{\pi_{ref}(y_w)}-\beta\log\frac{\pi(y_l)}{\pi_{ref}(y_l)})$</td></tr>
+<tr><td><span class="term">更新参数</span></td><td>学生全部/LoRA</td><td>策略（+可选 critic/RM）</td><td>学生；教师冻结</td><td>学生侧；教师=初始权重（冻结）或 EMA/信赖域（SDPO）</td><td>学生；教师冻结</td><td>学生；参考模型冻结</td></tr>
+<tr><td><span class="term">推理行为变化</span></td><td>格式与风格固化；覆盖内行为复制</td><td>pass@1 提升、分布锐化</td><td>逼近教师行为；密集纠错</td><td>内化特权信息带来的行为</td><td>逼近教师风格与置信</td><td>偏好方向概率质量重排</td></tr>
+<tr><td><span class="term">额外资源</span></td><td>标注/合成数据管线</td><td>rollout 引擎 + 验证器/RM + 参考模型（+critic）</td><td>教师逐前缀前向推理</td><td>每步双分支前向；特权信息来源</td><td>教师一次生成/离线打分</td><td>偏好标注（人或 LLM 判分）+ 参考模型</td></tr>
+<tr><td><span class="term">典型失效</span></td><td>覆盖不足→记忆化；复制示范错误</td><td>reward hacking；熵坍缩；伪奖励</td><td>师生差距过大；教师 OOD；多样性损失</td><td>特权信息与增益来源存疑；风格 token 主导；自教师塌缩</td><td>分布失配复合；幻觉继承</td><td>off-policy 失效；chosen 似然下降；长度偏置</td></tr>
+</table>
+
+<h2>1.4 图 1：后训练技术全景图</h2>
+
+<div class="fig">
+<pre class="mermaid">
+flowchart TB
+  subgraph SUP["① 监督学习（示范拟合）"]
+    SFT["SFT / Instruction Tuning<br/>硬标签·交叉熵"]
+    DATA["数据构建与筛选<br/>Self-Instruct · LIMA · AlpaGasus · DEITA<br/>MetaMath · OpenMathInstruct"]
+  end
+  subgraph PREF["② 偏好优化（相对比较）"]
+    DPO["DPO · IPO · KTO<br/>ORPO · SimPO · SLiC/RRHF"]
+    ONPREF["在线/迭代偏好学习<br/>Llama 3 六轮 · OAIF · SPPO · Self-Rewarding"]
+  end
+  subgraph RLBOX["③ 奖励驱动优化（RL）"]
+    RLHF["RLHF: RM + PPO<br/>InstructGPT · Ziegler · Stiennon"]
+    RLVR["RLVR: 规则验证器<br/>R1 · Tulu 3 · DeepScaleR"]
+    ALGO["策略优化算法<br/>PPO · GRPO · RLOO · ReMax<br/>Dr.GRPO · DAPO · GSPO"]
+  end
+  subgraph DIST["④ 知识与策略蒸馏"]
+    KD["经典 KD / SeqKD<br/>off-policy"]
+    OPD["OPD 在线策略蒸馏<br/>MiniLLM · GKD · DistiLLM<br/>Thinking Machines 2025 · Qwen3"]
+    OPSD["OPSD 在线策略自蒸馏<br/>Zhao 2026 · SDPO<br/>Skill-SD · LOPD · U-OPSD"]
+  end
+  subgraph SELF["⑤ 数据生成与自改进"]
+    RFT["RFT 拒绝采样微调<br/>STaR · ReST · ReST-EM · V-STaR"]
+    SP["自博弈/自奖励<br/>SPIN · Absolute Zero"]
+  end
+  subgraph SIG["⑥ 监督机制（信号粒度，可被上面所有范式使用）"]
+    ORM["结果监督 Outcome<br/>终答对错 · RM 分数"]
+    PRM["过程监督 Process<br/>PRM800K · Math-Shepherd<br/>PRIME · 隐式 PRM"]
+    FB["文本反馈<br/>报错信息 · judge 评语"]
+  end
+  SFT -->|"教师序列作标签 = SeqKD"| KD
+  KD -->|"+ 学生采样 + 软分布"| OPD
+  OPD -->|"教师换成自身+特权上下文"| OPSD
+  RLHF -->|"闭式重参数化"| DPO
+  RLHF -->|"RM 换成规则验证器"| RLVR
+  RLVR -->|"标量奖励 → 逐 token 分布"| OPSD
+  RFT -->|"采样+过滤 = 离散化 RL"| RLVR
+  SFT -->|"少样本即可对齐（SAH）"| DATA
+  ORM --- PRM
+  PRM -->|"隐式过程奖励 = log 概率比 ≈ 蒸馏信号"| OPD
+  DPO -->|"迭代化·每轮新采样"| ONPREF
+  SP -->|"自评偏好对 + DPO"| ONPREF
+  classDef sig fill:#eef4fb,stroke:#9db8d9;
+  class ORM,PRM,FB sig;
+</pre>
+<p class="figcap"><strong>图 1 · 大语言模型后训练技术全景图。</strong>六大模块是"<strong>监督信号的类型</strong>"层面的分组，不是互斥的技术树：同一方法可同时落在多个模块（如 Qwen3 的 on-policy 蒸馏同时属于④与 RLVR 的替代方案；PRM800K 的过程监督既服务 best-of-N 重排也服务 RL）。虚线区⑥是横切的"信号粒度"维度。连线均对应原始文献明确提出的继承/等价/组合关系（各章给出处）；证据不足的关系未画。缩写：SFT=Supervised Fine-Tuning；DPO=Direct Preference Optimization；RLVR=RL with Verifiable Rewards；GRPO=Group Relative Policy Optimization；OPD/OPSD=On-Policy (Self-)Distillation；RFT=Rejection Sampling Fine-Tuning；PRM=Process Reward Model。</p>
+</div>
+
+<h2>1.5 图 2：四种核心范式的训练机制对照</h2>
+
+<div class="fig">
+<pre class="mermaid">
+flowchart TB
+  subgraph L1["泳道 A · SFT：示范拟合（off-policy）"]
+    A1["输入任务<br/>题目+人工示范"] --> A2["数据生成<br/>人/教师离线写好解答"] --> A3["监督信号<br/>示范 token 硬标签"] --> A4["优化目标<br/>逐 token 交叉熵"] --> A5["参数更新<br/>监督梯度"] --> A6["训练后<br/>格式稳定·覆盖内复制"]
+  end
+  subgraph L2["泳道 B · RL：奖励驱动（on-policy）"]
+    B1["输入任务<br/>题目+验证器"] --> B2["数据生成<br/>学生自采样 G 条轨迹"] --> B3["监督信号<br/>终答对错 ±1（每轨迹 1 个标量）"] --> B4["优化目标<br/>期望奖励 − β·KL(π‖π_ref)"] --> B5["参数更新<br/>GRPO/PPO 策略梯度·组内基线"] --> B6["训练后<br/>pass@1↑·分布锐化"]
+  end
+  subgraph L3["泳道 C · OPD：教师逐 token 指导（on-policy + 外部教师）"]
+    C1["输入任务<br/>题目"] --> C2["数据生成<br/>学生自采样轨迹"] --> C3["监督信号<br/>教师在学生每个前缀上的<br/>下一 token 完整分布（O(N) bits）"] --> C4["优化目标<br/>反向 KL（或 JSD）逐 token 最小化"] --> C5["参数更新<br/>监督式梯度或 RL 式更新<br/>教师冻结"] --> C6["训练后<br/>逼近教师·密集纠错"]
+  end
+  subgraph L4["泳道 D · OPSD：同模型双上下文自蒸馏（on-policy + 特权教师）"]
+    D1["输入任务<br/>题目（学生分支）<br/>题目+参考解/反馈（教师分支）"] --> D2["数据生成<br/>学生自采样轨迹"] --> D3["监督信号<br/>特权条件教师分支的<br/>逐 token 分布（含 KL 裁剪）"] --> D4["优化目标<br/>学生分布→教师分支分布<br/>前向 KL（Zhao 2026）"] --> D5["参数更新<br/>只更新学生侧<br/>教师=初始权重或 EMA"] --> D6["训练后<br/>特权行为内化进权重"]
+  end
+  L1 ~~~ L2
+  L2 ~~~ L3
+  L3 ~~~ L4
+  classDef gen fill:#f2f7f2,stroke:#a8c8a8;
+  classDef sig fill:#eef4fb,stroke:#9db8d9;
+  classDef obj fill:#fdf6ec,stroke:#e3c89a;
+  classDef upd fill:#f5eff8,stroke:#c3a8d8;
+  class A2,B2,C2,D2 gen;
+  class A3,B3,C3,D3 sig;
+  class A4,B4,C4,D4 obj;
+  class A5,B5,C5,D5 upd;
+</pre>
+<p class="figcap"><strong>图 2 · SFT、RL、OPD、OPSD 四范式训练机制对照图（统一案例、统一模块命名与箭头语义）。</strong>四条泳道使用相同案例（96 元题）与相同模块序列：输入 → 数据生成 → 监督信号 → 优化目标 → 参数更新 → 训练后模型。配色：绿=数据生成（谁产生轨迹），蓝=监督信号（信号长什么样），黄=优化目标（数学形式），紫=参数更新（算法）。核心差异一行可读：<strong>B/C/D 三者都在学生自己的轨迹上训练（on-policy），差别只在监督信号的形态——标量 / 外部教师分布 / 自身特权分支分布</strong>；A 的轨迹来自外部（off-policy），因此受分布失配约束（第 7 章 T1/T6）。机制出处：SFT=<a href="https://arxiv.org/abs/2203.02155">InstructGPT</a>；RL-GRPO=<a href="https://arxiv.org/abs/2402.03300">DeepSeekMath</a>、奖励=规则判分见 <a href="https://arxiv.org/abs/2501.12948">R1</a>；OPD=<a href="https://arxiv.org/abs/2306.13649">GKD</a> + <a href="https://thinkingmachines.ai/blog/on-policy-distillation/">TM 2025</a>；OPSD=<a href="https://arxiv.org/abs/2601.18734">Zhao et al. 2026</a>（前向 KL + 逐 token 裁剪）、教师 EMA 变体见 <a href="https://arxiv.org/abs/2601.20802">SDPO</a>。</p>
+</div>
+
+<h2>1.6 术语表（本报告统一用法）</h2>
+
+<table>
+<tr><th style="width:20%">术语</th><th>本报告定义与边界</th></tr>
+<tr><td><span class="term">on-policy / off-policy</span></td><td>按"采样策略与更新策略是否同一"判定，而非"训练中是否产生新数据"。PPO/GRPO 的 minibatch 复用造成轻微 off-policy（clip 容忍）；教师采样数据即使在线产生，对学生更新仍是 off-policy。RLHF 中 RM 训练分布与策略分布的错位是 reward hacking 的根源之一。</td></tr>
+<tr><td><span class="term">示范（demonstration）</span></td><td>完整的 (输入, 期望输出) 对。示范质量上限 = SFT 监督上限。</td></tr>
+<tr><td><span class="term">奖励模型 RM / ORM / PRM</span></td><td>RM：任何把 (x,y) 映射为标量的模型；ORM（outcome）：只看最终结果（含学习式 RM 与规则判分器）；PRM（process）：逐步骤打分。隐式 PRM：由策略/参考模型的对数概率差构造、无需过程标注（<a href="https://arxiv.org/abs/2412.01981">[2412.01981]</a>、<a href="https://arxiv.org/abs/2502.01456">PRIME [2502.01456]</a>）。</td></tr>
+<tr><td><span class="term">参考模型 π_ref</span></td><td>RLHF/RLVR 中冻结的锚点（通常为 SFT 模型），以 KL 惩罚限制策略漂移。它不提供正向监督目标，因此"参考模型 ≠ 教师"。</td></tr>
+<tr><td><span class="term">教师（teacher）</span></td><td>提供被优化目标分布的模型。三种形态：外部强模型（OPD/传统 KD）、同模型特权分支（OPSD）、自身冻结/EMA 副本（SDFT、SDPO 的一类实现）。</td></tr>
+<tr><td><span class="term">特权信息（privileged information）</span></td><td>训练时教师分支可见、部署时学生不可见的信息：参考解、答案 hint、环境报错、judge 评语、技能库、高分辨率视角等。OPSD 家族按特权形态分亚类（第 5 章）。</td></tr>
+<tr><td><span class="term">软监督 / 硬监督</span></td><td>软=分布（logits/概率），硬=选定 token。同一轨迹上软监督每步传一个分布、硬监督每步传一个选择。</td></tr>
+<tr><td><span class="term">RLVR</span></td><td>Reinforcement Learning with Verifiable Rewards：奖励来自可执行验证器（答案比对、单元测试、约束校验），Tulu 3 命名并系统化 <a href="https://arxiv.org/abs/2411.15124">[2411.15124]</a>。</td></tr>
+<tr><td><span class="term">拒绝采样微调 RFT</span></td><td>采样多条→按奖励/正确性过滤→在保留样本上 SFT。可视为"把 RL 的采样-评估循环压扁成离线迭代"的硬标签方法。</td></tr>
+<tr><td><span class="term">奖励黑客（reward hacking）</span></td><td>代理奖励上升而真实目标下降。形式化见 <a href="https://arxiv.org/abs/2209.13085">Skalse et al. [2209.13085]</a>：除特殊情形外代理奖励必然可被过度优化。</td></tr>
+<tr><td><span class="term">证据等级 A/B/C</span></td><td>本报告内部规范：A=有数学推导或直接实验支持（且出处原文核验）；B=作者报告的实验，条件有限或尚缺独立验证；C=机制解释、推断或未充分验证假设。非通用学术评级。</td></tr>
+</table>
+
+<div class="pager">
+  <a href="index.html">← 总览</a>
+  <a href="02-sft.html">第 2 章 · SFT 深度机制 →</a>
+</div>
+
+<p class="footer-note">后训练技术体系深度调研 · 检索截止 2026-10-22 · 所有 arXiv 编号经 arXiv API/官网核验 · 证据分级为本项目内部规范 · <a href="literature.html">完整文献库</a></p>
+
+</body>
+</html>

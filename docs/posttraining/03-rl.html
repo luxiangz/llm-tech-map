@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>03 · RL 深度机制：从 RLHF 到 RLVR</title>
+
+<!-- 霞鹜文楷：开源可商用的中文楷体风格字体；加载失败时自动回退到微软雅黑 -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/lxgw-wenkai-webfont@1.7.0/style.css">
+
+<script>
+window.MathJax = {
+  tex: { inlineMath: [['$','$'],['\\(','\\)']], displayMath: [['$$','$$'],['\\[','\\]']], processEscapes: true },
+  svg: { fontCache: 'global' }
+};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js" async></script>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+<script>mermaid.initialize({ startOnLoad: true, theme: "neutral", fontFamily: '"Microsoft YaHei", "PingFang SC", sans-serif' });</script>
+
+<style>
+  body { font-family: "LXGW WenKai", "Microsoft YaHei", "PingFang SC", "Segoe UI", sans-serif; font-size: 17.5px; line-height: 1.85; letter-spacing: 0.01em; color: #26292e; background: #fdfdfd; max-width: 1000px; margin: 0 auto; padding: 56px 28px 96px; }
+  h1, h2, h3, h4, .kicker { font-family: "Microsoft YaHei", "PingFang SC", sans-serif; line-height: 1.4; }
+  h1 { font-size: 30px; margin: 10px 0 6px; color: #1a1d21; }
+  h2 { font-size: 23px; margin-top: 2.4em; padding-bottom: 6px; border-bottom: 2px solid #e8eaee; color: #1f2733; }
+  h3 { font-size: 19px; margin-top: 1.8em; color: #2c3e50; }
+  h4 { font-size: 17.5px; margin-top: 1.4em; color: #3a4a5c; }
+  .kicker { font-size: 13px; letter-spacing: 0.22em; text-transform: uppercase; color: #7a8699; margin-bottom: 4px; }
+  code, pre { font-family: "Cascadia Code", Consolas, "Microsoft YaHei", monospace; }
+  code { background: #f2f4f7; padding: 1px 6px; border-radius: 5px; font-size: 0.88em; color: #35414f; }
+  pre { background: #f7f8fa; border: 1px solid #e6e9ee; border-radius: 10px; padding: 14px 16px; overflow-x: auto; font-size: 14.5px; line-height: 1.6; }
+  pre.mermaid { background: #fbfcfd; text-align: center; }
+  .formula { background: #f6f8fb; border: 1px solid #e6ebf2; border-radius: 10px; padding: 14px 18px; margin: 14px 0; overflow-x: auto; font-size: 1.02em; }
+  table { border-collapse: collapse; width: 100%; margin: 16px 0; font-size: 14.8px; }
+  th, td { border: 1px solid #dfe3ea; padding: 7px 11px; text-align: left; vertical-align: top; }
+  th { background: #f0f3f7; font-family: "Microsoft YaHei", "PingFang SC", sans-serif; font-weight: 600; }
+  tr:nth-child(even) td { background: #fafbfd; }
+  blockquote { margin: 16px 0; padding: 10px 18px; border-left: 4px solid #4a7dbd; background: #f3f7fc; border-radius: 0 8px 8px 0; color: #33414f; }
+  blockquote p { margin: 6px 0; }
+  a { color: #2c5fa8; text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  .evi { display: inline-block; font-family: "Microsoft YaHei", sans-serif; font-size: 11.5px; border-radius: 4px; padding: 0 5px; margin-left: 4px; vertical-align: 1px; border: 1px solid; line-height: 1.5; }
+  .eviA { color: #1c7a43; border-color: #9fd6b6; background: #f0faf4; }
+  .eviB { color: #9c6b0f; border-color: #ecd39a; background: #fdf8ec; }
+  .eviC { color: #a0522d; border-color: #e8c4ab; background: #fdf4ee; }
+  .fig { border: 1px solid #e2e6ec; border-radius: 12px; background: #fff; padding: 18px 14px 8px; margin: 22px 0; }
+  .figcap { font-family: "Microsoft YaHei", "PingFang SC", sans-serif; font-size: 14px; color: #5a6572; text-align: center; padding: 8px 12px 10px; line-height: 1.6; }
+  .topnav { position: sticky; top: 0; z-index: 50; background: rgba(253,253,253,.96); border-bottom: 1px solid #e8eaee; padding: 8px 0 6px; margin: 0 -6px 18px; font-family: "Microsoft YaHei", sans-serif; font-size: 13.5px; display: flex; flex-wrap: wrap; gap: 4px 12px; justify-content: center; }
+  .topnav a { color: #2c5fa8; }
+  .topnav a.here { color: #111; font-weight: 700; border-bottom: 2px solid #4a7dbd; padding-bottom: 2px; }
+  .pager { display: flex; justify-content: space-between; margin-top: 48px; font-family: "Microsoft YaHei", sans-serif; font-size: 14.5px; }
+  .footer-note { margin-top: 28px; padding-top: 12px; border-top: 1px dashed #d8dde5; color: #7a8699; font-size: 13.5px; }
+  .term { font-weight: 700; }
+</style>
+</head>
+<body>
+
+<a href="https://luxiangz.github.io/llm-tech-map/" style="position:fixed;top:12px;right:14px;z-index:99;background:#f6f7f9;border:1px solid #e2e5ea;border-radius:999px;padding:4px 12px;font-size:14px;color:#2c5fa8;text-decoration:none;box-shadow:0 1px 4px rgba(0,0,0,.08)">← 技术地图首页</a>
+
+<nav class="topnav">
+  <a href="index.html">总览</a><a href="01-concepts-case.html">概念与案例</a><a href="02-sft.html">SFT</a><a href="03-rl.html" class="here">RL</a><a href="04-opd.html">OPD</a><a href="05-opsd.html">OPSD</a><a href="06-related.html">偏好与相关</a><a href="07-theory.html">理论统一</a><a href="08-evidence-cost.html">证据与成本</a><a href="09-evolution.html">演进与争议</a><a href="10-selection.html">选型</a><a href="comparison.html">对照表</a><a href="literature.html">文献库</a><a href="gaps.html">缺口</a>
+</nav>
+
+<p class="kicker">大语言模型后训练技术体系深度调研 · 第 3 章</p>
+<h1>RL 深度机制：从 RLHF 到可验证奖励的 RLVR</h1>
+
+<p><strong>本章结论：</strong>RL 的机制链条是"把好环且回答压缩成标量 → 在学生自己的 rollout 上用策略梯度重排概率质量 → 用 KL/信任域约束防止策略漂出代理奖励的有效区"。2022–2026 年的全部算法演进沿三条清晰的线展开：<strong>(1) 去 critic 化</strong>（PPO→GRPO/RLOO/ReMax：用同题多样本基线替代 value network）；<strong>(2) 奖励客观化</strong>（学习式 RM→规则验证器 RLVR：reward hacking 风险换标注成本）；<strong>(3) 偏差修补</strong>（Dr.GRPO/DAPO：长度归一化、std 归一化、熵坍缩、全对全错组的零梯度）。证据边界同样清晰：RLVR 已被充分证明的是"潜力提取+可靠性"（pass@1、cons@k）；"能力扩展"（超越 base 模型可达集）在标准算法+常规题池下证据偏向否定，仅在长时程/外部注入/更强 base 等附加条件下有条件成立（第 9 章专论）。</p>
+
+<h2>3.1 RLHF 管线与奖励模型</h2>
+
+<p>四部曲奠定范式：<a href="https://arxiv.org/abs/1706.03741">Christiano et al. 2017 [1706.03741]</a>（轨迹片段偏好比较学习奖励函数，"比较比绝对打分可靠"）→ <a href="https://arxiv.org/abs/1909.08593">Ziegler et al. 2019 [1909.08593]</a>（首次用于 GPT-2；指出 RM 必须在策略自身样本分布上保持有效）→ <a href="https://arxiv.org/abs/2009.01325">Stiennon et al. 2020 [2009.01325]</a>（摘要 RLHF 人评超过人工参考摘要——RL 可超越最优示范）→ <a href="https://arxiv.org/abs/2203.02155">InstructGPT [2203.02155]</a>（三阶段定型：SFT 13k 示范 → RM 33k 比较 → PPO 31k prompts；RM 只用 6B，因 175B RM 训练不稳定）。</p>
+
+<div class="formula">
+<p><strong>奖励模型（Bradley–Terry 成对比较极大似然）：</strong></p>
+$$
+\mathcal{L}_{\mathrm{RM}}(\phi) = -\,\mathbb{E}_{(x,y_w,y_l)\sim\mathcal{D}}\Big[\log \sigma\big(r_\phi(x,y_w)-r_\phi(x,y_l)\big)\Big]
+$$
+<p><strong>RLHF 总目标（每 prompt 的 KL 正则上下文 bandit）：</strong></p>
+$$
+\max_{\pi}\ \mathbb{E}_{y\sim\pi(\cdot|x)}[r(x,y)] - \beta\, \mathrm{KL}\big(\pi(\cdot|x)\,\|\,\pi_{\mathrm{ref}}(\cdot|x)\big)
+$$
+</div>
+
+<p>BT 损失对分数整体平移不变（只有差值有意义）；分数差大时 σ 饱和、梯度消失（自动降权"已学好"的样本）；对噪声/模糊偏好对敏感（<a href="https://arxiv.org/abs/2401.06080">Secrets of RLHF Part II [2401.06080]</a> 专题）。RM 是代理目标：<a href="https://arxiv.org/abs/2209.13085">Skalse et al. [2209.13085]</a> 形式化证明除特殊情形外代理奖励必然可被过度优化（unhackability 条件一般不成立）。<span class="evi eviA">A</span></p>
+
+<h2>3.2 策略优化算法：PPO → 无 critic 家族</h2>
+
+<h3>3.2.1 PPO（<a href="https://arxiv.org/abs/1707.06347">Schulman et al. 2017 [1707.06347]</a>）</h3>
+<div class="formula">
+$$
+L^{\mathrm{CLIP}}(\theta)=\hat{\mathbb{E}}_t\Big[\min\big(r_t(\theta)\hat{A}_t,\ \mathrm{clip}(r_t(\theta),\,1-\epsilon,\,1+\epsilon)\,\hat{A}_t\big)\Big],\qquad r_t(\theta)=\frac{\pi_\theta(a_t|s_t)}{\pi_{\theta_{\mathrm{old}}}(a_t|s_t)}
+$$
+</div>
+<p>RLHF 场景 token 级 MDP 化（$s_t=(x,y_{&lt;t})$，$a_t=y_t$），KL 惩罚摊到每 token、RM 分数只在序列末给：</p>
+<div class="formula">
+$$
+r_t=\begin{cases}-\beta\log\dfrac{\pi_\theta(y_t|\cdot)}{\pi_{\mathrm{ref}}(y_t|\cdot)}, & t&lt;T\\[4pt] r_\phi(x,y)-\beta\log\dfrac{\pi_\theta(y_T|\cdot)}{\pi_{\mathrm{ref}}(y_T|\cdot)}, & t=T\end{cases}
+$$
+</div>
+<p>优势由 GAE + 独立 critic $V_\psi$ 给出。系统需同时驻留 4 个大模型（policy/reference/RM/critic），这是"RL 贵"的结构性根源。minibatch 复用使第 2 个 epoch 起轻微 off-policy，clip 即为容忍此滞后设计的软信任域（<a href="https://arxiv.org/abs/2402.14740">RLOO [2402.14740]</a> 实测 RLHF 复现中 clip 触发率平均 &lt;5%——实践上几乎 on-policy，clip 在此场景接近冗余）。<span class="evi eviA">A</span></p>
+
+<h3>3.2.2 GRPO（<a href="https://arxiv.org/abs/2402.03300">DeepSeekMath, Shao et al. 2024 [2402.03300]</a>）</h3>
+<div class="formula">
+$$
+\mathcal{J}_{\mathrm{GRPO}}(\theta)=\mathbb{E}_{q\sim P(Q),\,\{o_i\}_{i=1}^{G}\sim\pi_{\theta_{\mathrm{old}}}}\Bigg[\frac{1}{G}\sum_{i=1}^{G}\frac{1}{|o_i|}\sum_{t=1}^{|o_i|}\Big(\min\big[\rho_{i,t}\hat{A}_{i},\ \mathrm{clip}(\rho_{i,t},1-\epsilon,1+\epsilon)\hat{A}_{i}\big]-\beta\,D_{\mathrm{KL}}\big[\pi_\theta\|\pi_{\mathrm{ref}}\big]\Big)\Bigg]
+$$
+$$
+\hat{A}_{i}=\tilde r_i=\frac{r_i-\mathrm{mean}(\mathbf r)}{\mathrm{std}(\mathbf r)},\qquad \rho_{i,t}=\frac{\pi_\theta(o_{i,t}\mid q,o_{i,&lt;t})}{\pi_{\theta_{\mathrm{old}}}(o_{i,t}\mid q,o_{i,&lt;t})}
+$$
+</div>
+<p>与 PPO 的三点差异（论文 HTML 核验）：<strong>(1) 无 value network</strong>（省一个同规模模型的显存与计算）；<strong>(2) 优势 = 组内标准化奖励</strong>（与 RM 的成对比较训练方式同构）；<strong>(3) KL 直接进损失</strong>（k3 无偏估计器），不摊入奖励。超参：$G=64$、$\beta=0.04$。已知偏差：长度归一化 $1/|o_i|$ 与 std 除法会人为拉长回答、错误输出尤甚（<a href="https://arxiv.org/abs/2503.20783">Dr.GRPO [2503.20783]</a>：去两处归一化后 token 效率提升且 7B 达 AIME 2024 43.3%）；全对/全错组梯度为零（DAPO 动态采样针对）；无熵正则时长训练熵坍缩。<span class="evi eviA">A</span></p>
+
+<h3>3.2.3 RLOO / ReMax：无 critic 的另两条路</h3>
+<table>
+<tr><th style="width:14%">算法</th><th>基线构造</th><th>性质与证据</th></tr>
+<tr><td><a href="https://arxiv.org/abs/2402.14740">RLOO [2402.14740]</a></td><td>同题采 $k$ 条，第 $i$ 条的基线 = 其余 $k{-}1$ 条的平均奖励（leave-one-out）</td><td>LOO 基线与样本独立故<strong>无偏</strong>；"PPO is not the right tool for RLHF"（GAE 在确定性转移+轨迹级奖励+强初始化下无谓引入偏差；clip 触发率&lt;5%）。Pythia-6.9B/Llama-7B：TL;DR 77.9 vs PPO 67.6；HH 64.1 vs 32.0。<span class="evi eviA">A</span></td></tr>
+<tr><td><a href="https://arxiv.org/abs/2310.10505">ReMax [2310.10505]</a></td><td>贪心解码回复的奖励作基线（同题、零额外 RM 调用）+ 长度惩罚</td><td>免 critic、省内存、性能不降。贪心回复非同分布采样，基线有偏但实践有效。<span class="evi eviB">B</span></td></tr>
+</table>
+<p>三者同属"同题多样本基线"家族：GRPO 用组均值（leave-all-in，有偏省算力）、RLOO 用严格无偏 LOO、ReMax 用贪心样本。RLHF 任务近似单步 bandit + 确定性转移（预训练+SFT 模型 ~60% 概率质量在 top-1 token），是该家族成立的任务特性。<span class="evi eviA">A</span></p>
+
+<h2>3.3 结果奖励 vs 过程奖励</h2>
+<table>
+<tr><th style="width:15%">信号</th><th>提供的信息</th><th>证据</th><th>代价与风险</th></tr>
+<tr><td><span class="term">ORM（结果）</span></td><td>每条轨迹 1 比特：整体对错。无中间归因；负分轨迹的所有 token（含正确步骤）被无差别压低</td><td>GSM8K verifier <a href="https://arxiv.org/abs/2110.14168">[2110.14168]</a>：best-of-N 重排显著提升。<a href="https://arxiv.org/abs/2211.14275">Uesato 2022 [2211.14275]</a>：ORM 也能把终答错误率 16.8%→12.7%<span class="evi eviA">A</span></td><td>credit assignment 病态；标签便宜可全自动（RLVR 基础）</td></tr>
+<tr><td><span class="term">PRM（过程）</span></td><td>逐步骤稠密信号：定位早期错误、区分"方法对计算错"与"方向错"</td><td><a href="https://arxiv.org/abs/2305.20050">Let's Verify [2305.20050]</a>：PRM800K ~800K 步标签；best-of-1860 下 MATH 500 子集 PRM 78.2% vs ORM 72.4%；OOD 72.9 vs 63.8；active learning 数据效率 2.6×。Uesato：步骤错误率只有 PRM 能降（14.0%→3.4%）。<a href="https://arxiv.org/abs/2312.08935">Math-Shepherd [2312.08935]</a>：MC 续写自动估计步标签，PRM-PPO Mistral-7B GSM8K 84.1% 超 ORM-PPO 81.8%<span class="evi eviA">A</span></td><td>人工标注贵；自动标注有噪声（HE ~86% 准确率）；PRM 学的是"当前策略分布下的步骤价值"，策略更新后标签漂移</td></tr>
+<tr><td><span class="term">隐式过程奖励</span></td><td>由策略/参考模型对数概率差构造的逐步信号，免过程标注</td><td><a href="https://arxiv.org/abs/2412.01981">Free Process Rewards [2412.01981]</a>：$r^t=q^t-q^{t-1}$，$q^t=\beta\log\mathbb E_{\pi_{ref}}[e^{r/\beta}]$；&lt;1/38 数据胜 Math-Shepherd。<a href="https://arxiv.org/abs/2502.01456">PRIME [2502.01456]</a>：只用 outcome 标签在线更新隐式 PRM，样本效率 2.5×；Eurus-2-7B-PRIME AIME24 26.7<span class="evi eviA">A</span></td><td>静态隐式奖励会被过度优化，须在线更新（PRIME 强调）</td></tr>
+</table>
+<p>信息论视角：长度 $T$ 的轨迹上 ORM 提供 $O(1)$ 比特、PRM 提供 $O(T)$ 比特——这与 OPD 的"每 token 一个分布"（$O(N)$ 比特）同属"信号升维"谱系；隐式过程奖励与蒸馏在数学上相通（第 7 章 T5）。</p>
+
+<h2>3.4 RLVR：里程碑系统与证据</h2>
+
+<h3>3.4.1 Tulu 3（<a href="https://arxiv.org/abs/2411.15124">[2411.15124]</a>，命名并系统化 RLVR）</h3>
+<p>开源全配方 SFT(939,344 prompts)→DPO(271k–334k 偏好)→RLVR(29,946 prompts：GSM8K+MATH+可验证指令遵循，verifier = 答案精确匹配 / IFEval 型约束校验)。8B 阶段增益：IFEval 72.8→81.1(DPO)→82.4(RLVR)；GSM8K 76.2→84.3→87.6；MATH 31.5→42.0→43.7——DPO 拿走最大跳变，RLVR 在其上稳定 +1–3 点。负结果同样重要：online DPO、RFT 未带来可靠提升；附录记录 RLVR 在 IFEval 上的 overoptimization。成本：PPO≈28h×2 节点 vs DPO≈4h×1 节点（平均分相近）。<span class="evi eviA">A</span></p>
+
+<h3>3.4.2 DeepSeek-R1（<a href="https://arxiv.org/abs/2501.12948">[2501.12948]</a>，Nature 645）</h3>
+<p><strong>R1-Zero</strong>：V3-Base + GRPO 直训，规则奖励（accuracy + format + language consistency），无 SFT 冷启动——涌现自我反思与"aha moment"；AIME 2024 71.0%（cons@64 86.7%）。<strong>R1</strong> 四阶段：冷启动 SFT（数千条长 CoT）→ 推理 RL → 拒绝采样 SFT（~600k 推理 + ~200k 非推理 ≈ 800k 样本回炉 V3-Base）→ 全场景 RL（规则+RM 混合，RM 仅最后 400/1700 步引入以防 hacking）。AIME 2024 79.8%、MATH-500 97.3%。<strong>蒸馏节（与 OPD 对照的关键证据）</strong>：800k 样本纯 SFT 蒸馏六个学生，R1-Distill-Qwen-32B AIME24 72.6，而同 base 直接大规模 RL 的 R1-Zero-Qwen-32B 仅 47.0——小模型上"蒸馏 &gt; 直接 RL"，但"推边界仍需更强 base + 更大规模 RL"。<span class="evi eviA">A</span></p>
+
+<h3>3.4.3 Qwen3（<a href="https://arxiv.org/abs/2505.09388">[2505.09388]</a>）</h3>
+<p>旗舰四阶段：长 CoT 冷启动 SFT → 推理 RL（GRPO，仅 3,995 个 query-verifier 对，"少题高深度"）→ Thinking Mode Fusion SFT（/think 与 /no_think 融合）→ 通用 RL（20+ 任务，规则+模型奖励混合）。小模型走 strong-to-weak 两阶段蒸馏（off-policy 教师采样 + on-policy logits 对齐）——Table 21 的 RL vs on-policy 蒸馏对比是第 4 章的核心证据。Qwen3-235B-A22B-Thinking：AIME'24 85.7、AIME'25 81.5、LiveCodeBench v5 70.7。<span class="evi eviA">A</span></p>
+
+<h3>3.4.4 算法改进线速览</h3>
+<table>
+<tr><th style="width:15%">工作</th><th>针对的病灶</th><th>机制与结果</th></tr>
+<tr><td><a href="https://arxiv.org/abs/2503.14476">DAPO [2503.14476]</a></td><td>熵坍缩、全对全错零梯度、长样本稀释、超长截断</td><td>Clip-Higher（$\epsilon_{low}{=}0.2/\epsilon_{high}{=}0.28$ 解耦）、动态采样、token 级 loss、超长软惩罚；去 KL+规则奖励。Qwen2.5-32B AIME 50 分（朴素 GRPO 30）；50% 步数达 R1-Zero-Qwen-32B 水平。<span class="evi eviA">A</span></td></tr>
+<tr><td><a href="https://arxiv.org/abs/2507.18071">GSPO [2507.18071]</a></td><td>token 级比率在 MoE 上不稳</td><td>序列级似然比替代 token 级；用于 Qwen3 训练。<span class="evi eviB">B</span></td></tr>
+<tr><td><a href="https://arxiv.org/abs/2505.22617">熵机制 [2505.22617]</a></td><td>探索坍缩</td><td>经验律 $R=-a e^{H}+b$；熵演化由动作概率与 logit 变化协方差主导；Clip-Cov/KL-Cov 只约束高协方差 token。<span class="evi eviA">A</span></td></tr>
+<tr><td>DeepScaleR（HF 模型卡，无 arXiv）</td><td>"RL 需要大数据大算力"的迷思</td><td>1.5B 蒸馏模型 + 40k 题 + 课程 + GRPO：AIME'24 43.1%（8→32 A100）。<span class="evi eviB">B</span></td></tr>
+</table>
+
+<h2>3.5 训练稳定性：reward hacking、KL、熵</h2>
+<ul>
+<li><strong>reward hacking 的实证形态</strong>：<a href="https://arxiv.org/abs/2307.04964">Secrets of RLHF Part I [2307.04964]</a> 记录 pattern collapse——策略"通过特定模式欺骗 RM 获得异常高分"，reward/loss 与人评脱钩；有效监控指标是 <strong>PPL、回复长度、与 SFT 的 KL</strong>，而非 reward/loss；"RM 质量决定策略上界"。<span class="evi eviA">A</span></li>
+<li><strong>KL 的双重角色与分歧</strong>：Secrets Part I 结论"只有策略约束（KL 或熵惩罚）能提供长效稳定优化"（与 Anthropic 0.001 小权重实践相反）；DAPO 在规则奖励下直接去 KL。调和立场：<strong>学习式 RM 场景 KL 必要（防 OOD hacking），规则奖励场景可去（奖励不可 hack）</strong>。<span class="evi eviB">B</span></li>
+<li><strong>熵坍缩</strong>：REINFORCE 类梯度天然压低被惩罚 token 概率 → 分布变尖 → 探索死亡；DAPO Clip-Higher（低概率探索 token 的上升上限从 1.2 放宽到 1.28）与 Clip-Cov/KL-Cov 是两类解法。<span class="evi eviA">A</span></li>
+</ul>
+
+<h2>3.6 回答任务书问题 5.1-3 至 5.1-7</h2>
+<h3>Q3 RL 如何利用奖励优化策略？</h3>
+<p>五步机制链：标量化（好环且回答→一个数）→ 策略梯度（正优势回复的 token 概率升、负优势降；基线只降方差不改方向）→ 信任域（clip + KL 双保险防漂出代理奖励有效区）→ 闭环迭代（奖励持续在当前策略分布上评估——与一切开环拟合的本质差异）→ credit assignment（靠基线/GAE/PRM 解决"哪步导致好坏"）。<span class="evi eviA">A</span></p>
+
+<h3>Q4 奖励优化与直接拟合标准答案的区别？</h3>
+<table>
+<tr><th>维度</th><th>拟合标准答案（SFT）</th><th>奖励优化（RL）</th></tr>
+<tr><td>信号</td><td>稠密硬标签（每步有目标）</td><td>稀疏标量（序列级 1 个或逐步 PRM）</td></tr>
+<tr><td>梯度语义</td><td>只在 gold token 上升</td><td>正优势全序列升、<strong>负优势全序列降（含负梯度）</strong></td></tr>
+<tr><td>数据分布</td><td>别人的轨迹（开环）</td><td>自己的 rollout（闭环纠错）</td></tr>
+<tr><td>上界</td><td>≤ 示范质量</td><td>可超教师（Stiennon 超人工参考；可验证奖励下超越最优演示）<span class="evi eviA">A</span></td></tr>
+<tr><td>可微性</td><td>需逐 token gold</td><td>奖励可任意不可微（判分器/RM/人评）</td></tr>
+<tr><td>负样本</td><td>不包含</td><td>显式利用（负梯度/偏好/RLOO 比较）</td></tr>
+<tr><td>失败</td><td>分布外退化、复制错误</td><td>reward hacking、熵坍缩、伪奖励</td></tr>
+</table>
+<p>实证锚点：Math-Shepherd 中 RFT 79.0% vs PRM-PPO 84.1%（GSM8K, Mistral-7B）——"把 RL 采到的好答案拿去 SFT"与"真 RL 优化"的差距。<span class="evi eviA">A</span></p>
+
+<h3>Q5 结果奖励与过程奖励分别提供什么信息？</h3>
+<p>见 3.3 节表格：ORM 给轨迹级 credit（1 比特，可全自动）；PRM 给逐步稠密 credit（能定位早期错误、约束推理过程本身）。关键交叉证据：Math-Shepherd 的自动 PRM 在 MATH 上反超 PRM800K 人工 PRM——<strong>PRM 质量强依赖与目标策略分布的匹配（分布匹配 &gt; 标注来源）</strong>。<span class="evi eviA">A</span></p>
+
+<h3>Q6 SFT 与 RL 的成本/稳定性/探索/数据效率比较</h3>
+<table>
+<tr><th>维度</th><th>SFT（含蒸馏）</th><th>RL（RLVR）</th><th>证据</th></tr>
+<tr><td>成本</td><td>单次前向+反传；Qwen3 小模型 on-policy 蒸馏 1,800 GPU 时；Tulu 3 DPO 4h×1 节点</td><td>每步 rollout（DAPO 512 prompt×16 rollout）+多模型驻留；同起点 RL 17,920 GPU 时（≈10×）；Tulu 3 PPO≈7–14× DPO</td><td>Qwen3 Table 21、Tulu 3、DAPO <span class="evi eviA">A</span></td></tr>
+<tr><td>稳定性</td><td>高（监督损失）</td><td>低：熵坍缩、长度漂移、MoE 崩溃、overoptimization；需 KL/clip/动态采样护栏</td><td>Dr.GRPO、GSPO、DAPO、Tulu 3 B.4 <span class="evi eviA">A</span></td></tr>
+<tr><td>探索</td><td>无（上限=示范覆盖）</td><td>有（R1-Zero aha moment），但受 base 支撑集与采样预算约束</td><td>R1 vs Invisible Leash <span class="evi eviB">B</span></td></tr>
+<tr><td>数据效率</td><td>双向极端：LIMO 817 条激活推理（格式/模板高效）；高质量长 CoT 本身昂贵</td><td>只需题+验证器（Qwen3 RL 仅 3,995 对；DeepScaleR 40k 题），但每题耗大量 rollout</td><td>LIMO、Qwen3、DeepScaleR <span class="evi eviB">B</span></td></tr>
+</table>
+
+<h3>Q7 RL 优于纯 SFT 的条件与证据边界</h3>
+<ol>
+<li><strong>可验证域 + 可靠廉价 verifier</strong>（数学/代码/格式约束）。【A】</li>
+<li><strong>base 已具备潜藏能力</strong>（高 pass@large-k）——RL 是"锐化/召回"；base 先验弱则增益有限甚至伪增益（Spurious Rewards 的 Llama3/OLMo2 反例）。【B】</li>
+<li><strong>目标是可靠性而非新增覆盖</strong>（pass@1、cons@k）。【A/B】</li>
+<li><strong>SFT/蒸馏先打底</strong>（格式稳定），RL 收尾。【A/B】</li>
+</ol>
+<p><strong>证据边界（何时不选 RL）：</strong>小模型+有强教师时蒸馏占优（R1：32B 蒸馏 72.6 vs 直 RL 47.0；Qwen3：74.4 vs 67.6 且 1/10 算力）【A】；非可验证任务 RLVR 原生不可用，引入 RM 即带回 hacking 风险【A/B】；"RL 创造新能力"的强主张在标准算法+常规题池下证据不足（第 9 章）【B】。</p>
+
+<div class="pager">
+  <a href="02-sft.html">← 第 2 章 · SFT</a>
+  <a href="04-opd.html">第 4 章 · OPD 深度机制 →</a>
+</div>
+
+<p class="footer-note">后训练技术体系深度调研 · 检索截止 2026-10-22 · 编号勘误：RLOO=2402.14740（非 2402.14730）；Secrets II=2401.06080（非 2401.01312）；RLAIF=2309.00267（非 2309.00255）· <a href="literature.html">完整文献库</a></p>
+
+</body>
+</html>

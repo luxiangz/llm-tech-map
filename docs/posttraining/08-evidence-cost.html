@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>08 · 实验证据与计算成本比较</title>
+
+<!-- 霞鹜文楷：开源可商用的中文楷体风格字体；加载失败时自动回退到微软雅黑 -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/lxgw-wenkai-webfont@1.7.0/style.css">
+
+<script>
+window.MathJax = {
+  tex: { inlineMath: [['$','$'],['\\(','\\)']], displayMath: [['$$','$$'],['\\[','\\]']], processEscapes: true },
+  svg: { fontCache: 'global' }
+};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js" async></script>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+<script>mermaid.initialize({ startOnLoad: true, theme: "neutral", fontFamily: '"Microsoft YaHei", "PingFang SC", sans-serif' });</script>
+
+<style>
+  body { font-family: "LXGW WenKai", "Microsoft YaHei", "PingFang SC", sans-serif; font-size: 17.5px; line-height: 1.85; letter-spacing: 0.01em; color: #26292e; background: #fdfdfd; max-width: 1000px; margin: 0 auto; padding: 56px 28px 96px; }
+  h1, h2, h3, h4, .kicker { font-family: "Microsoft YaHei", "PingFang SC", sans-serif; line-height: 1.4; }
+  h1 { font-size: 30px; margin: 10px 0 6px; color: #1a1d21; }
+  h2 { font-size: 23px; margin-top: 2.4em; padding-bottom: 6px; border-bottom: 2px solid #e8eaee; color: #1f2733; }
+  h3 { font-size: 19px; margin-top: 1.8em; color: #2c3e50; }
+  h4 { font-size: 17.5px; margin-top: 1.4em; color: #3a4a5c; }
+  .kicker { font-size: 13px; letter-spacing: 0.22em; text-transform: uppercase; color: #7a8699; margin-bottom: 4px; }
+  code, pre { font-family: "Cascadia Code", Consolas, "Microsoft YaHei", monospace; }
+  code { background: #f2f4f7; padding: 1px 6px; border-radius: 5px; font-size: 0.88em; color: #35414f; }
+  pre { background: #f7f8fa; border: 1px solid #e6e9ee; border-radius: 10px; padding: 14px 16px; overflow-x: auto; font-size: 14.5px; line-height: 1.6; }
+  pre.mermaid { background: #fbfcfd; text-align: center; }
+  .formula { background: #f6f8fb; border: 1px solid #e6ebf2; border-radius: 10px; padding: 14px 18px; margin: 14px 0; overflow-x: auto; font-size: 1.02em; }
+  table { border-collapse: collapse; width: 100%; margin: 16px 0; font-size: 14.8px; }
+  th, td { border: 1px solid #dfe3ea; padding: 7px 11px; text-align: left; vertical-align: top; }
+  th { background: #f0f3f7; font-family: "Microsoft YaHei", "PingFang SC", sans-serif; font-weight: 600; }
+  tr:nth-child(even) td { background: #fafbfd; }
+  blockquote { margin: 16px 0; padding: 10px 18px; border-left: 4px solid #4a7dbd; background: #f3f7fc; border-radius: 0 8px 8px 0; color: #33414f; }
+  blockquote p { margin: 6px 0; }
+  a { color: #2c5fa8; text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  .evi { display: inline-block; font-family: "Microsoft YaHei", sans-serif; font-size: 11.5px; border-radius: 4px; padding: 0 5px; margin-left: 4px; vertical-align: 1px; border: 1px solid; line-height: 1.5; }
+  .eviA { color: #1c7a43; border-color: #9fd6b6; background: #f0faf4; }
+  .eviB { color: #9c6b0f; border-color: #ecd39a; background: #fdf8ec; }
+  .eviC { color: #a0522d; border-color: #e8c4ab; background: #fdf4ee; }
+  .topnav { position: sticky; top: 0; z-index: 50; background: rgba(253,253,253,.96); border-bottom: 1px solid #e8eaee; padding: 8px 0 6px; margin: 0 -6px 18px; font-family: "Microsoft YaHei", sans-serif; font-size: 13.5px; display: flex; flex-wrap: wrap; gap: 4px 12px; justify-content: center; }
+  .topnav a { color: #2c5fa8; }
+  .topnav a.here { color: #111; font-weight: 700; border-bottom: 2px solid #4a7dbd; padding-bottom: 2px; }
+  .pager { display: flex; justify-content: space-between; margin-top: 48px; font-family: "Microsoft YaHei", sans-serif; font-size: 14.5px; }
+  .footer-note { margin-top: 28px; padding-top: 12px; border-top: 1px dashed #d8dde5; color: #7a8699; font-size: 13.5px; }
+  .term { font-weight: 700; }
+</style>
+</head>
+<body>
+
+<a href="https://luxiangz.github.io/llm-tech-map/" style="position:fixed;top:12px;right:14px;z-index:99;background:#f6f7f9;border:1px solid #e2e5ea;border-radius:999px;padding:4px 12px;font-size:14px;color:#2c5fa8;text-decoration:none;box-shadow:0 1px 4px rgba(0,0,0,.08)">← 技术地图首页</a>
+
+<nav class="topnav">
+  <a href="index.html">总览</a><a href="01-concepts-case.html">概念与案例</a><a href="02-sft.html">SFT</a><a href="03-rl.html">RL</a><a href="04-opd.html">OPD</a><a href="05-opsd.html">OPSD</a><a href="06-related.html">偏好与相关</a><a href="07-theory.html">理论统一</a><a href="08-evidence-cost.html" class="here">证据与成本</a><a href="09-evolution.html">演进与争议</a><a href="10-selection.html">选型</a><a href="comparison.html">对照表</a><a href="literature.html">文献库</a><a href="gaps.html">缺口</a>
+</nav>
+
+<p class="kicker">大语言模型后训练技术体系深度调研 · 第 8 章</p>
+<h1>实验证据与计算成本：横向比较的事实基础</h1>
+
+<p><strong>本章结论：</strong>所有可靠的成本数字都指向同一方向——<strong>监督/蒸馏类方法比在线 RL 便宜一到两个数量级</strong>：Qwen3 官方对照（同起点 8B）：on-policy 蒸馏 1,800 GPU 时 &gt; RL 17,920 GPU 时（AIME'24 74.4 vs 67.6）；Tulu 3：PPO≈7–14× DPO 成本；TM 博客：OPD 对齐同水平省 9× FLOPs / 18× GPU 时，学习 RL 策略省 50–100×。系统侧：RLHF 迭代时间中 rollout 生成可占 81.2%（NeMo-Aligner 基线），因此 colocate/分离架构与生成引擎优化是 RL 工程的主战场。方法侧的资源结构差异必须先看清：<strong>PPO 驻留 4 个大模型、GRPO 3 个、OPD 2 个（学生+教师，教师只前向）、DPO 2 个（学生+参考）、SFT 1 个</strong>。性能结论则必须带条件引用——同一方法在小模型与大模型、可验证与不可验证任务上的排序可以完全反转（R1：小模型蒸馏&gt;直接 RL；边界推进需大模型+大规模 RL）。</p>
+
+<h2>8.1 核心实证对比：SFT vs RL vs 蒸馏/OPD</h2>
+<table>
+<tr><th style="width:17%">论文/设置</th><th style="width:26%">设置要点</th><th>核心结论（带条件）</th></tr>
+<tr><td><a href="https://arxiv.org/abs/2501.17161">SFT Memorizes, RL Generalizes [2501.17161]</a></td><td>Llama-3.2-Vision-11B；可控任务 GeneralPoints/V-IRL；同范式对照</td><td>OOD 变体：RL 持续提升（GP-L +3.5%），SFT 崩溃（V-IRL-L −79.5%）；无 SFT 时端到端 RL 全部失败。<span class="evi eviA">A</span></td></tr>
+<tr><td><a href="https://arxiv.org/abs/2411.15124">Tulu 3 [2411.15124]</a></td><td>Llama-3.1-8B/70B/405B；SFT→DPO→RLVR 消融</td><td>8B 平均分：SFT 60.6→+DPO 64.7→+RLVR 65.1；IFEval 72.8→82.4；MATH 31.5→43.7；DPO 与 RLVR 增益互补；RLVR 集中于可验证技能（HumanEval p@10 反降 86.2→83.9）。<span class="evi eviA">A</span></td></tr>
+<tr><td><a href="https://arxiv.org/abs/2501.12948">DeepSeek-R1 [2501.12948]</a></td><td>800k 样本蒸馏 1.5B–70B 六学生 vs 32B 直接 RL &gt;10k 步</td><td>R1-Distill-Qwen-32B AIME24 72.6 vs R1-Zero-Qwen-32B 47.0：小模型蒸馏&gt;直接 RL；直接 RL 对照只做了 32B 一档（1.5B–14B 无对照）；"推边界需更强 base + 更大规模 RL"。<span class="evi eviA">A</span></td></tr>
+<tr><td><a href="https://arxiv.org/abs/2505.09388">Qwen3 Table 21 [2505.09388]</a></td><td>8B 同一起点三分支：off-policy 蒸馏起点 → +RL → +on-policy 蒸馏</td><td>AIME'24：55.0→RL 67.6（17,920 GPU 时）→OPD 74.4（1,800 GPU 时）；MATH500 92.4→94.8→97.0；LCB v5 42.0→52.9→60.3；<strong>RL 后 pass@64 不变 90.0，蒸馏后 93.3</strong>。三阶段叠加而非严格对照；教师为自家更强模型。<span class="evi eviA">A</span></td></tr>
+<tr><td><a href="https://arxiv.org/abs/2505.14216">RL vs Distillation [2505.14216]</a></td><td>理论+实证框架化</td><td>RLVR 提升采样效率（pass@1，锐化）；蒸馏仅当引入 base 之外新知识时提升能力（pass@k）。<span class="evi eviB">B</span></td></tr>
+<tr><td><a href="https://arxiv.org/abs/2601.18734">OPSD [2601.18734]</a> vs GRPO</td><td>Qwen3-1.7B/4B/8B + LoRA；AIME24/25+HMMT25</td><td>8B：OPSD 64.8 vs GRPO 64.0 vs SFT 59.8；1.7B：43.4 vs 37.7；token 预算 1 条×1024 vs 8 条×16k；~100 步达峰。批判文献提示增益来源存疑（第 5 章）。<span class="evi eviA">A</span>/<span class="evi eviB">B</span></td></tr>
+<tr><td><a href="https://arxiv.org/abs/2601.20802">SDPO [2601.20802]</a> vs GRPO</td><td>Qwen3-0.6B–8B；LiveCodeBench v6/科学/工具</td><td>LCBv6 48.8% vs GRPO 41.2%；4× 更少生成达 GRPO 终值；响应最长缩短 11×；<strong>弱模型（Qwen2.5-1.5B）上不敌 GRPO</strong>，需混合。<span class="evi eviA">A</span></td></tr>
+</table>
+
+<h2>8.2 成本与效率数据点</h2>
+
+<h3>8.2.1 方法级直接对照</h3>
+<table>
+<tr><th style="width:30%">对比</th><th>数字（条件）</th><th>出处与级别</th></tr>
+<tr><td>on-policy 蒸馏 vs RL（同起点）</td><td>1,800 vs 17,920 GPU 时（≈1/10），AIME'24 74.4 vs 67.6</td><td>Qwen3 TR Table 21 <span class="evi eviA">A</span></td></tr>
+<tr><td>OPD vs 外推 SFT-2M（同水平 ~70% AIME'24）</td><td>9× FLOPs / 18× GPU 时；计入教师造数据 ≈30×</td><td>TM 博客 <span class="evi eviB">B</span></td></tr>
+<tr><td>OPD 学习 RL 训好的策略</td><td>7–10× 更少梯度步；累计 50–100× 算力；单 prompt 5,120 rollout 逼近教师</td><td>TM 博客 <span class="evi eviB">B</span></td></tr>
+<tr><td>PPO vs DPO（Tulu 3，平均分相近）</td><td>PPO ≈28h×2 节点 vs DPO ≈4h×1 节点（≈7–14×）</td><td>Tulu 3 <span class="evi eviA">A</span></td></tr>
+<tr><td>DAPO vs 朴素 GRPO vs R1-Zero</td><td>完整 DAPO 用 50% 步数达 R1-Zero-Qwen-32B 水平；朴素 GRPO AIME 30 → DAPO 50（Qwen2.5-32B, avg@32）</td><td>DAPO <span class="evi eviA">A</span></td></tr>
+<tr><td>PRIME vs outcome-only RLOO</td><td>样本效率 2.5×；每步多 ~24% 耗时但同奖励只需 ~40% 步数；比 VinePPO 快 ~11×</td><td>PRIME <span class="evi eviA">A</span></td></tr>
+<tr><td>隐式 PRM vs Math-Shepherd</td><td>&lt;1/38 数据 / 38.8× 更少 FLOPs 且 best-of-64 更优（50.4 vs 47.8）</td><td>FPR <span class="evi eviA">A</span></td></tr>
+<tr><td>DistiLLM vs MiniLLM/GKD</td><td>整体 2.5–4.3× 训练加速（on-policy 采样可占 ~80% 训练时长，回放单独提速 2.2–3.4×）</td><td>DistiLLM <span class="evi eviA">A</span></td></tr>
+</table>
+
+<h3>8.2.2 系统与基础设施</h3>
+<ul>
+<li><a href="https://arxiv.org/abs/2409.19256">HybridFlow/veRL [2409.19256]</a>（EuroSys 2025）：NeMo-Aligner 基线中<strong>生成占 RLHF 迭代时间 81.2%</strong>（缺 KVCache）；3D-HybridEngine 让训练/生成共置切换并行度；16–64 GPU 全 colocate 最优，96+ 分离更优；较 DeepSpeed-Chat/OpenRLHF/NeMo-Aligner 吞吐 1.53–20.57×。<span class="evi eviA">A</span></li>
+<li><a href="https://arxiv.org/abs/2502.08606">Apple 蒸馏缩放律 [2502.08606]</a>（off-policy 蒸馏）：学生 CE = 教师 CE + 学生模仿能力项；<strong>教师不是越强越好</strong>（capacity gap 是相对学习能力的差距，教师过强反而降低学生表现）；"教师现成或多学生"时蒸馏胜监督学习，"单学生且须自训教师"时监督学习通常更优；算力分配随学生规模变化（小学生小预算→大头给教师预训练）。<span class="evi eviA">A</span></li>
+<li>RL 具体卡时：R1 论文未披露总 GPU 时（附录 B.4.4 未公开数字，标注未核实）；Tulu 3 SFT 8B=32 GPU×6h、70B=64 GPU×50h；DAPO 512 prompt×16 rollout/步。<span class="evi eviA">A</span>（数字）/未披露处如实标注</li>
+</ul>
+
+<h3>8.2.3 驻留模型与资源结构</h3>
+<table>
+<tr><th>方法</th><th>需驻留/调用的模型</th><th>每步主要开销</th><th>并行性</th></tr>
+<tr><td>SFT</td><td>学生 ×1</td><td>1 forward + 1 backward</td><td>极高（纯数据并行）</td></tr>
+<tr><td>DPO/SimPO/KTO</td><td>学生 + 参考模型（SimPO/KTO 免参考但 KTO 实际用）</td><td>2 forward + 1 backward</td><td>高</td></tr>
+<tr><td>PPO(RLHF)</td><td>policy + reference + RM + critic（4 个）</td><td>rollout 生成 + 4 模型前向 + 2 backward</td><td>生成与训练切换，工程最难</td></tr>
+<tr><td>GRPO/RLVR</td><td>policy + reference + 验证器（规则奖励时免 RM/critic）</td><td>每题 G 条 rollout（G=8–64）+ 判分</td><td>rollout 批量生成可并行；DAPO 动态采样过滤</td></tr>
+<tr><td>OPD</td><td>学生 + 教师（冻结，只前向）</td><td>学生采样 + 教师对每前缀 1 次 forward（可 top-K 截断、部分 rollout）</td><td>教师前向可批量并行；无多 rollout</td></tr>
+<tr><td>OPSD/SDPO</td><td>同一权重双分支（2 forward）+ 采样</td><td>双分支前向 + 学生采样；无 RM/critic/多 rollout</td><td>高；SDPO 教师侧需正则（EMA/信赖域）</td></tr>
+</table>
+
+<h2>8.3 混合训练流程时间线（各系统配方）</h2>
+<table>
+<tr><th style="width:12%">系统</th><th style="width:44%">阶段顺序</th><th>设计理由（原文依据）</th></tr>
+<tr><td><a href="https://arxiv.org/abs/2203.02155">InstructGPT</a></td><td>SFT(13k) → RM(33k) → PPO(31k，per-token KL + 可选预训练混合)</td><td>KL"to mitigate over-optimization of the reward model"；RM 只用 6B（175B RM 做 value 不稳定）</td></tr>
+<tr><td><a href="https://arxiv.org/abs/2407.21783">Llama 3</a></td><td>SFT → 六轮迭代{拒绝采样→SFT→DPO}，每轮重训 RM</td><td>弃 PPO：算力+IFEval 劣势；DPO 用最新批次（准 on-policy），RM 用全历史</td></tr>
+<tr><td><a href="https://arxiv.org/abs/2411.15124">Tulu 3</a></td><td>SFT(939k) → DPO(~300k) → RLVR(30k, PPO+验证器)</td><td>每阶段针对不同目标：技能注入/偏好对齐/可验证技能强化</td></tr>
+<tr><td><a href="https://arxiv.org/abs/2501.12948">DeepSeek-R1</a></td><td>冷启动 SFT(数千) → 推理 RL(规则奖励) → 拒绝采样 SFT(804,745) → 全场景 RL(规则+RM，RM 仅最后 400/1700 步)</td><td>冷启动解决 R1-Zero 可读性；阶段③重置优化面并融入非推理能力；RM 后置因 hacking</td></tr>
+<tr><td><a href="https://arxiv.org/abs/2505.09388">Qwen3</a></td><td>长 CoT 冷启动 SFT → 推理 RL(GRPO, 3,995 对) → Mode Fusion SFT → 通用 RL；小模型分支：off-policy → on-policy 蒸馏</td><td>"少题高深度"；蒸馏换 1/10 成本；RL 不升 pass@64、蒸馏升</td></tr>
+<tr><td><a href="https://arxiv.org/abs/2401.10020">Self-Rewarding</a></td><td>迭代 3 轮{自评偏好对 → DPO}</td><td>奖励能力与策略共同进化，缓解静态 RM 上限</td></tr>
+</table>
+<p><strong>共性规律</strong>：2024 年后的所有配方都是"SFT/蒸馏先行 → 偏好或 RL 锐化 → 迭代中重置数据分布"；纯 RL（R1-Zero）只在最大规模 base 上可行；小模型一律退回蒸馏主导。<span class="evi eviA">A</span>（多系统一致）</p>
+
+<h2>8.4 可验证域之外：为什么通用域退回偏好优化</h2>
+<ul>
+<li>写作/对话等任务没有程序化 verifier，只能用可被利用的学习式 RM——<a href="https://arxiv.org/abs/2307.04964">Secrets Part I</a> 的 pattern collapse、InstructGPT 的 KL 必要性、R1 阶段④ RM 后置（1,700 步中最后 400 步）都源于此。</li>
+<li>Tulu 3 的 IFEval 路线说明部分"软"指令可半形式化为可验证约束（约束校验函数做 verifier），但覆盖面有限。</li>
+<li>Agent/环境交互任务（Kimi K2 的 joint RL）以环境反馈（测试通过、任务成功）为奖励，是 RLVR 的自然扩展；多轮信用分配仍未解决（SDPO/隐式 PRM 在向此延伸）。</li>
+</ul>
+
+<h2>8.5 引用性能数字的检查清单</h2>
+<ol>
+<li>模型规模与基座（同一方法在 1.5B 与 32B 上排序可能反转）；</li>
+<li>起点（从 base 还是从 SFT/蒸馏 checkpoint 起——Qwen3 Table 21 三分支同起点才可比）；</li>
+<li>基准与指标（pass@1 vs avg@k vs pass@64——RL 与蒸馏对三者的作用方向可以不同）；</li>
+<li>训练预算（GPU 时/步数/token 数——无预算数字的性能比较意义有限）；</li>
+<li>评测温度与采样策略（pass@k 对温度敏感，Yue et al. 用 T=0.6/top-p 0.95）；</li>
+<li>对照是否同期训练（"蒸馏 vs RL"结论几乎都来自教师极强的不对称设置）。</li>
+</ol>
+
+<div class="pager">
+  <a href="07-theory.html">← 第 7 章 · 理论统一</a>
+  <a href="09-evolution.html">第 9 章 · 演进与争议 →</a>
+</div>
+
+<p class="footer-note">后训练技术体系深度调研 · 检索截止 2026-10-22 · 所有数字带条件标注；未披露处（R1 总 GPU 时、Qwen3 蒸馏数据规模等）如实标注"未披露/未核实"· <a href="literature.html">完整文献库</a></p>
+
+</body>
+</html>

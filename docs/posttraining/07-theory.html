@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>07 · 理论统一：一个 KL 框架看 SFT / RL / OPD / OPSD / DPO</title>
+
+<!-- 霞鹜文楷：开源可商用的中文楷体风格字体；加载失败时自动回退到微软雅黑 -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/lxgw-wenkai-webfont@1.7.0/style.css">
+
+<script>
+window.MathJax = {
+  tex: { inlineMath: [['$','$'],['\\(','\\)']], displayMath: [['$$','$$'],['\\[','\\]']], processEscapes: true },
+  svg: { fontCache: 'global' }
+};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js" async></script>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+<script>mermaid.initialize({ startOnLoad: true, theme: "neutral", fontFamily: '"Microsoft YaHei", "PingFang SC", sans-serif' });</script>
+
+<style>
+  body { font-family: "LXGW WenKai", "Microsoft YaHei", "PingFang SC", sans-serif; font-size: 17.5px; line-height: 1.85; letter-spacing: 0.01em; color: #26292e; background: #fdfdfd; max-width: 1000px; margin: 0 auto; padding: 56px 28px 96px; }
+  h1, h2, h3, h4, .kicker { font-family: "Microsoft YaHei", "PingFang SC", sans-serif; line-height: 1.4; }
+  h1 { font-size: 30px; margin: 10px 0 6px; color: #1a1d21; }
+  h2 { font-size: 23px; margin-top: 2.4em; padding-bottom: 6px; border-bottom: 2px solid #e8eaee; color: #1f2733; }
+  h3 { font-size: 19px; margin-top: 1.8em; color: #2c3e50; }
+  h4 { font-size: 17.5px; margin-top: 1.4em; color: #3a4a5c; }
+  .kicker { font-size: 13px; letter-spacing: 0.22em; text-transform: uppercase; color: #7a8699; margin-bottom: 4px; }
+  code, pre { font-family: "Cascadia Code", Consolas, "Microsoft YaHei", monospace; }
+  code { background: #f2f4f7; padding: 1px 6px; border-radius: 5px; font-size: 0.88em; color: #35414f; }
+  pre { background: #f7f8fa; border: 1px solid #e6e9ee; border-radius: 10px; padding: 14px 16px; overflow-x: auto; font-size: 14.5px; line-height: 1.6; }
+  pre.mermaid { background: #fbfcfd; text-align: center; }
+  .formula { background: #f6f8fb; border: 1px solid #e6ebf2; border-radius: 10px; padding: 14px 18px; margin: 14px 0; overflow-x: auto; font-size: 1.02em; }
+  table { border-collapse: collapse; width: 100%; margin: 16px 0; font-size: 14.8px; }
+  th, td { border: 1px solid #dfe3ea; padding: 7px 11px; text-align: left; vertical-align: top; }
+  th { background: #f0f3f7; font-family: "Microsoft YaHei", "PingFang SC", sans-serif; font-weight: 600; }
+  tr:nth-child(even) td { background: #fafbfd; }
+  blockquote { margin: 16px 0; padding: 10px 18px; border-left: 4px solid #4a7dbd; background: #f3f7fc; border-radius: 0 8px 8px 0; color: #33414f; }
+  blockquote p { margin: 6px 0; }
+  a { color: #2c5fa8; text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  .evi { display: inline-block; font-family: "Microsoft YaHei", sans-serif; font-size: 11.5px; border-radius: 4px; padding: 0 5px; margin-left: 4px; vertical-align: 1px; border: 1px solid; line-height: 1.5; }
+  .eviA { color: #1c7a43; border-color: #9fd6b6; background: #f0faf4; }
+  .eviB { color: #9c6b0f; border-color: #ecd39a; background: #fdf8ec; }
+  .eviC { color: #a0522d; border-color: #e8c4ab; background: #fdf4ee; }
+  .fig { border: 1px solid #e2e6ec; border-radius: 12px; background: #fff; padding: 18px 14px 8px; margin: 22px 0; }
+  .figcap { font-family: "Microsoft YaHei", "PingFang SC", sans-serif; font-size: 14px; color: #5a6572; text-align: center; padding: 8px 12px 10px; line-height: 1.6; }
+  .topnav { position: sticky; top: 0; z-index: 50; background: rgba(253,253,253,.96); border-bottom: 1px solid #e8eaee; padding: 8px 0 6px; margin: 0 -6px 18px; font-family: "Microsoft YaHei", sans-serif; font-size: 13.5px; display: flex; flex-wrap: wrap; gap: 4px 12px; justify-content: center; }
+  .topnav a { color: #2c5fa8; }
+  .topnav a.here { color: #111; font-weight: 700; border-bottom: 2px solid #4a7dbd; padding-bottom: 2px; }
+  .pager { display: flex; justify-content: space-between; margin-top: 48px; font-family: "Microsoft YaHei", sans-serif; font-size: 14.5px; }
+  .footer-note { margin-top: 28px; padding-top: 12px; border-top: 1px dashed #d8dde5; color: #7a8699; font-size: 13.5px; }
+  .term { font-weight: 700; }
+</style>
+</head>
+<body>
+
+<a href="https://luxiangz.github.io/llm-tech-map/" style="position:fixed;top:12px;right:14px;z-index:99;background:#f6f7f9;border:1px solid #e2e5ea;border-radius:999px;padding:4px 12px;font-size:14px;color:#2c5fa8;text-decoration:none;box-shadow:0 1px 4px rgba(0,0,0,.08)">← 技术地图首页</a>
+
+<nav class="topnav">
+  <a href="index.html">总览</a><a href="01-concepts-case.html">概念与案例</a><a href="02-sft.html">SFT</a><a href="03-rl.html">RL</a><a href="04-opd.html">OPD</a><a href="05-opsd.html">OPSD</a><a href="06-related.html">偏好与相关</a><a href="07-theory.html" class="here">理论统一</a><a href="08-evidence-cost.html">证据与成本</a><a href="09-evolution.html">演进与争议</a><a href="10-selection.html">选型</a><a href="comparison.html">对照表</a><a href="literature.html">文献库</a><a href="gaps.html">缺口</a>
+</nav>
+
+<p class="kicker">大语言模型后训练技术体系深度调研 · 第 7 章</p>
+<h1>理论统一：一个 KL 框架看 SFT / RL / OPD / OPSD / DPO</h1>
+
+<p><strong>本章结论：</strong>SFT、RL、蒸馏、DPO 在数学上是<strong>同一个 KL 控制问题在不同数据来源与散度方向上的取值</strong>：SFT = 专家状态分布上的前向 KL（受 covariate shift 支配）；on-policy 蒸馏（OPD/OPSD）= 学生状态上的 KL 匹配，逐 token 形式等价于密集奖励 RL（$O(N)$ bits/episode）；RLVR = 稀疏终局奖励下的 KL 正则策略优化（$O(1)$ bits/episode）；DPO = KL 正则目标的闭式重参数化。对数概率比 $\beta\log\frac{\pi}{\pi_{ref}}$ 是横贯三者的同一个数学对象——它既是 DPO 的隐式奖励，又是隐式过程奖励（PRM），又是蒸馏的教师信号。每条联系都标注必要假设：数学上可建立 ≠ 工程上被采用，表面相似的损失不等于等价。</p>
+
+<h2>7.1 七条理论联系（每条含数学、出处、假设、证据等级）</h2>
+
+<h3>T1 · SFT = 行为克隆 = 专家状态分布上的前向 KL</h3>
+<div class="formula">
+$$
+\mathcal{L}_{\mathrm{SFT}}(\theta) = -\mathbb{E}_{(x,y)\sim\mathcal{D}_{\mathrm{exp}}}\Big[\sum_t \log \pi_\theta(a_t\mid s_t)\Big]\ \simeq\ \mathbb{E}_{x\sim p_{\mathrm{data}}}\sum_{s}\mathrm{KL}\big(\pi_{\mathrm{data}}(\cdot\mid s)\,\|\,\pi_\theta(\cdot\mid s)\big),\quad s_t=(x,y_{&lt;t})
+$$
+<p><strong>复合误差</strong>（<a href="https://arxiv.org/abs/1011.0686">DAgger [1011.0686]</a>）：per-step 误差 $\varepsilon$ 时总回报损失可达 $O(T^2\varepsilon)$；在<strong>学习者自己的状态</strong>上查询专家可收紧到 $O(T\varepsilon)$——后者就是 on-policy 蒸馏的理论雏形。<strong>假设</strong>：示范分布 ≈ 部署分布；逐 token 条件匹配目标。<span class="evi eviA">A</span></p>
+</div>
+
+<h3>T2 · 前向 KL（质量覆盖）vs 反向 KL（质量集中）</h3>
+<div class="formula">
+$$
+\underbrace{\mathrm{KL}(p_T\,\|\,p_S)}_{\text{前向：学生须覆盖教师支撑 → 幻觉风险}}\qquad vs.\qquad \underbrace{\mathrm{KL}(p_S\,\|\,p_T)}_{\text{反向：学生集中教师高概率模式 → 多样性损失}}
+$$
+</div>
+<p>LLM 蒸馏语境的权威论述：<a href="https://arxiv.org/abs/2306.13649">GKD [2306.13649]</a> 原文——前向 KL "requires the student to cover the entire support of the teacher token-level distribution"，容量不匹配时"can result in hallucination and low-quality generations"；mode-seeking 散度"prioritize the tokens where the teacher assigns high probability"；广义 JSD 介于两者且最优散度"seems to be task-dependent"。<a href="https://arxiv.org/abs/2306.08543">MiniLLM [2306.08543]</a>：反向 KL 防学生"overestimating low-probability regions of the teacher's distribution"。<a href="https://thinkingmachines.ai/blog/on-policy-distillation/">TM 博客</a>补充：反向 KL 奖励不可 hack。<strong>假设</strong>：学生容量 &lt; 教师时方向差异才显著；序列级与 token 级散度在自回归下不等价。<span class="evi eviA">A</span></p>
+
+<h3>T3 · KL 正则 RL 闭式解 ↔ DPO ↔ token 级 Q 函数</h3>
+<div class="formula">
+$$
+\max_\pi \mathbb{E}_{y\sim\pi}[r(x,y)]-\beta\,\mathrm{KL}(\pi\|\pi_{\mathrm{ref}})
+\ \Longrightarrow\
+\pi^*(y|x)=\tfrac{1}{Z(x)}\pi_{\mathrm{ref}}(y|x)e^{r(x,y)/\beta}
+\ \Longrightarrow\
+r(x,y)=\beta\log\tfrac{\pi^*(y|x)}{\pi_{\mathrm{ref}}(y|x)}+\beta\log Z(x)
+$$
+<p>代入 BT 模型、$Z(x)$ 相消 → DPO 损失（<a href="https://arxiv.org/abs/2305.18290">[2305.18290]</a> 附录 A）。token 级 MDP 视角（<a href="https://arxiv.org/abs/2404.12358">From r to Q* [2404.12358]</a>，COLM 2024）：$\pi^*=\pi_{\mathrm{ref}}\exp((Q^*-V^*)/\beta)$（soft-Bellman 一致），DPO 隐式学到最优 token 级 $Q^*$，可用 DPO 模型直接做 beam search。<strong>假设</strong>：BT 偏好模型；prompt 静态（配分函数消去）；奖励只能辨识到相差 $x$ 函数的等价类。<span class="evi eviA">A</span></p>
+</div>
+
+<h3>T4 · 蒸馏 = 密集奖励 RL（per-token 反向 KL 作 advantage）</h3>
+<div class="formula">
+$$
+\text{reverse\_kl}_t=\log\pi_S(a_t\mid y_{&lt;t})-\log\pi_T(a_t\mid y_{&lt;t}),\qquad A_t=-\,\text{reverse\_kl}_t,\qquad \gamma=0
+$$
+<p>序列级等价：$\mathbb{E}_{y\sim\pi_S}[\log\frac{\pi_S(y)}{\pi_T(y)}]=\mathrm{KL}(\pi_S\|\pi_T)$ 在学生轨迹上的经验平均。<strong>谱系（各家主张须分清）</strong>：MiniLLM 显式推导策略梯度形式（教师−学生 log-ratio 为累积回报，IRL/最大熵 RL 视角）；GKD 提供蒸馏与 RLHF 的联合目标但<strong>原文并无"per-token 奖励引理"</strong>（如实标注；该等价表述主要来自 TM 博客与 MiniLLM 视角）；TM 博客给出工程实操（KL 正则 RL 的一行改动）。<strong>关键差异</strong>：信号密度 $O(N)$ vs $O(1)$ bits/episode；<strong>上限</strong>：蒸馏渐近不超教师（奖励由教师定义），RL 可超教师。<strong>假设</strong>：教师可对学生任意前缀单次 forward。<span class="evi eviA">A</span>（等价性 A；谱系归属 B）</p>
+</div>
+
+<h3>T5 · 对数概率比的三重身份：隐式 ORM = 隐式 PRM = 蒸馏信号</h3>
+<div class="formula">
+$$
+r_\theta(y)=\beta\log\tfrac{\pi_\theta(y)}{\pi_{\mathrm{ref}}(y)},\qquad
+q_\theta^t=\sum_{i\le t}\beta\log\tfrac{\pi_\theta(y_i\mid y_{&lt;i})}{\pi_{\mathrm{ref}}(y_i\mid y_{&lt;i})},\qquad
+r_\theta^t=q_\theta^t-q_\theta^{t-1}
+$$
+<p><a href="https://arxiv.org/abs/2412.01981">FPR [2412.01981]</a>：$q^t=\beta\log\mathbb{E}_{\pi_{ref}}[e^{r/\beta}]$（软 Q 值），任意目标训练的 ORM 均可零成本恢复出 PRM，&lt;1/38 数据胜 Math-Shepherd（best-of-64：50.4 vs 47.8）。<a href="https://arxiv.org/abs/2502.01456">PRIME [2502.01456]</a>：只用 outcome 标签在线更新隐式过程奖励（免 PRM 训练阶段），样本效率 2.5×；potential-based shaping 不改变最优策略。与 T4 合读：$\beta\log\frac{\pi_T}{\pi_S}$ 形式的量既是蒸馏奖励又是过程奖励——区别只在把 $\pi_T$ 解释为教师还是奖励模型、是否在线更新。<strong>注意</strong>："ORM/PRM/蒸馏三重身份"是本报告的综合判断（两篇原文各证其二），标注综述级。<span class="evi eviA">A</span>（各命题）/ <span class="evi eviB">B</span>（统一表述）</p>
+</div>
+
+<h3>T6 · off-policy 监督梯度 = 缺少重要性采样的有偏策略梯度</h3>
+<div class="formula">
+$$
+\nabla J=\mathbb{E}_{y\sim\pi_{\mathrm{old}}}\big[\sum_t \rho_t A_t\nabla\log\pi_\theta(a_t\mid s_t)\big],\quad \rho_t=\tfrac{\pi_\theta(a_t|s_t)}{\pi_{\mathrm{old}}(a_t|s_t)}
+$$
+<p>在 $\mu\ne\pi_\theta$ 的数据上做监督学习（丢掉 $\rho_t$）等价于对错误分布求期望——SFT 的 covariate shift（T1）、PPO/GRPO 的 clip、DistiLLM 的回放退火，都是这一个偏差的三种工程处理（clip 硬截断、IS 重加权、数据新鲜度调度）。<a href="https://arxiv.org/abs/2307.04964">Secrets Part I [2307.04964]</a> 从 RLHF 稳定性侧论证：无策略约束会把响应推入 RM 的 OOD 区。<strong>串联为综述级综合</strong>，各组件 A。<span class="evi eviB">B</span></p>
+</div>
+
+<h3>T7 · 熵：RL 的坍缩 vs 蒸馏的继承</h3>
+<p>RL 侧：<a href="https://arxiv.org/abs/2505.22617">熵机制论文 [2505.22617]</a>——经验律 $R=-a\,e^{H}+b$；熵演化由动作概率与 logit 变化的协方差主导；Clip-Cov/KL-Cov 维持探索。蒸馏侧：Qwen3 Table 21——RL 后 pass@64 保持 90.0 不变（"RL does not lead to any improvement in pass@64"），随后的 on-policy 蒸馏把 pass@64 升至 93.3——<strong>RL 收窄分布（熵↓、pass@1↑），蒸馏重新传递教师的分布覆盖</strong>。"学生模仿教师熵"的专门研究未检索到，标 C。<span class="evi eviA">A</span>/<span class="evi eviC">C</span></p>
+
+<h2>7.2 图 5：统一数学视角下的训练目标</h2>
+
+<div class="fig">
+<pre class="mermaid">
+flowchart TB
+  CORE["统一视角：后训练 = 在某个状态分布上<br/>最小化某个目标分布与策略分布的（正则化）距离<br/>状态分布 = 谁的轨迹 · 目标分布 = 什么信号 · 距离 = 哪种散度/奖励"]
+  CORE --> SFTB
+  CORE --> RLB
+  CORE --> DISTB
+  CORE --> DPOB
+  subgraph SFTB["SFT（含 SeqKD）"]
+    S1["目标：交叉熵 → 对 one-hot 的前向 KL<br/>L = −Σ log π(yₜ ∣ 前缀)"]
+    S2["输入：示范 token（人/教师序列）"]
+    S3["状态分布：示范/教师诱导（off-policy）"]
+    S4["梯度：只在示范 token 上升"]
+    S1 --- S2 --- S3 --- S4
+  end
+  subgraph RLB["RL（RLHF / RLVR）"]
+    R1["目标：max E[r] − β·KL(π‖π_ref)<br/>GRPO/PPO：clipped 策略梯度 + 组内基线"]
+    R2["输入：终答标量（或 PRM 逐步分数）"]
+    R3["状态分布：学生自采样（on-policy）"]
+    R4["梯度：正优势升·负优势降（含负梯度）"]
+    R1 --- R2 --- R3 --- R4
+  end
+  subgraph DISTB["KD / OPD / OPSD"]
+    D1["目标：分布匹配<br/>fwd KL（Zhao-OPSD）· rev KL（TM-OPD/MiniLLM）<br/>· JSD（GKD）· skew KL（DistiLLM）"]
+    D2["输入：教师逐 token 软分布<br/>（外部教师 / 自身特权分支）"]
+    D3["状态分布：固定集（KD）或学生采样（OPD/OPSD）"]
+    D4["梯度：等价于 per-token 密集奖励 RL<br/>Aₜ = −revKL，γ=0（O(N) bits/轨迹）"]
+    D1 --- D2 --- D3 --- D4
+  end
+  subgraph DPOB["DPO 家族"]
+    P1["目标：−log σ(β·log[π(yw)/πref(yw)]<br/>− β·log[π(yl)/πref(yl)])"]
+    P2["输入：成对偏好（BT 模型）"]
+    P3["状态分布：静态偏好对（迭代版为准 on-policy）"]
+    P4["梯度：隐式 RM 动态加权；闭式重参数化<br/>等价解同一 KL 约束目标（A 级）"]
+    P1 --- P2 --- P3 --- P4
+  end
+  RLB -->|"对数概率比 β·log(π/πref)<br/>= 隐式奖励 = 隐式 PRM = 蒸馏信号（T5）"| DISTB
+  RLB -->|"闭式解重参数化（T3）"| DPOB
+  SFTB -->|"示范来自教师 = SeqKD（恒等）"| DISTB
+  classDef obj fill:#fdf6ec,stroke:#e3c89a;
+  class S1,R1,D1,P1 obj;
+</pre>
+<p class="figcap"><strong>图 5 · 统一数学视角下的训练目标图。</strong>每个模块按四行标注：优化目标（黄）· 主要输入 · 数据（状态）分布 · 梯度来源。跨模块连线是文献明确建立的数学联系，均附必要假设：SFT→蒸馏的恒等要求"示范来自教师采样"（<a href="https://arxiv.org/abs/1606.07947">Kim & Rush</a>，A 级）；RL→DPO 要求 BT 假设 + KL 正则 + 配分函数消去（<a href="https://arxiv.org/abs/2305.18290">DPO 附录 A</a>，A 级）；RL→蒸馏的"密集奖励等价"要求教师可对任意学生前缀单次 forward 且 γ=0（<a href="https://arxiv.org/abs/2306.08543">MiniLLM</a>+<a href="https://thinkingmachines.ai/blog/on-policy-distillation/">TM 博客</a>，A/B 级）。<strong>表面相似的损失不等于等价</strong>：例（图内未画，防误读）——DPO 损失与"对比式 SFT"形似但多了参考模型比与 BT 推导；OPSD 的前向 KL 与 GKD 的前向 KL 数据来源不同（学生轨迹 vs λ 混合）。</p>
+</div>
+
+<h2>7.3 图 6：离线与在线训练的数据分布对比</h2>
+
+<div class="fig">
+<pre class="mermaid">
+flowchart LR
+  subgraph OFF["① 离线：固定数据集"]
+    O1["数据集 D（人写/教师生成/历史策略）<br/>生成策略 μ ≠ 更新策略 π_θ"] --> O2["训练：直接监督梯度<br/>（无重要性校正 = 有偏策略梯度，T6）"]
+    O2 --> O3["后果：分布失配·复合误差<br/>（DAgger O(T²ε)）<br/>典型：SFT · SeqKD · 离线 DPO · KD"]
+  end
+  subgraph ON["② 在线：学生采样"]
+    N1["当前策略 π_θ 采样 rollout<br/>生成策略 = 更新策略（on-policy）"] --> N2["训练：策略梯度或 teacher-forced 损失<br/>（minibatch 复用 → 轻微 off-policy<br/>clip 容忍，实测触发率&lt;5%）"]
+    N2 --> N3["收益：在自己会到达的状态上被纠正<br/>（DAgger O(Tε)）<br/>典型：RLVR · OPD · OPSD · 在线 DPO"]
+  end
+  subgraph TEA["③ 教师/反馈参与的闭环"]
+    T1["学生采样 + 教师打分/验证器判分<br/>（监督在学生状态上产生）"] --> T2["更新后策略再采样<br/>教师信号随学生分布移动"]
+    T2 --> T3["分类要点：<br/>· 教师采样数据 ≠ on-policy（SeqKD 属①）<br/>· 训练中产生新数据 ≠ on-policy<br/>· 判据始终是：采样策略 vs 更新策略<br/>典型：OPD · SDPO（教师=自身分支）"]
+  end
+  OFF ~~~ ON
+  ON ~~~ TEA
+  classDef offl fill:#fdf4ee,stroke:#e3b89a;
+  classDef onl fill:#eef7f0,stroke:#a8c8a8;
+  classDef tel fill:#eef4fb,stroke:#9db8d9;
+  class O1,O2,O3 offl;
+  class N1,N2,N3 onl;
+  class T1,T2,T3 tel;
+</pre>
+<p class="figcap"><strong>图 6 · 离线与在线训练的数据分布对比图。</strong>三栏分别对应任务书要求的三种情形：固定数据集离线训练 / 当前学生策略采样后更新 / 教师·验证器参与的训练闭环。<strong>on-policy 的严格判据是"采样策略与更新策略的关系"</strong>，不是"是否产生新数据"：教师采样（SeqKD、R1 蒸馏）在训练循环内产生新数据，但对学生的更新而言仍是 off-policy（状态由教师诱导）；PPO/GRPO 的 minibatch 复用是轻微 off-policy（clip 容忍，RLOO 实测触发率 &lt;5%，<a href="https://arxiv.org/abs/2402.14740">[2402.14740]</a>）；DistiLLM 的回放退火（早期新鲜 on-policy、后期复用）显示两态可以连续过渡。依据：<a href="https://arxiv.org/abs/1011.0686">DAgger [1011.0686]</a>、<a href="https://arxiv.org/abs/2306.13649">GKD [2306.13649]</a>、<a href="https://arxiv.org/abs/2402.03898">DistiLLM [2402.03898]</a>、<a href="https://thinkingmachines.ai/blog/on-policy-distillation/">TM 博客</a>。</p>
+</div>
+
+<h2>7.4 混合流程的组合逻辑（理论侧）</h2>
+<p>各系统配方（InstructGPT：SFT→RM→PPO；Tulu 3：SFT→DPO→RLVR；R1：冷启动 SFT→推理 RL→拒绝采样 SFT→全场景 RL；Qwen3：冷启动→RL→融合 SFT→通用 RL；Llama 3：SFT+RS+DPO 六轮）在理论坐标下的共同模式：</p>
+<ol>
+<li><strong>先用示范/蒸馏奠基</strong>（格式锚定 + 模式注入，T1 的覆盖问题由教师质量解决）；</li>
+<li><strong>再用偏好/RL 锐化</strong>（在学生自己的分布上重排概率质量，负梯度/mode-seeking，Tajwar）；</li>
+<li><strong>必要时用蒸馏回收分布</strong>（Qwen3：RL 后 pass@64 不变、蒸馏后升至 93.3——熵与覆盖的再注入，T7）；</li>
+<li><strong>迭代中不断"重置"数据分布</strong>（Llama 3 只用最新批次偏好数据；R1 拒绝采样阶段回炉——都是对抗 T6 偏差的工程动作）。</li>
+</ol>
+
+<div class="pager">
+  <a href="06-related.html">← 第 6 章 · 偏好与相关</a>
+  <a href="08-evidence-cost.html">第 8 章 · 证据与成本 →</a>
+</div>
+
+<p class="footer-note">后训练技术体系深度调研 · 检索截止 2026-10-22 · 数学等价性均标注出处与必要假设；"统一视角"的串联部分为综述级综合（B 级）· <a href="literature.html">完整文献库</a></p>
+
+</body>
+</html>

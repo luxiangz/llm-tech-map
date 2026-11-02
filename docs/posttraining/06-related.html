@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>06 · 偏好优化与相关方法：DPO 家族、RFT 与自训练</title>
+
+<!-- 霞鹜文楷：开源可商用的中文楷体风格字体；加载失败时自动回退到微软雅黑 -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/lxgw-wenkai-webfont@1.7.0/style.css">
+
+<script>
+window.MathJax = {
+  tex: { inlineMath: [['$','$'],['\\(','\\)']], displayMath: [['$$','$$'],['\\[','\\]']], processEscapes: true },
+  svg: { fontCache: 'global' }
+};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js" async></script>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+<script>mermaid.initialize({ startOnLoad: true, theme: "neutral", fontFamily: '"Microsoft YaHei", "PingFang SC", sans-serif' });</script>
+
+<style>
+  body { font-family: "LXGW WenKai", "Microsoft YaHei", "PingFang SC", sans-serif; font-size: 17.5px; line-height: 1.85; letter-spacing: 0.01em; color: #26292e; background: #fdfdfd; max-width: 1000px; margin: 0 auto; padding: 56px 28px 96px; }
+  h1, h2, h3, h4, .kicker { font-family: "Microsoft YaHei", "PingFang SC", sans-serif; line-height: 1.4; }
+  h1 { font-size: 30px; margin: 10px 0 6px; color: #1a1d21; }
+  h2 { font-size: 23px; margin-top: 2.4em; padding-bottom: 6px; border-bottom: 2px solid #e8eaee; color: #1f2733; }
+  h3 { font-size: 19px; margin-top: 1.8em; color: #2c3e50; }
+  h4 { font-size: 17.5px; margin-top: 1.4em; color: #3a4a5c; }
+  .kicker { font-size: 13px; letter-spacing: 0.22em; text-transform: uppercase; color: #7a8699; margin-bottom: 4px; }
+  code, pre { font-family: "Cascadia Code", Consolas, "Microsoft YaHei", monospace; }
+  code { background: #f2f4f7; padding: 1px 6px; border-radius: 5px; font-size: 0.88em; color: #35414f; }
+  pre { background: #f7f8fa; border: 1px solid #e6e9ee; border-radius: 10px; padding: 14px 16px; overflow-x: auto; font-size: 14.5px; line-height: 1.6; }
+  pre.mermaid { background: #fbfcfd; text-align: center; }
+  .formula { background: #f6f8fb; border: 1px solid #e6ebf2; border-radius: 10px; padding: 14px 18px; margin: 14px 0; overflow-x: auto; font-size: 1.02em; }
+  table { border-collapse: collapse; width: 100%; margin: 16px 0; font-size: 14.8px; }
+  th, td { border: 1px solid #dfe3ea; padding: 7px 11px; text-align: left; vertical-align: top; }
+  th { background: #f0f3f7; font-family: "Microsoft YaHei", "PingFang SC", sans-serif; font-weight: 600; }
+  tr:nth-child(even) td { background: #fafbfd; }
+  blockquote { margin: 16px 0; padding: 10px 18px; border-left: 4px solid #4a7dbd; background: #f3f7fc; border-radius: 0 8px 8px 0; color: #33414f; }
+  blockquote p { margin: 6px 0; }
+  a { color: #2c5fa8; text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  .evi { display: inline-block; font-family: "Microsoft YaHei", sans-serif; font-size: 11.5px; border-radius: 4px; padding: 0 5px; margin-left: 4px; vertical-align: 1px; border: 1px solid; line-height: 1.5; }
+  .eviA { color: #1c7a43; border-color: #9fd6b6; background: #f0faf4; }
+  .eviB { color: #9c6b0f; border-color: #ecd39a; background: #fdf8ec; }
+  .eviC { color: #a0522d; border-color: #e8c4ab; background: #fdf4ee; }
+  .fig { border: 1px solid #e2e6ec; border-radius: 12px; background: #fff; padding: 18px 14px 8px; margin: 22px 0; }
+  .figcap { font-family: "Microsoft YaHei", "PingFang SC", sans-serif; font-size: 14px; color: #5a6572; text-align: center; padding: 8px 12px 10px; line-height: 1.6; }
+  .topnav { position: sticky; top: 0; z-index: 50; background: rgba(253,253,253,.96); border-bottom: 1px solid #e8eaee; padding: 8px 0 6px; margin: 0 -6px 18px; font-family: "Microsoft YaHei", sans-serif; font-size: 13.5px; display: flex; flex-wrap: wrap; gap: 4px 12px; justify-content: center; }
+  .topnav a { color: #2c5fa8; }
+  .topnav a.here { color: #111; font-weight: 700; border-bottom: 2px solid #4a7dbd; padding-bottom: 2px; }
+  .pager { display: flex; justify-content: space-between; margin-top: 48px; font-family: "Microsoft YaHei", sans-serif; font-size: 14.5px; }
+  .footer-note { margin-top: 28px; padding-top: 12px; border-top: 1px dashed #d8dde5; color: #7a8699; font-size: 13.5px; }
+  .term { font-weight: 700; }
+</style>
+</head>
+<body>
+
+<a href="https://luxiangz.github.io/llm-tech-map/" style="position:fixed;top:12px;right:14px;z-index:99;background:#f6f7f9;border:1px solid #e2e5ea;border-radius:999px;padding:4px 12px;font-size:14px;color:#2c5fa8;text-decoration:none;box-shadow:0 1px 4px rgba(0,0,0,.08)">← 技术地图首页</a>
+
+<nav class="topnav">
+  <a href="index.html">总览</a><a href="01-concepts-case.html">概念与案例</a><a href="02-sft.html">SFT</a><a href="03-rl.html">RL</a><a href="04-opd.html">OPD</a><a href="05-opsd.html">OPSD</a><a href="06-related.html" class="here">偏好与相关</a><a href="07-theory.html">理论统一</a><a href="08-evidence-cost.html">证据与成本</a><a href="09-evolution.html">演进与争议</a><a href="10-selection.html">选型</a><a href="comparison.html">对照表</a><a href="literature.html">文献库</a><a href="gaps.html">缺口</a>
+</nav>
+
+<p class="kicker">大语言模型后训练技术体系深度调研 · 第 6 章</p>
+<h1>偏好优化与相关方法：DPO 家族、RFT 与自训练</h1>
+
+<p><strong>本章结论：</strong>偏好优化家族的演进主线是"<strong>KL 约束 RLHF 目标的闭式重参数化（DPO）→ 修过拟合（IPO）→ 放松监督信号（KTO 二元标签）→ 去参考模型（ORPO/SimPO）→ 回到在线/迭代（Xiong 理论、OAIF、Llama 3 六轮）</strong>"。DPO 与 RM+PPO 解的是<strong>同一个数学目标</strong>（精确重参数化而非近似），差别全在实践：离线 vs 在线、无探索 vs 有探索。在线 vs 离线的当前共识：分布漂移小、指令遵循类任务上离线够用（Zephyr/SimPO/ORPO）；漂移大或需探索时，迭代/在线显著更优（理论+实证+工业三方一致）。自训练家族（STaR/RFT/ReST/ReST-EM/V-STaR/SPIN/Self-Rewarding）则是"把 RL 的采样-评估循环压扁成离线迭代"的硬标签路线，其中 STaR 的 hint 模式是 OPSD"特权信息教师"思想的先声。传统 KD 与 SeqKD 已在第 4 章与 SFT 的恒等关系下覆盖。</p>
+
+<h2>6.1 DPO：完整推导链与隐式奖励模型</h2>
+
+<div class="formula">
+<p><strong>四步推导</strong>（<a href="https://arxiv.org/abs/2305.18290">Rafailov et al. 2023 [2305.18290]</a>，附录 A，NeurIPS 2023）：</p>
+<p>① KL 约束目标有闭式最优解：$\ \pi^*(y|x)=\frac{1}{Z(x)}\pi_{\mathrm{ref}}(y|x)\exp\!\big(\tfrac{1}{\beta}r(x,y)\big)$</p>
+<p>② 反解奖励（重参数化）：$\ r(x,y)=\beta\log\frac{\pi(y|x)}{\pi_{\mathrm{ref}}(y|x)}+\beta\log Z(x)$</p>
+<p>③ 代入 Bradley–Terry 偏好模型 $p(y_w\succ y_l|x)=\sigma(r_w-r_l)$，<strong>配分函数 $Z(x)$ 只依赖 $x$，在奖励差中相消</strong>——无需估计配分函数；</p>
+<p>④ 得 DPO 损失：</p>
+$$
+\mathcal{L}_{\mathrm{DPO}} = -\,\mathbb{E}_{(x,y_w,y_l)}\Big[\log\sigma\Big(\beta\log\tfrac{\pi_\theta(y_w|x)}{\pi_{\mathrm{ref}}(y_w|x)}-\beta\log\tfrac{\pi_\theta(y_l|x)}{\pi_{\mathrm{ref}}(y_l|x)}\Big)\Big]
+$$
+</div>
+
+<p><strong>梯度性质</strong>：$\nabla\mathcal{L}=-\beta\,\mathbb{E}\big[\sigma(\hat r_l-\hat r_w)\cdot(\nabla\log\pi(y_w)-\nabla\log\pi(y_l))\big]$——权重是<strong>隐式 RM 判错该对的概率</strong>，随策略一起隐式更新、动态加权难样本（论文类比 actor-critic）。实验：情感控制超 PPO 的 reward-KL 前沿；TL;DR 摘要人评胜人类参照与 PPO；规模至 6B。<span class="evi eviA">A</span></p>
+
+<h2>6.2 家族变体：一表看全</h2>
+<table>
+<tr><th style="width:9%">方法</th><th style="width:30%">目标函数（核心形式）</th><th style="width:12%">监督信号</th><th style="width:10%">参考模型</th><th>动机与证据</th></tr>
+<tr><td><a href="https://arxiv.org/abs/2210.00045">SLiC [2210.00045]</a></td><td>$\mathbb{E}[\max(0, 1-\beta(\log\pi(y_w)-\log\pi(y_l)))]$（hinge 排序 + 校准正则）</td><td>成对（自采样候选+相似度配对）</td><td>基本不需</td><td>DPO 前身：确立"排序损失直接调似然"；一次离线。hinge 饱和后梯度为零。<span class="evi eviB">B</span></td></tr>
+<tr><td><a href="https://arxiv.org/abs/2304.05302">RRHF [2304.05302]</a></td><td>长度归一化打分 $p_i$ 的 listwise hinge + 最优响应 SFT 项</td><td>多路响应排序</td><td>不需</td><td>免 PPO 的多候选排序对齐；NeurIPS 2023。<span class="evi eviA">A</span></td></tr>
+<tr><td><a href="https://arxiv.org/abs/2305.18290">DPO [2305.18290]</a></td><td>见上</td><td>成对偏好</td><td><strong>需</strong></td><td>NeurIPS 2023；见 6.1。</td></tr>
+<tr><td><a href="https://arxiv.org/abs/2310.12036">IPO [2310.12036]</a></td><td>$\mathbb{E}[(h_\pi(y,y')-\tau^{-1}I(y,y'))^2]$（对策略对数似然比做<strong>回归</strong>而非极大似然）</td><td>成对</td><td>需</td><td>ΨPO 一般范式下证明 DPO 有限样本过拟合；IPO 有保证但大规模对齐上不稳定优于 DPO（SimPO 附录对照）。<span class="evi eviA">A</span>（回归常数在论文与 TRL 实现有出入，B）</td></tr>
+<tr><td><a href="https://arxiv.org/abs/2402.01306">KTO [2402.01306]</a></td><td>前景理论价值函数：$\lambda_w-\lambda_l\sigma(\beta(r-z_0))$ 型（好/坏两支），参考点 $\hat z_0$ 批内错配估计</td><td><strong>二元好/坏</strong>（不需配对）</td><td>需</td><td>HALO 家族；1B–30B 匹配/超过成对法；正负样本失衡（0.1:1）时优势放大。ICML 2024。<span class="evi eviA">A</span></td></tr>
+<tr><td><a href="https://arxiv.org/abs/2403.07691">ORPO [2403.07691]</a></td><td>$\mathcal{L}_{SFT}+\lambda\cdot\big[-\log\sigma(\log\frac{\mathrm{odds}(y_w)}{\mathrm{odds}(y_l)})\big]$</td><td>成对</td><td><strong>不需</strong></td><td>单阶段（SFT 与对齐一体）；Mistral-ORPO MT-Bench 7.32。EMNLP 2024。<span class="evi eviA">A</span></td></tr>
+<tr><td><a href="https://arxiv.org/abs/2405.14734">SimPO [2405.14734]</a></td><td>$-\log\sigma(\tfrac{\beta}{|y_w|}\log\pi(y_w)-\tfrac{\beta}{|y_l|}\log\pi(y_l)-\gamma)$</td><td>成对</td><td><strong>不需</strong></td><td>长度归一化隐式奖励+margin γ，修 DPO 长度偏置；Llama-3-8B-Instruct 上 LC 44.7% vs DPO 40.3%；Gemma-2-9B-it 达 LC 72.4%。NeurIPS 2024。<span class="evi eviA">A</span></td></tr>
+</table>
+
+<h2>6.3 在线/迭代偏好学习：证据链</h2>
+<ul>
+<li><strong>理论</strong>（<a href="https://arxiv.org/abs/2312.11456">Xiong et al. [2312.11456]</a>，ICML 2024）：把 RLHF 形式化为 reverse-KL 正则上下文 bandit，证明 offline PPO/DPO 的主要缺陷是"缺乏策略性探索"，迭代 online DPO 有收敛保证。</li>
+<li><strong>受控实证</strong>（<a href="https://arxiv.org/abs/2402.04792">Guo et al. OAIF [2402.04792]</a>）：每轮从当前模型采样两个响应 + LLM 标注器选优 → on-policy 偏好对；人工评估优于离线 DAP 与 RLHF；反馈风格可用标注器 prompt 控制。</li>
+<li><strong>统一分析</strong>（<a href="https://arxiv.org/abs/2404.14367">Tajwar et al. [2404.14367]</a>，ICML 2024）：监督学习（best-of-n SFT）/在线 RL/对比学习三类中，<strong>on-policy 采样或负梯度（mode-seeking）</strong>系统性优于离线纯 MLE——"子优的 on-policy 数据优于离线好数据"。</li>
+<li><strong>工业实践</strong>（<a href="https://arxiv.org/abs/2407.21783">Llama 3 [2407.21783]</a>）：SFT+拒绝采样+DPO <strong>六轮迭代</strong>；探索过 PPO 但"DPO required less compute for large-scale models and performed better, especially on instruction following benchmarks like IFEval"；DPO 只用最新批次偏好数据（准 on-policy）；工程改造：屏蔽格式 token（公共 token 在 chosen/rejected 同时升降会引发尾重复/早终止）+ chosen NLL 正则（系数 0.2，修 chosen 似然下降，引 <a href="https://arxiv.org/abs/2402.13228">Smaug/DPOP [2402.13228]</a>）。</li>
+<li><strong>反方向证据</strong>：<a href="https://arxiv.org/abs/2310.16944">Zephyr [2310.16944]</a> 实为<strong>单轮离线</strong> dDPO（UltraFeedback 64k×4 模型×GPT-4 打分，β=0.1）即达 MT-Bench 7.34——注意：常被误引为"迭代 DPO"。SimPO/ORPO/KTO 亦纯离线即可。<strong>综合判定：on-policy 不是必要条件，但漂移大/需探索/安全敏感时是决定性的。</strong><span class="evi eviA">A</span></li>
+</ul>
+
+<h2>6.4 自博弈与自奖励</h2>
+<table>
+<tr><th style="width:14%">方法</th><th>机制</th><th>证据与边界</th></tr>
+<tr><td><a href="https://arxiv.org/abs/2401.01335">SPIN [2401.01335]</a></td><td>第 $t$ 轮以上一轮自生成为"假"样本、人类数据为"真"，训练当前模型分辨之（logistic 对比损失）；不动点=自分布与人类分布重合</td><td>无需 RM/验证器；上限=人类数据质量（梯度消失点）。ICML 2024。<span class="evi eviA">A</span></td></tr>
+<tr><td><a href="https://arxiv.org/abs/2401.10020">Self-Rewarding [2401.10020]</a></td><td>LLM-as-Judge 给自己候选打分构造偏好对 → DPO → 迭代 3 轮；评判能力随 DPO 共同进化</td><td>Llama-2-70B 三轮后在 AlpacaEval 2 胜多个 70B 系统。ICML 2024。<span class="evi eviA">A</span>（逐轮数字未逐字核验，B）</td></tr>
+<tr><td><a href="https://arxiv.org/abs/2505.03335">Absolute Zero [2505.03335]</a></td><td>单模型双角色（出题者/求解者），代码执行器作外部真值，零外部数据 RL 自博弈</td><td>小模型数学/代码 SOTA 级；附录报告过奖励黑客（自改单测）——已知失败模式。<span class="evi eviB">B</span></td></tr>
+</table>
+
+<h2>6.5 RFT 与迭代式自训练：硬标签家族</h2>
+<table>
+<tr><th style="width:15%">方法</th><th>机制要点</th><th>证据与边界</th></tr>
+<tr><td><a href="https://arxiv.org/abs/2203.14465">STaR [2203.14465]</a></td><td>迭代 {采样 rationale → 留答案正确者 → SFT}；<strong>hint 模式</strong>：把标准答案放进上下文生成能到达该答案的推理，微调时去掉 hint</td><td>NeurIPS 2022；hint 模式=特权信息教师思想先声（硬标签、教师生成、需过滤）。<span class="evi eviA">A</span></td></tr>
+<tr><td><a href="https://arxiv.org/abs/2308.01825">RFT [2308.01825]</a></td><td>LLaMA-7B SFT 后每题采样 K=100 条，保留正确者并按<strong>推理等价类</strong>（最终推导式集合）去重再 SFT</td><td>GSM8K 49.3%；同文发现预训练 loss（而非参数量）是数学能力更强预测因子。ACL 2024。<span class="evi eviA">A</span></td></tr>
+<tr><td><a href="https://arxiv.org/abs/2307.09288">Llama 2 §4.3 [2307.09288]</a></td><td>每提示采样 K≈10–20，RM 排序取最优聚合 SFT，约 5 轮迭代（与 PPO 交替）</td><td>工业级 RFT 形态。<span class="evi eviB">B</span>（细节凭记忆，论文已核验）</td></tr>
+<tr><td><a href="https://arxiv.org/abs/2308.08998">ReST [2308.08998]</a></td><td>Grow（采样+奖励过滤入增长数据集）与 Filtered Fine-tuning 解耦交替，避免在线 reward over-optimization</td><td>机器翻译对齐（T5-XXL）。<span class="evi eviA">A</span></td></tr>
+<tr><td><a href="https://arxiv.org/abs/2312.06585">ReST-EM [2312.06585]</a></td><td>EM 视角：E 步按正确性过滤自采样解，M 步 SFT；2–4 轮后 MATH/竞赛编程<strong>超过人类数据 SFT</strong></td><td>ICLR 2024；随迭代数据多样性衰减→收益递减。<span class="evi eviA">A</span></td></tr>
+<tr><td><a href="https://arxiv.org/abs/2402.06457">V-STaR [2402.06457]</a></td><td>用自生成的<strong>正确+错误</strong>解构造 DPO 对训练验证器，验证器做 best-of-n；生成器与验证器互促</td><td>COLM 2024；"对错皆用"突破只用正样本的偏差。<span class="evi eviA">A</span></td></tr>
+<tr><td><a href="https://arxiv.org/abs/2203.11171">Self-Consistency [2203.11171]</a></td><td>采样多条 CoT 终答多数投票（GSM8K +17.9%）</td><td>ICLR 2023；在自训练谱系中兼作推理时筛选与伪标签机（U-OPSD 用它构造特权解）。<span class="evi eviA">A</span></td></tr>
+</table>
+<p><strong>RFT 的定位辨析</strong>：RFT 把 RL 的"采样-评估-强化"循环压扁成离线迭代，丢弃了失败轨迹的负梯度信息（只保留正样本），且策略采样滞后一轮（off-policy 一轮）——Math-Shepherd 实验中 RFT 79.0% &lt; PRM-PPO 84.1%（GSM8K）即"离散化 RL"与"真 RL"的实证差。<span class="evi eviA">A</span></p>
+
+<h2>6.6 偏好数据来源与 AI 反馈的争议</h2>
+<table>
+<tr><th style="width:18%">来源</th><th>代表</th><th>备注</th></tr>
+<tr><td>人工成对比较</td><td>InstructGPT（33k×K=4–9 排序）、Llama 2/3</td><td>贵、质量高；Llama 3 丢弃区分度低的对</td></tr>
+<tr><td>AI 判分（离线）</td><td><a href="https://arxiv.org/abs/2310.01377">UltraFeedback [2310.01377]</a>：64k prompt×4 模型×GPT-4 打分；Zephyr/ORPO/SimPO 的标准燃料</td><td>最高分 chosen、其余随机 rejected 的构造法是开源标配</td></tr>
+<tr><td>AI 判分（在线）</td><td>OAIF：每轮当前模型采样 2 条 + 标注器选优</td><td>on-policy 偏好对</td></tr>
+<tr><td>宪法/原则自评</td><td><a href="https://arxiv.org/abs/2212.08073">Constitutional AI [2212.08073]</a>：原则驱动的自我批评+修订 SFT + RLAIF-PPO</td><td>免人工有害标签</td></tr>
+</table>
+<p><strong>争议</strong>：<a href="https://arxiv.org/abs/2309.00267">RLAIF [2309.00267]</a>（Google，ICML 2024）报告 AI 反馈≈人类反馈；但 <a href="https://arxiv.org/abs/2402.12366">Sharma et al. [2402.12366]</a>（Stanford）发现部分开源模型的"RLAIF 增益"实为<strong>弱 SFT 教师假象</strong>——换强教师直接 SFT 就能超过完整 RLAIF 流程。两者结论需按评估设置区分（前者在受控内部任务上，后者检视公开 RLHF 管线）。<span class="evi eviA">A</span>（各按原文条件）</p>
+
+<h2>6.7 与四范式的关系速查</h2>
+<ul>
+<li><strong>DPO ↔ RL</strong>：同一 KL 约束目标的两种解法（精确重参数化）；token 级视角下 DPO 隐式学 $Q^*$（<a href="https://arxiv.org/abs/2404.12358">From r to Q* [2404.12358]</a>，COLM 2024）。差别在数据分布（离线 vs on-policy）与探索（无 vs 有）。</li>
+<li><strong>迭代 DPO ↔ OPSD</strong>：Self-Rewarding 型迭代 DPO = "以自评为特权条件的自训练"——教师（判分能力）与学生同体，可视为 OPSD 的偏好信号变体（软硬不同：偏好对 vs 分布）。</li>
+<li><strong>RFT ↔ RL/SFT</strong>：RFT 是 RL 循环的硬标签压缩；与 SFT 的差别只在数据来自自采样+过滤。</li>
+<li><strong>KTO/ORPO/SimPO ↔ SFT</strong>：ORPO 显式融合 SFT 损失（最接近"对齐版 SFT"）；SimPO 的长度归一化奖励把"偏好学习"压到与 SFT 同级的开销。</li>
+<li><strong>偏好优化 ↔ OPD</strong>：无直接机制等价；两者都以"负梯度/mode-seeking"重排概率质量（Tajwar 统一分析），但信号来源不同（人类/判分器偏好 vs 教师分布）。</li>
+</ul>
+
+<div class="pager">
+  <a href="05-opsd.html">← 第 5 章 · OPSD</a>
+  <a href="07-theory.html">第 7 章 · 理论联系与数学统一 →</a>
+</div>
+
+<p class="footer-note">后训练技术体系深度调研 · 检索截止 2026-10-22 · 编号勘误：SLiC=2210.00045（非 2205.13419）；RRHF=2304.05302（非 2304.05102）；OAIF=2402.04792；Tajwar=2404.14367；r-to-Q*=2404.12358 · <a href="literature.html">完整文献库</a></p>
+
+</body>
+</html>

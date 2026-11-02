@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>02 · SFT 深度机制：示范学习的能力与边界</title>
+
+<!-- 霞鹜文楷：开源可商用的中文楷体风格字体；加载失败时自动回退到微软雅黑 -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/lxgw-wenkai-webfont@1.7.0/style.css">
+
+<script>
+window.MathJax = {
+  tex: { inlineMath: [['$','$'],['\\(','\\)']], displayMath: [['$$','$$'],['\\[','\\]']], processEscapes: true },
+  svg: { fontCache: 'global' }
+};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js" async></script>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+<script>mermaid.initialize({ startOnLoad: true, theme: "neutral", fontFamily: '"Microsoft YaHei", "PingFang SC", sans-serif' });</script>
+
+<style>
+  body { font-family: "LXGW WenKai", "Microsoft YaHei", "PingFang SC", "Segoe UI", sans-serif; font-size: 17.5px; line-height: 1.85; letter-spacing: 0.01em; color: #26292e; background: #fdfdfd; max-width: 1000px; margin: 0 auto; padding: 56px 28px 96px; }
+  h1, h2, h3, h4, .kicker { font-family: "Microsoft YaHei", "PingFang SC", sans-serif; line-height: 1.4; }
+  h1 { font-size: 30px; margin: 10px 0 6px; color: #1a1d21; }
+  h2 { font-size: 23px; margin-top: 2.4em; padding-bottom: 6px; border-bottom: 2px solid #e8eaee; color: #1f2733; }
+  h3 { font-size: 19px; margin-top: 1.8em; color: #2c3e50; }
+  h4 { font-size: 17.5px; margin-top: 1.4em; color: #3a4a5c; }
+  .kicker { font-size: 13px; letter-spacing: 0.22em; text-transform: uppercase; color: #7a8699; margin-bottom: 4px; }
+  code, pre { font-family: "Cascadia Code", Consolas, "Microsoft YaHei", monospace; }
+  code { background: #f2f4f7; padding: 1px 6px; border-radius: 5px; font-size: 0.88em; color: #35414f; }
+  pre { background: #f7f8fa; border: 1px solid #e6e9ee; border-radius: 10px; padding: 14px 16px; overflow-x: auto; font-size: 14.5px; line-height: 1.6; }
+  pre.mermaid { background: #fbfcfd; text-align: center; }
+  .formula { background: #f6f8fb; border: 1px solid #e6ebf2; border-radius: 10px; padding: 14px 18px; margin: 14px 0; overflow-x: auto; font-size: 1.02em; }
+  table { border-collapse: collapse; width: 100%; margin: 16px 0; font-size: 14.8px; }
+  th, td { border: 1px solid #dfe3ea; padding: 7px 11px; text-align: left; vertical-align: top; }
+  th { background: #f0f3f7; font-family: "Microsoft YaHei", "PingFang SC", sans-serif; font-weight: 600; }
+  tr:nth-child(even) td { background: #fafbfd; }
+  blockquote { margin: 16px 0; padding: 10px 18px; border-left: 4px solid #4a7dbd; background: #f3f7fc; border-radius: 0 8px 8px 0; color: #33414f; }
+  blockquote p { margin: 6px 0; }
+  a { color: #2c5fa8; text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  .evi { display: inline-block; font-family: "Microsoft YaHei", sans-serif; font-size: 11.5px; border-radius: 4px; padding: 0 5px; margin-left: 4px; vertical-align: 1px; border: 1px solid; line-height: 1.5; }
+  .eviA { color: #1c7a43; border-color: #9fd6b6; background: #f0faf4; }
+  .eviB { color: #9c6b0f; border-color: #ecd39a; background: #fdf8ec; }
+  .eviC { color: #a0522d; border-color: #e8c4ab; background: #fdf4ee; }
+  .fig { border: 1px solid #e2e6ec; border-radius: 12px; background: #fff; padding: 18px 14px 8px; margin: 22px 0; }
+  .figcap { font-family: "Microsoft YaHei", "PingFang SC", sans-serif; font-size: 14px; color: #5a6572; text-align: center; padding: 8px 12px 10px; line-height: 1.6; }
+  .topnav { position: sticky; top: 0; z-index: 50; background: rgba(253,253,253,.96); border-bottom: 1px solid #e8eaee; padding: 8px 0 6px; margin: 0 -6px 18px; font-family: "Microsoft YaHei", sans-serif; font-size: 13.5px; display: flex; flex-wrap: wrap; gap: 4px 12px; justify-content: center; }
+  .topnav a { color: #2c5fa8; }
+  .topnav a.here { color: #111; font-weight: 700; border-bottom: 2px solid #4a7dbd; padding-bottom: 2px; }
+  .pager { display: flex; justify-content: space-between; margin-top: 48px; font-family: "Microsoft YaHei", sans-serif; font-size: 14.5px; }
+  .footer-note { margin-top: 28px; padding-top: 12px; border-top: 1px dashed #d8dde5; color: #7a8699; font-size: 13.5px; }
+  .term { font-weight: 700; }
+</style>
+</head>
+<body>
+
+<a href="https://luxiangz.github.io/llm-tech-map/" style="position:fixed;top:12px;right:14px;z-index:99;background:#f6f7f9;border:1px solid #e2e5ea;border-radius:999px;padding:4px 12px;font-size:14px;color:#2c5fa8;text-decoration:none;box-shadow:0 1px 4px rgba(0,0,0,.08)">← 技术地图首页</a>
+
+<nav class="topnav">
+  <a href="index.html">总览</a><a href="01-concepts-case.html">概念与案例</a><a href="02-sft.html" class="here">SFT</a><a href="03-rl.html">RL</a><a href="04-opd.html">OPD</a><a href="05-opsd.html">OPSD</a><a href="06-related.html">偏好与相关</a><a href="07-theory.html">理论统一</a><a href="08-evidence-cost.html">证据与成本</a><a href="09-evolution.html">演进与争议</a><a href="10-selection.html">选型</a><a href="comparison.html">对照表</a><a href="literature.html">文献库</a><a href="gaps.html">缺口</a>
+</nav>
+
+<p class="kicker">大语言模型后训练技术体系深度调研 · 第 2 章</p>
+<h1>SFT 深度机制：示范学习到底教会了模型什么</h1>
+
+<p><strong>本章结论：</strong>SFT 的数学身份是<strong>行为克隆（BC）+ 预训练先验</strong>：它把示范分布"复印"进权重——覆盖到的行为（尤其输出格式与风格）被高效习得，覆盖外的行为既无概率质量也无纠错信号。三条证据链支持这一定位：(1) LIMA 的表层对齐假说与 InstructGPT"1.3B 胜 175B"表明 SFT 主要教<strong>格式与行为表层</strong>，知识几乎全部来自预训练；(2) 受控实验（Chu et al. 2025）表明 SFT 在超出示范覆盖的变体上退回<strong>记忆化</strong>，而 outcome-reward RL 泛化更好——但 SFT 稳定格式恰是 RL 生效的前提；(3) 示范来自教师时，SFT 与序列级蒸馏（SeqKD）目标恒等，因此"换更强教师"直接迁移效果（GPT-4 数据 > davinci-003 数据；OpenMathInstruct-2 消融）。数据工程的全部主线（Self-Instruct→过滤→精筛→问题多样性）都在回答同一个问题：<strong>在给定算力下，用什么样的示范分布去覆盖目标行为分布</strong>。</p>
+
+<h2>2.1 目标函数与机制定位</h2>
+
+<div class="formula">
+$$
+\mathcal{L}_{\text{SFT}}(\theta) = -\,\mathbb{E}_{(x,y)\sim\mathcal{D}}\Big[\sum_{t=1}^{|y|} \log \pi_\theta(y_t \mid y_{<t}, x)\Big]
+\quad\text{（实践常带 loss masking：}\ \mathbb{1}[t\in\text{response}]\text{ 加权）}
+$$
+</div>
+
+<p>逐 token 交叉熵等价于把示范 token 视作 one-hot"教师分布"做压缩：$\ -\log \pi_\theta(y_t\mid\cdot)=\mathrm{CE}(\delta_{y_t},\pi_\theta)+\text{const}$。<span class="evi eviA">A</span> 由此可直接读出 SFT 的三个结构性质：</p>
+<ul>
+<li><strong>只学行为，不学评价。</strong>损失里没有任何"这个行为好不好"的信号——好/坏必须由数据本身（选择什么进 $\mathcal{D}$）或后续阶段（RL/偏好）引入。</li>
+<li><strong>梯度只经过示范访问过的状态。</strong>$y_{&lt;t}$ 全部来自示范。部署时模型自回归生成会访问自己的状态分布，两者不一致即 <a href="https://arxiv.org/abs/1011.0686">DAgger [1011.0686]</a> 意义上的 covariate shift：BC 总损失以 $O(T^2\varepsilon)$ 复合，DAgger 式"在学习者状态上查询专家"可收紧到 $O(T\varepsilon)$——后者恰是 on-policy 蒸馏的理论雏形。<span class="evi eviA">A</span>（RNN 时代的 exposure bias 文献 <a href="https://arxiv.org/abs/1506.03099">[1506.03099]</a>、<a href="https://arxiv.org/abs/1511.06732">[1511.06732]</a> 给出同向诊断；在现代 LLM 上的量化影响仍缺直接测量，<span class="evi eviC">C</span>）</li>
+<li><strong>上限由数据决定。</strong>示范来自教师模型 $\pi_T$ 时，SFT 与 <a href="https://arxiv.org/abs/1606.07947">Kim & Rush 序列级蒸馏 [1606.07947]</a> 的目标恒等：$\mathcal{L}_{\text{seq-KD}}=\mathbb{E}_{x\sim\mathcal{D},y\sim\pi_T}[-\sum_t\log\pi_\theta(y_t\mid\cdot)]$——"SFT 于教师样本"≡"采样式蒸馏"，这一恒等式是第 4、7 章统一框架的基石。<span class="evi eviA">A</span></li>
+</ul>
+
+<h2>2.2 指令微调的三个时代</h2>
+
+<h3>2.2.1 任务级泛化时代（2021–2022）：把"读说明做事"写进权重</h3>
+<table>
+<tr><th style="width:16%">工作</th><th>机制要点</th><th>关键证据（条件）</th></tr>
+<tr><td><a href="https://arxiv.org/abs/2109.01652">FLAN [2109.01652]</a></td><td>60+ 数据集（25 任务簇）改写为自然语言指令，对 LaMDA 137B 多任务微调；按簇留出评估</td><td>留出簇 zero-shot 超 175B GPT-3 zero-shot。<span class="evi eviB">B</span></td></tr>
+<tr><td><a href="https://arxiv.org/abs/2110.08207">T0 [2110.08207]</a></td><td>~40 数据集 × 多套提示模板（P3）多任务微调</td><td>T0-11B zero-shot 超过 16 倍大模型；模板多样性是泛化关键。<span class="evi eviB">B</span></td></tr>
+<tr><td><a href="https://arxiv.org/abs/2210.11416">Flan-T5/PaLM [2210.11416]</a></td><td>1,836 任务 + CoT 数据混合，任务/规模双 scaling</td><td>Flan-PaLM 540B 平均 +9.4% 超 PaLM；MMLU 75.2%（当时 SOTA）。<span class="evi eviB">B</span></td></tr>
+<tr><td><a href="https://arxiv.org/abs/2203.02155">InstructGPT SFT [2203.02155]</a></td><td>标注员撰写约 13k prompt-示范对，直接微调 GPT-3</td><td>1.3B InstructGPT 人评优于 175B GPT-3——"示范了什么行为"比容量更决定对齐。<span class="evi eviB">B</span></td></tr>
+</table>
+<p>这一阶段确立了 SFT 的第一功能：<strong>指令格式与任务理解</strong>。注意 FLAN 系的"任务 scaling 增益"针对任务能力，与下文 LIMA 的"对齐只需 1k"并不矛盾——对象不同（任务能力 vs 对话风格），文献引用时常见混同。<span class="evi eviC">C</span></p>
+
+<h3>2.2.2 数据质量时代（2022–2024）：从 52k 到 1k 的收敛</h3>
+<table>
+<tr><th style="width:16%">工作</th><th>机制要点</th><th>关键证据（条件）</th></tr>
+<tr><td><a href="https://arxiv.org/abs/2212.10560">Self-Instruct [2212.10560]</a></td><td>175 个人写种子 → GPT-3 自举生成 52k 指令数据 → 规则/ROUGE-L 过滤 → 微调自身</td><td>Super-NI 较 vanilla +33%（绝对），人评与 InstructGPT-001 差 5%。<span class="evi eviB">B</span></td></tr>
+<tr><td><a href="https://arxiv.org/abs/2304.03277">Instruction Tuning with GPT-4 [2304.03277]</a></td><td>教师从 davinci-003 升级为 GPT-4，管线不变</td><td>zero-shot 超此前 SOTA 教师数据——效果随教师质量迁移。<span class="evi eviB">B</span></td></tr>
+<tr><td><a href="https://arxiv.org/abs/2304.12244">Evol-Instruct/WizardLM [2304.12244]</a></td><td>指令演化（in-depth 加约束 / in-breadth 换主题）制造难度课程</td><td>高复杂度区间人评超 ChatGPT。<span class="evi eviB">B</span></td></tr>
+<tr><td><a href="https://arxiv.org/abs/2305.11206">LIMA [2305.11206]</a></td><td>1,000 条精筛示范微调 65B LLaMA；提出 Superficial Alignment Hypothesis："几乎全部知识来自预训练，少量指令数据只教高质量输出的格式"</td><td>人评 vs GPT-4 有 43% 等同/更优；SAH 本身为解释性假说。<span class="evi eviB">B</span>/<span class="evi eviC">C</span></td></tr>
+<tr><td><a href="https://arxiv.org/abs/2307.08701">AlpaGasus [2307.08701]</a></td><td>ChatGPT 给 Alpaca 52k 逐条打分，滤剩 9k</td><td>9k &gt; 52k（GPT-4 评估+受控人评）；7B 训练时间 80→14 分钟。<span class="evi eviB">B</span></td></tr>
+<tr><td><a href="https://arxiv.org/abs/2312.15685">DEITA [2312.15685]</a></td><td>复杂度×质量×多样性三维自动打分选 6k</td><td>6k 达到/超过 10 倍数据基线；+DPO 后 MT-Bench 7.55。<span class="evi eviB">B</span></td></tr>
+</table>
+
+<h3>2.2.3 合成数据与规模时代（数学域代表）</h3>
+<table>
+<tr><th style="width:18%">工作</th><th>机制要点</th><th>关键证据（条件）</th></tr>
+<tr><td><a href="https://arxiv.org/abs/2309.12284">MetaMath [2309.12284]</a></td><td>问题侧扩增：重写/自验证/后向推理（FOBAR）构造 ~395K QA</td><td>MetaMath-7B GSM8K ~66.5%（LLaMA-2-7B 基础上翻倍级；数值未逐字复核 <span class="evi eviB">B</span>）——增益来自<strong>问题多样性</strong></td></tr>
+<tr><td><a href="https://arxiv.org/abs/2402.10176">OpenMathInstruct-1 [2402.10176]</a></td><td>Mixtral-8x7B + 代码解释器合成 1.8M 题-解对</td><td>开源数学 SFT 基线。<span class="evi eviB">B</span></td></tr>
+<tr><td><a href="https://arxiv.org/abs/2410.01560">OpenMathInstruct-2 [2410.01560]</a></td><td>14M 题-解对（~600K 唯一问题），纯 SFT</td><td>Llama-3.1-8B-Base MATH 51.9%→67.8%（超官方 Instruct 15.9 点）。四条大规模消融：(a) 解答格式重要、冗长有害；(b) 强教师&gt;等量弱学生；(c) <strong>SFT 对低质量解答鲁棒、过滤可粗糙</strong>；(d) <strong>问题多样性是数据 scaling 增益关键</strong>。<span class="evi eviA">A</span></td></tr>
+</table>
+<p>注意 (c) 与 AlpaGasus"低质量有害"的表面矛盾：数学域有可验证对错与高冗余（同题多解），且 OMI-2 的"低质量"指粗糙但基本正确的解答；聊天域的"低质量"是错误/不相关示范，直接塑造错误行为。领域不同、定义不同，引用时须分清。<span class="evi eviC">C</span></p>
+
+<h2>2.3 SFT 记忆化 vs RL 泛化：直接对照实验</h2>
+
+<p><a href="https://arxiv.org/abs/2501.17161">Chu et al. 2025 [2501.17161]</a> 用自建可控任务（GeneralPoints 算术纸牌游戏、V-IRL 导航；Llama-3.2-Vision 骨干）做同范式对比：</p>
+<ul>
+<li>分布外规则/视觉变体上：<strong>RL（结果奖励）持续提升，SFT 显著退化</strong>（V-IRL-L 变体：SFT 80.8%→1.3%，−79.5%）；论文原文："SFT tends to memorize training data and struggles to generalize out-of-distribution scenarios"。<span class="evi eviB">B</span>（受控游戏域；向通用 LLM 外推为 B/C）</li>
+<li>但同一论文明确："SFT remains essential for effective RL training; SFT stabilizes the model's output format"——<strong>无 SFT 打底时端到端 RL 全部失败</strong>。这解释了 InstructGPT/R1（冷启动）/Qwen3（Stage 1）无一例外以 SFT 起步。<span class="evi eviB">B</span></li>
+</ul>
+<p>与 DAgger 理论合读：SFT 无 on-policy 修正 → 分布外失守；RL/OPD 在学生自己的状态分布上给信号 → 泛化。两个"泛化"层次必须区分：<strong>分布内变体的泛化</strong>（SFT 弱，RL 强）与<strong>分布外新解法的扩展</strong>（RL 也未必做到，见第 9 章 pass@k 争论）。</p>
+
+<h2>2.4 训练工程：masking、packing、epoch</h2>
+<table>
+<tr><th style="width:18%">主题</th><th>要点</th><th>证据</th></tr>
+<tr><td>Loss masking / prompt loss weight</td><td>实践默认只对回答 token 计损；但系统消融显示短补全任务上小非零 prompt loss（0.01–0.5）反而更好，PLW≈1 利于长补全——"必须 mask"不是铁律</td><td><a href="https://arxiv.org/abs/2401.13586">[2401.13586]</a> 单一 preprint，待复制 <span class="evi eviB">B</span></td></tr>
+<tr><td>Packing 与交叉污染</td><td>padding 浪费可达 50% token；现代栈 pack + 注意力隔离为主流；"按主题相关打包"（TFP）报告 GSM8K +7%，但未成主流</td><td><a href="https://arxiv.org/abs/2107.02027">[2107.02027]</a>、<a href="https://arxiv.org/abs/2408.09327">[2408.09327]</a> <span class="evi eviB">B</span></td></tr>
+<tr><td>多轮对话</td><td>全合成（<a href="https://arxiv.org/abs/2305.14233">UltraChat [2305.14233]</a>）与众包对话树（<a href="https://arxiv.org/abs/2304.07327">OpenAssistant [2304.07327]</a>：161,443 条消息、46 万评级）两条路；OASST 的"人在模型消息上写改进回复"是罕见的弱 on-policy 示范形态</td><td><span class="evi eviB">B</span></td></tr>
+<tr><td>Epoch 与过拟合</td><td>小数据多轮（LIMA 15 epochs）靠极致筛选抗过拟合；大规模数据 1–3 epochs；SFT 的过拟合形态是"不训崩但记忆化"（Chu et al.）</td><td><span class="evi eviB">B</span>/<span class="evi eviC">C</span>（epoch 数多凭记忆，未逐字复核）</td></tr>
+</table>
+
+<h2>2.5 回答任务书问题 5.1-1/5.1-2</h2>
+<h3>SFT 如何从示范中学习目标行为？</h3>
+<ol>
+<li><strong>目标即模仿</strong>：交叉熵把示范 token 条件概率推向 1，学的是"示范覆盖的状态上，示范采取的动作"的条件分布，不含行为背后的偏好或结果信号。<span class="evi eviA">A</span></li>
+<li><strong>知识来自预训练，SFT 教表层</strong>：LIMA 的 SAH + InstructGPT 1.3B&gt;175B。<span class="evi eviB">B</span></li>
+<li><strong>示范分布决定学到什么</strong>：教师升级直接迁移（Peng et al.）；OMI-2 消融 (b)；SFT≡SeqKD。<span class="evi eviA">A</span></li>
+<li><strong>泛化来自覆盖广度而非算法</strong>：FLAN/Flan 任务 scaling、OMI-2 消融 (d)。<span class="evi eviA">A</span></li>
+<li><strong>格式锚定是 SFT 独特贡献</strong>：Chu et al. 直接验证，解释"SFT 先行"的工业共识。<span class="evi eviB">B</span></li>
+</ol>
+<h3>示范覆盖不足时模型会出现什么局限？</h3>
+<ol>
+<li><strong>复合误差</strong>（$O(T^2\varepsilon)$，DAgger）：理论病灶。<span class="evi eviA">A</span></li>
+<li><strong>记忆化替代泛化</strong>：Chu et al. OOD 变体崩溃。<span class="evi eviB">B</span></li>
+<li><strong>错误示范被逐字继承</strong>：无纠错信号（数学域因可验证+冗余较鲁棒，聊天域敏感）。<span class="evi eviB">B</span></li>
+<li><strong>能力天花板由示范复杂度决定</strong>：WizardLM"人写不出高复杂度指令"。<span class="evi eviB">B</span></li>
+<li><strong>风格可从极少示范习得，能力不能</strong>：LIMA 1k 教会格式但附录记录分布外失败；Flan 证明任务能力需广覆盖。<span class="evi eviB">B</span></li>
+</ol>
+
+<h2>2.6 小结：SFT 在统一框架中的坐标</h2>
+<table>
+<tr><th style="width:16%">维度</th><th>SFT 的取值</th></tr>
+<tr><td>数据生成</td><td>固定数据集（人工/教师/合成），off-policy</td></tr>
+<tr><td>监督信号</td><td>token 级硬标签（one-hot 目标），每步 1 个选择</td></tr>
+<tr><td>教师机制</td><td>无显式教师（数据即教师）；= SeqKD 当数据来自教师采样</td></tr>
+<tr><td>优化目标</td><td>示范分布上的前向 KL（对 one-hot）</td></tr>
+<tr><td>计算开销</td><td>最低：单次前向 + 反传，高度并行；无 rollout、无 RM、无教师推理</td></tr>
+<tr><td>性能机制</td><td>复制覆盖内行为 + 锚定格式；不引入超出示范的信息</td></tr>
+<tr><td>失败模式</td><td>覆盖外记忆化/退化；复制示范错误；exposure bias（长链复合）</td></tr>
+<tr><td>技术关系</td><td>RLHF/Qwen3 管线的第一阶段与 π_ref 来源；与 SeqKD 恒等（A 级）；RFT 是"自采样+过滤"的 SFT；OPD 是其 on-policy 软监督推广</td></tr>
+</table>
+
+<div class="pager">
+  <a href="01-concepts-case.html">← 第 1 章 · 概念与案例</a>
+  <a href="03-rl.html">第 3 章 · RL 深度机制 →</a>
+</div>
+
+<p class="footer-note">后训练技术体系深度调研 · 检索截止 2026-10-22 · 引用以核验过的 arXiv 编号为准 · <a href="literature.html">完整文献库</a></p>
+
+</body>
+</html>

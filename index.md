@@ -14,6 +14,9 @@ description: 面向大模型方向的完整技术知识目录，覆盖从数学�
 ### 学习指南
 - [MiniMind 全链路完整指南：从零训练到强化学习与部署](docs/minimind/)
 
+### 后训练技术体系（SFT · RL · OPD · OPSD）
+- [大模型后训练技术体系深度调研 —— SFT · RL · OPD · OPSD 四范式统一框架：概念五层分解 × 贯穿案例 × KL 数学统一；OPSD 2026 双起点原始论文与批判文献；Qwen3 Table 21 蒸馏/RL 成本对照；125+ 篇核验文献可检索库与选型决策图（14 页 · 检索截止 2026-10-22）](docs/posttraining/index.html)
+
 ### 卷积网络与轻量化设计
 - [卷积的原理与卷积层设计全景 —— 核尺寸（小核堆叠 · 多尺度 · 可变形 · 1×1）× 运算方式（分组 · Depthwise · 通道混洗 · 通道加权）× 连接拓扑（跳跃 · 密集）：公式推导、数值对比与代表网络](docs/cnn/conv-principles-and-designs.html)
 
@@ -221,17 +224,17 @@ flowchart LR
 - [ ] LoRA 与全参微调对比实验设计
 
 ### 4.3 强化学习与偏好对齐
-- [ ] RLHF 流程：奖励模型训练、KL 正则、PPO 细节（GAE/重要性采样/clip）
-- [ ] DPO 及变体：IPO/KTO/ORPO/cDPO、在线 vs 离线 RL
-- [ ] GRPO、RLVR 可验证奖励、R1 式强化学习
-- [ ] 测试时扩展：MCTS、RFT/STaR、搜索与采样结合
-- [ ] 多阶段训练流水线：SFT→RM→RL 整体设计
-- [ ] RLAIF / Constitutional AI（AI 反馈对齐）
+- [ ] RLHF 流程：奖励模型训练、KL 正则、PPO 细节（GAE/重要性采样/clip） — 📄 [后训练技术体系 · RL 章](docs/posttraining/03-rl.html)
+- [ ] DPO 及变体：IPO/KTO/ORPO/cDPO、在线 vs 离线 RL — 📄 [后训练技术体系 · 偏好优化章](docs/posttraining/06-related.html)
+- [ ] GRPO、RLVR 可验证奖励、R1 式强化学习 — 📄 [后训练技术体系 · RL 章 / 演进与争议章](docs/posttraining/03-rl.html)
+- [ ] 测试时扩展：MCTS、RFT/STaR、搜索与采样结合 — 📄 [后训练技术体系 · 自训练家族](docs/posttraining/06-related.html)
+- [ ] 多阶段训练流水线：SFT→RM→RL 整体设计 — 📄 [后训练技术体系 · 混合流程时间线](docs/posttraining/08-evidence-cost.html)
+- [ ] RLAIF /Constitutional AI（AI 反馈对齐）
 - [ ] RL 训练框架：veRL（字节火山引擎）、OpenRLHF、TRL、NeMo-Aligner、OpenRL；veRL 架构（vLLM 采样 + Megatron 训练双引擎、rollout 并行、PPO/GRPO 流水线）
 
 ### 4.4 蒸馏
-- [ ] 知识蒸馏基础：logit/特征/分布蒸馏
-- [ ] MiniLLM、在线蒸馏、自蒸馏
+- [ ] 知识蒸馏基础：logit/特征/分布蒸馏 — 📄 [后训练技术体系 · OPD 章](docs/posttraining/04-opd.html)
+- [ ] MiniLLM、在线蒸馏、自蒸馏 — 📄 [后训练技术体系 · OPD/OPSD 章](docs/posttraining/05-opsd.html)
 - [ ] 蒸馏与量化/剪枝的工程组合
 
 ### 4.5 模型评估

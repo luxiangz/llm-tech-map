@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>10 · 技术选型决策指南</title>
+
+<!-- 霞鹜文楷：开源可商用的中文楷体风格字体；加载失败时自动回退到微软雅黑 -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/lxgw-wenkai-webfont@1.7.0/style.css">
+
+<script>
+window.MathJax = {
+  tex: { inlineMath: [['$','$'],['\\(','\\)']], displayMath: [['$$','$$'],['\\[','\\]']], processEscapes: true },
+  svg: { fontCache: 'global' }
+};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js" async></script>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+<script>mermaid.initialize({ startOnLoad: true, theme: "neutral", fontFamily: '"Microsoft YaHei", "PingFang SC", sans-serif' });</script>
+
+<style>
+  body { font-family: "LXGW WenKai", "Microsoft YaHei", "PingFang SC", sans-serif; font-size: 17.5px; line-height: 1.85; letter-spacing: 0.01em; color: #26292e; background: #fdfdfd; max-width: 1000px; margin: 0 auto; padding: 56px 28px 96px; }
+  h1, h2, h3, h4, .kicker { font-family: "Microsoft YaHei", "PingFang SC", sans-serif; line-height: 1.4; }
+  h1 { font-size: 30px; margin: 10px 0 6px; color: #1a1d21; }
+  h2 { font-size: 23px; margin-top: 2.4em; padding-bottom: 6px; border-bottom: 2px solid #e8eaee; color: #1f2733; }
+  h3 { font-size: 19px; margin-top: 1.8em; color: #2c3e50; }
+  h4 { font-size: 17.5px; margin-top: 1.4em; color: #3a4a5c; }
+  .kicker { font-size: 13px; letter-spacing: 0.22em; text-transform: uppercase; color: #7a8699; margin-bottom: 4px; }
+  code, pre { font-family: "Cascadia Code", Consolas, "Microsoft YaHei", monospace; }
+  code { background: #f2f4f7; padding: 1px 6px; border-radius: 5px; font-size: 0.88em; color: #35414f; }
+  pre { background: #f7f8fa; border: 1px solid #e6e9ee; border-radius: 10px; padding: 14px 16px; overflow-x: auto; font-size: 14.5px; line-height: 1.6; }
+  pre.mermaid { background: #fbfcfd; text-align: center; }
+  .formula { background: #f6f8fb; border: 1px solid #e6ebf2; border-radius: 10px; padding: 14px 18px; margin: 14px 0; overflow-x: auto; font-size: 1.02em; }
+  table { border-collapse: collapse; width: 100%; margin: 16px 0; font-size: 14.8px; }
+  th, td { border: 1px solid #dfe3ea; padding: 7px 11px; text-align: left; vertical-align: top; }
+  th { background: #f0f3f7; font-family: "Microsoft YaHei", "PingFang SC", sans-serif; font-weight: 600; }
+  tr:nth-child(even) td { background: #fafbfd; }
+  blockquote { margin: 16px 0; padding: 10px 18px; border-left: 4px solid #4a7dbd; background: #f3f7fc; border-radius: 0 8px 8px 0; color: #33414f; }
+  blockquote p { margin: 6px 0; }
+  a { color: #2c5fa8; text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  .evi { display: inline-block; font-family: "Microsoft YaHei", sans-serif; font-size: 11.5px; border-radius: 4px; padding: 0 5px; margin-left: 4px; vertical-align: 1px; border: 1px solid; line-height: 1.5; }
+  .eviA { color: #1c7a43; border-color: #9fd6b6; background: #f0faf4; }
+  .eviB { color: #9c6b0f; border-color: #ecd39a; background: #fdf8ec; }
+  .eviC { color: #a0522d; border-color: #e8c4ab; background: #fdf4ee; }
+  .fig { border: 1px solid #e2e6ec; border-radius: 12px; background: #fff; padding: 18px 14px 8px; margin: 22px 0; }
+  .figcap { font-family: "Microsoft YaHei", "PingFang SC", sans-serif; font-size: 14px; color: #5a6572; text-align: center; padding: 8px 12px 10px; line-height: 1.6; }
+  .topnav { position: sticky; top: 0; z-index: 50; background: rgba(253,253,253,.96); border-bottom: 1px solid #e8eaee; padding: 8px 0 6px; margin: 0 -6px 18px; font-family: "Microsoft YaHei", sans-serif; font-size: 13.5px; display: flex; flex-wrap: wrap; gap: 4px 12px; justify-content: center; }
+  .topnav a { color: #2c5fa8; }
+  .topnav a.here { color: #111; font-weight: 700; border-bottom: 2px solid #4a7dbd; padding-bottom: 2px; }
+  .pager { display: flex; justify-content: space-between; margin-top: 48px; font-family: "Microsoft YaHei", sans-serif; font-size: 14.5px; }
+  .footer-note { margin-top: 28px; padding-top: 12px; border-top: 1px dashed #d8dde5; color: #7a8699; font-size: 13.5px; }
+  .term { font-weight: 700; }
+</style>
+</head>
+<body>
+
+<a href="https://luxiangz.github.io/llm-tech-map/" style="position:fixed;top:12px;right:14px;z-index:99;background:#f6f7f9;border:1px solid #e2e5ea;border-radius:999px;padding:4px 12px;font-size:14px;color:#2c5fa8;text-decoration:none;box-shadow:0 1px 4px rgba(0,0,0,.08)">← 技术地图首页</a>
+
+<nav class="topnav">
+  <a href="index.html">总览</a><a href="01-concepts-case.html">概念与案例</a><a href="02-sft.html">SFT</a><a href="03-rl.html">RL</a><a href="04-opd.html">OPD</a><a href="05-opsd.html">OPSD</a><a href="06-related.html">偏好与相关</a><a href="07-theory.html">理论统一</a><a href="08-evidence-cost.html">证据与成本</a><a href="09-evolution.html">演进与争议</a><a href="10-selection.html" class="here">选型</a><a href="comparison.html">对照表</a><a href="literature.html">文献库</a><a href="gaps.html">缺口</a>
+</nav>
+
+<p class="kicker">大语言模型后训练技术体系深度调研 · 第 10 章（交付物 E）</p>
+<h1>技术选型决策指南</h1>
+
+<p><strong>使用说明：</strong>本指南把前九章的证据转化为可解释的技术选择建议。<strong>不存在无条件的最优方案</strong>——每条建议都标注了证据等级（A/B/C）、前置条件与主要风险。决策变量按重要性排序：① 任务是否可验证；② 是否有强教师；③ 预算与在线采样能力；④ 目标能力类型。性能预期一律限定在已引用实验的条件内。</p>
+
+<h2>10.1 图 8：选型决策树</h2>
+
+<div class="fig">
+<pre class="mermaid">
+flowchart TD
+  START["开始：base 模型已定，确定后训练方案"] --> Q1{"任务有可验证<br/>正确答案/约束？<br/>（数学终答·单测·IFEval）"}
+  Q1 -->|"是"| Q2{"有强教师模型？<br/>（白盒 logprob 或可查询）"}
+  Q1 -->|"否（写作/对话/主观质量）"| Q5{"有高质量人工/AI 偏好数据？"}
+  Q2 -->|"有"| Q3{"学生规模与算力？"}
+  Q2 -->|"无"| R1["推荐：RLVR（GRPO/DAPO 系）<br/>前置：验证器可靠 + base 已有潜藏能力<br/>成本：高（rollout 为主）·风险：熵坍缩/伪奖励<br/>证据：R1/DAPO/DeepScaleR【A】"]
+  Q3 -->|"小（&lt;14B）或预算紧"| R2["推荐：蒸馏优先——off-policy 起步 + on-policy 蒸馏收尾<br/>前置：教师可对学生前缀打分·师生差距适中（需冷启动）<br/>成本：约为 RL 1/10·风险：上限=教师·多样性损失<br/>证据：R1 蒸馏/Qwen3 Table 21/TM【A】"]
+  Q3 -->|"大 + 追边界"| R3["推荐：冷启动 SFT → RLVR →（可选）蒸馏回收<br/>前置：长时程稳定算法栈（DAPO/Dr.GRPO 修补）<br/>成本：最高·风险：KL/熵失控·大 k 可能不升<br/>证据：R1/Qwen3/ProRL【A/B】"]
+  Q5 -->|"有（离线静态）"| Q6{"数据是否近似 on-policy<br/>且任务偏指令遵循？"}
+  Q5 -->|"无"| R7["推荐：Self-Instruct 式合成 + 质量过滤 + SFT<br/>前置：合成管线与过滤器<br/>成本：低·风险：教师错误继承<br/>证据：Self-Instruct/AlpaGasus/DEITA【B】"]
+  Q6 -->|"是"| R4["推荐：离线 DPO（或 SimPO/ORPO/KTO）<br/>前置：偏好对干净·需 SFT 起点<br/>成本：≈SFT·风险：chosen 似然下降→NLL 正则<br/>证据：Zephyr/SimPO【A】"]
+  Q6 -->|"否/漂移大/需探索"| R5["推荐：迭代/在线偏好（每轮新采样+判分）<br/>或 Self-Rewarding 自举<br/>成本：中·风险：judge 被利用<br/>证据：OAIF/Tajwar/Llama 3【A】"]
+  R2 --> Q7{"教师不可查询（黑盒 API）？"}
+  Q7 -->|"是"| R8["变体：SeqKD（教师生成数据级蒸馏）<br/>或对抗判别器（GAD 类）<br/>证据：R1 蒸馏/GAD【A/B】"]
+  R1 --> Q8{"想要逐步信用分配<br/>但无过程标注？"}
+  Q8 -->|"是"| R9["变体：PRIME 隐式过程奖励 / OPSD（特权参考解）<br/>证据：PRIME【A】·OPSD【A，批判见第5章】"]
+  classDef rec fill:#eef7f0,stroke:#a8c8a8;
+  classDef q fill:#fdf6ec,stroke:#e3c89a;
+  class R1,R2,R3,R4,R5,R7,R8,R9 rec;
+  class Q1,Q2,Q3,Q5,Q6,Q7,Q8 q;
+</pre>
+<p class="figcap"><strong>图 8 · 后训练技术选型决策图。</strong>绿色=候选方案（含前置条件/成本/风险/证据等级），黄色=决策节点。主干依据：可验证性决定 RLVR 可用性（R1/Tulu 3【A】）；"小模型+强教师→蒸馏优先"来自 R1 蒸馏节与 Qwen3 Table 21 的 A 级对照；"离线偏好够用"的条件来自 Zephyr/SimPO vs OAIF/Tajwar 的边界；OPSD 分支（R9）刻意标注批判文献（OP²SD 等）——它是最新的选项，机制解释未定。<strong>本图不预设任何方法为全局最优</strong>；组合式配方（如 R3 的三段式）在 10.3 节展开。</p>
+</div>
+
+<h2>10.2 按任务类型的建议表</h2>
+<table>
+<tr><th style="width:12%">任务</th><th style="width:26%">首选与次选</th><th>依据与风险</th></tr>
+<tr><td>数学推理</td><td>首选：有教师→蒸馏两阶段（off→on-policy）+ 可选 RLVR 收尾；无教师→RLVR（GRPO/DAPO）；无标注想上 OPSD：需参考解数据 + 阅读批判文献</td><td>R1 蒸馏 72.6 vs 直 RL 47.0（32B）【A】；Qwen3 74.4@1/10 成本【A】；OPSD 64.8 vs GRPO 64.0（8B）但增益来源存疑【A/B】</td></tr>
+<tr><td>代码生成</td><td>首选：RLVR（编译+单测做验证器）；次选：SDPO（报错信息做特权反馈）——代码域反馈天然丰富</td><td>SDPO LCBv6 48.8 vs GRPO 41.2【A】；风险：测试覆盖不足→应试</td></tr>
+<tr><td>指令遵循</td><td>首选：可形式化约束→RLVR-IF；否则迭代 DPO；SimPO/ORPO 做低成本替代</td><td>Tulu 3 IFEval 72.8→82.4【A】；Llama 3 弃 PPO 选 DPO【A】</td></tr>
+<tr><td>写作/对话/安全</td><td>RLVR 原生不可用→偏好优化（离线或迭代）+ 强 KL/参考模型；安全用对抗/边界对（Llama 3 safety DPO）</td><td>RM 可被利用（Skalse/Secrets I）【A】；RLAIF 需警惕弱教师假象（Sharma）【A】</td></tr>
+<tr><td>Agent/工具使用</td><td>环境反馈奖励的 RL（K2 方向）；多轮信用分配未解→SDPO/Skill-SD 类（技能做特权）是活跃候选</td><td>K2【A/B】、Skill-SD 超 GRPO 14%（AppWorld）【B】</td></tr>
+<tr><td>多模态</td><td>文本 LLM 教师向 VLM 迁移推理：OPD（需 SFT 冷启动对齐）或 RP-OPSD（分辨率特权）</td><td>VOLD：无冷启动 OPD 失效【A】</td></tr>
+<tr><td>持续学习/领域适配</td><td>OPD 回退防护（TM 个性化实验：IF-eval 79→83 且保知识）；避免长程 SDPO（遗忘/塌缩报告）</td><td>TM 博客【B】、Denser≠Better【B】</td></tr>
+</table>
+
+<h2>10.3 按资源条件的组合配方</h2>
+<table>
+<tr><th style="width:20%">资源画像</th><th>建议配方</th><th>出处（原型系统）</th></tr>
+<tr><td>有旗舰教师 + 小学生 + 有限算力</td><td>① off-policy 蒸馏（SeqKD 起步）→ ② on-policy 蒸馏 → ③ 小规模 RLVR 可选收尾</td><td>Qwen3 小模型轨道；TM 复现【A】</td></tr>
+<tr><td>无教师 + 中等算力 + 可验证任务</td><td>① SFT 冷启动（几千条）→ ② RLVR（GRPO+DAPO 修补：clip-higher/动态采样/token loss）</td><td>R1 四阶段前半；DeepScaleR（1.5B/40k 题）【A/B】</td></tr>
+<tr><td>只有偏好数据 + 低预算</td><td>① SFT → ② 离线 DPO（带 chosen-NLL 正则、屏蔽格式 token）；数据可更新则迭代化</td><td>Zephyr→Llama 3 工程细节【A】</td></tr>
+<tr><td>有环境反馈（报错/评测）+ 无教师</td><td>RLVR 主干 + SDPO 式反馈自蒸馏（弱模型需与 GRPO 混合）</td><td>SDPO【A】</td></tr>
+<tr><td>追求最大边界（前沿实验室）</td><td>大 base → 冷启动 → 大规模 RL（长时程+KL 控制+参考重置）→ 拒绝采样回炉 → 全场景 RL</td><td>R1 完整管线；ProRL 条件【A/B】</td></tr>
+</table>
+
+<h2>10.4 常见误用与检查点</h2>
+<ul>
+<li><strong>把蒸馏当 RL 用期待超越教师</strong>：蒸馏（含 OPD/OPSD）的信号由教师定义，渐近上限是教师；要超教师必须引入教师之外的信号（奖励/验证器/偏好）。</li>
+<li><strong>教师与学生差距过大直接 on-policy 蒸馏</strong>：VOLD 证明需先 SFT 冷启动对齐分布，否则信号失效。</li>
+<li><strong>同规模自蒸馏</strong>：Llama 3——405B 用自己的数据训练无益；OPSD 的教师增益来自特权条件而非参数规模，两者不可混淆。</li>
+<li><strong>离线偏好数据反复训练</strong>：off-policy 漂移→Xiong 理论/OAIF 实证；对策是每轮用最新策略重新采样（Llama 3）。</li>
+<li><strong>RL 起步前不做 SFT</strong>：Chu et al.——无格式锚定时端到端 RL 失败。</li>
+<li><strong>只看 pass@1 报告 RL 增益</strong>：需同报 pass@k 与熵（锐化 vs 扩展是两件事）；单一模型家族的结果需跨家族复验（spurious rewards 教训）。</li>
+<li><strong>把 OPSD 当成已定型技术</strong>：2026-01 才命名，批判文献同期出现；生产采用前应自行复现 OP²SD 式消融（换别题 worked example 对照组）。</li>
+</ul>
+
+<h2>10.5 何时选择"什么都不做"</h2>
+<p>两类场景建议克制：(1) <strong>教师/示范质量并不优于 base 模型自身</strong>——Llama 3 的自蒸馏无效结论；(2) <strong>任务已由预训练+少量 SFT 覆盖</strong>——LIMA 路线（1k 精选示范）表明对齐表层成本极低，此时引入复杂管线的边际收益可能为负（对齐税、灾难遗忘——SDFT 的动机）。</p>
+
+<div class="pager">
+  <a href="09-evolution.html">← 第 9 章 · 演进与争议</a>
+  <a href="comparison.html">交付物 B · 技术对照表 →</a>
+</div>
+
+<p class="footer-note">后训练技术体系深度调研 · 检索截止 2026-10-22 · 建议均标注证据等级与前置条件，不构成无条件推荐 · <a href="literature.html">完整文献库</a></p>
+
+</body>
+</html>

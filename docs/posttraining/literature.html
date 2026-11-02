@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>交付物 C · 文献数据库（可检索）</title>
+
+<!-- 霞鹜文楷：开源可商用的中文楷体风格字体；加载失败时自动回退到微软雅黑 -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/lxgw-wenkai-webfont@1.7.0/style.css">
+
+<style>
+  body { font-family: "LXGW WenKai", "Microsoft YaHei", "PingFang SC", "Segoe UI", sans-serif; font-size: 17px; line-height: 1.8; letter-spacing: 0.01em; color: #26292e; background: #fdfdfd; max-width: 1240px; margin: 0 auto; padding: 56px 24px 96px; }
+  h1, h2, .kicker { font-family: "Microsoft YaHei", "PingFang SC", sans-serif; line-height: 1.4; }
+  h1 { font-size: 28px; margin: 10px 0 6px; color: #1a1d21; }
+  .kicker { font-size: 13px; letter-spacing: 0.22em; text-transform: uppercase; color: #7a8699; margin-bottom: 4px; }
+  table { border-collapse: collapse; width: 100%; margin: 14px 0; font-size: 13.5px; }
+  th, td { border: 1px solid #dfe3ea; padding: 6px 9px; text-align: left; vertical-align: top; }
+  th { background: #f0f3f7; font-family: "Microsoft YaHei", "PingFang SC", sans-serif; font-weight: 600; position: sticky; top: 118px; }
+  tr:nth-child(even) td { background: #fafbfd; }
+  a { color: #2c5fa8; text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  .topnav { position: sticky; top: 0; z-index: 50; background: rgba(253,253,253,.97); border-bottom: 1px solid #e8eaee; padding: 8px 0 6px; margin: 0 -6px 12px; font-family: "Microsoft YaHei", sans-serif; font-size: 13.5px; display: flex; flex-wrap: wrap; gap: 4px 12px; justify-content: center; }
+  .topnav a { color: #2c5fa8; }
+  .topnav a.here { color: #111; font-weight: 700; border-bottom: 2px solid #4a7dbd; padding-bottom: 2px; }
+  .controls { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin: 14px 0; font-family: "Microsoft YaHei", sans-serif; font-size: 14px; }
+  .controls input[type=text] { padding: 7px 12px; border: 1px solid #cdd4de; border-radius: 8px; width: 340px; font-size: 14.5px; font-family: inherit; }
+  .controls select { padding: 7px 8px; border: 1px solid #cdd4de; border-radius: 8px; font-size: 14px; font-family: inherit; background: #fff; }
+  #count { color: #5a6572; font-size: 13.5px; }
+  .cat { display: inline-block; font-family: "Microsoft YaHei", sans-serif; font-size: 11.5px; border-radius: 4px; padding: 0 6px; border: 1px solid #d5dbe4; background: #f4f6f9; white-space: nowrap; }
+  .footer-note { margin-top: 28px; padding-top: 12px; border-top: 1px dashed #d8dde5; color: #7a8699; font-size: 13.5px; }
+  .pager { display: flex; justify-content: space-between; margin-top: 40px; font-family: "Microsoft YaHei", sans-serif; font-size: 14.5px; }
+</style>
+</head>
+<body>
+
+<a href="https://luxiangz.github.io/llm-tech-map/" style="position:fixed;top:12px;right:14px;z-index:99;background:#f6f7f9;border:1px solid #e2e5ea;border-radius:999px;padding:4px 12px;font-size:14px;color:#2c5fa8;text-decoration:none;box-shadow:0 1px 4px rgba(0,0,0,.08)">← 技术地图首页</a>
+
+<nav class="topnav">
+  <a href="index.html">总览</a><a href="01-concepts-case.html">概念与案例</a><a href="02-sft.html">SFT</a><a href="03-rl.html">RL</a><a href="04-opd.html">OPD</a><a href="05-opsd.html">OPSD</a><a href="06-related.html">偏好与相关</a><a href="07-theory.html">理论统一</a><a href="08-evidence-cost.html">证据与成本</a><a href="09-evolution.html">演进与争议</a><a href="10-selection.html">选型</a><a href="comparison.html">对照表</a><a href="literature.html" class="here">文献库</a><a href="gaps.html">缺口</a>
+</nav>
+
+<p class="kicker">大语言模型后训练技术体系深度调研 · 交付物 C</p>
+<h1>文献数据库（可检索）</h1>
+
+<p>收录 <strong id="total">—</strong> 条核心文献。<strong>所有 arXiv 编号于 2026-10-22 经 arXiv API / 官网核验</strong>（勘误条目已按正确编号收录）；venue 未在线核实处标"未核验"。检索框匹配标题/作者/编号/贡献/关系全文；分类下拉过滤。逐篇完整维度分析（公式与实验细节）已浓缩进本站各章节。</p>
+
+<div class="controls">
+  <input type="text" id="q" placeholder="搜索：标题 / 作者 / arXiv / 关键词（如 GRPO、蒸馏、pass@k）…" oninput="render()">
+  <select id="cat" onchange="render()">
+    <option value="">全部分类</option>
+    <option value="SFT与数据">A · SFT与数据</option>
+    <option value="RL基础与算法">B · RL基础与算法</option>
+    <option value="过程奖励">C · 过程奖励</option>
+    <option value="系统报告">D · 系统报告（后训练配方）</option>
+    <option value="争议与实证">E · 争议与实证对比</option>
+    <option value="偏好优化">F · 偏好优化</option>
+    <option value="蒸馏与OPD">G · 蒸馏与OPD</option>
+    <option value="OPSD">H · OPSD</option>
+    <option value="自训练与自博弈">I · 自训练与自博弈</option>
+    <option value="理论基础">J · 理论基础</option>
+    <option value="系统与工程">K · 系统与工程</option>
+  </select>
+  <span id="count"></span>
+</div>
+
+<table id="tbl">
+<thead><tr><th style="width:26%">标题</th><th style="width:14%">作者</th><th style="width:5%">年</th><th style="width:9%">venue</th><th style="width:7%">arXiv / 链接</th><th style="width:6%">分类</th><th style="width:19%">贡献与机制要点</th><th style="width:14%">与四范式关系</th></tr></thead>
+<tbody id="tb"></tbody>
+</table>
+
+<script>
+var P = [
+// ---------- A · SFT与数据 ----------
+{t:"Training language models to follow instructions with human feedback (InstructGPT)",a:"Ouyang, Wu, Jiang, et al.",y:2022,v:"NeurIPS 2022",id:"2203.02155",c:"SFT与数据",g:"SFT→RM→PPO 三阶段定型；SFT 13k 示范；1.3B 人评胜 175B GPT-3；RM 仅 6B；PPO-ptx 目标。",r:"SFT/RL 范式源头；RLHF 基准管线"},
+{t:"Finetuned Language Models are Zero-Shot Learners (FLAN)",a:"Wei, Bosma, Zhao, et al.",y:2021,v:"ICLR 2022",id:"2109.01652",c:"SFT与数据",g:"指令化 60+ 数据集微调 137B；按簇留出评估证明 zero-shot 泛化。",r:"纯 SFT；指令微调开山"},
+{t:"Multitask Prompted Training Enables Zero-Shot Task Generalization (T0)",a:"Sanh, Webson, Raffel, et al.",y:2021,v:"ICLR 2022",id:"2110.08207",c:"SFT与数据",g:"多模板多任务微调；T0-11B zero-shot 超 16 倍大模型；模板多样性关键。",r:"纯 SFT"},
+{t:"Cross-Task Generalization via Natural Language Crowdsourcing Instructions",a:"Mishra, Khashabi, Baral, et al.",y:2021,v:"ACL 2022",id:"2104.08773",c:"SFT与数据",g:"『任务=自然语言说明』范式与基准（61 任务）。",r:"SFT 数据范式"},
+{t:"Super-NaturalInstructions",a:"Y. Wang, Mishra, Alipoormolabashi, et al.",y:2022,v:"ACL 2022",id:"2204.07705",c:"SFT与数据",g:"1616 任务指令基准；Self-Instruct 的评估集。",r:"SFT 训练/评估底座"},
+{t:"Scaling Instruction-Finetuned Language Models (Flan-T5/PaLM)",a:"Chung, Hou, Longpre, et al.",y:2022,v:"JMLR 2024",id:"2210.11416",c:"SFT与数据",g:"1836 任务+CoT 混合；Flan-PaLM 540B 平均 +9.4%。",r:"任务 scaling 证据"},
+{t:"Self-Instruct",a:"Y. Wang, Kordi, Mishra, et al.",y:2022,v:"ACL 2023",id:"2212.10560",c:"SFT与数据",g:"LM 自举 52k 指令数据；Super-NI +33%（绝对）。",r:"off-policy 自举 SFT；合成数据谱系根节点"},
+{t:"WizardLM (Evol-Instruct)",a:"C. Xu, Sun, Zheng, et al.",y:2023,v:"ICLR 2024（未核验）",id:"2304.12244",c:"SFT与数据",g:"指令演化（加约束/换主题）制造难度课程。",r:"off-policy 合成 SFT"},
+{t:"Instruction Tuning with GPT-4",a:"Peng, Li, He, et al.",y:2023,v:"preprint",id:"2304.03277",c:"SFT与数据",g:"GPT-4 生成指令数据；效果随教师质量迁移。",r:"off-policy 强教师 SFT（数据级蒸馏）"},
+{t:"LIMA: Less Is More for Alignment",a:"Zhou, Liu, Xu, et al.",y:2023,v:"NeurIPS 2023",id:"2305.11206",c:"SFT与数据",g:"1k 精选示范对齐 65B；Superficial Alignment Hypothesis。",r:"SFT-only 对齐论旗手（SAH 为 C 级假说）"},
+{t:"AlpaGasus",a:"Chen, Li, Yan, et al.",y:2023,v:"ICLR 2024（未核验）",id:"2307.08701",c:"SFT与数据",g:"ChatGPT 过滤 52k→9k，质&gt;量；训练 5.7× 加速。",r:"数据选择 for SFT"},
+{t:"What Makes Good Data for Alignment? (DEITA)",a:"W. Liu, Zeng, He, et al.",y:2023,v:"ICML 2024（未核验）",id:"2312.15685",c:"SFT与数据",g:"复杂度-质量-多样性三维自动选 6k，匹配 10× 数据基线。",r:"数据选择 for SFT+DPO"},
+{t:"UltraChat",a:"Ding, Chen, Xu, et al.",y:2023,v:"preprint",id:"2305.14233",c:"SFT与数据",g:"全合成大规模多轮对话（LLM 模拟双角色）。",r:"off-policy 合成多轮 SFT；Zephyr dSFT 语料"},
+{t:"OpenAssistant Conversations",a:"Köpf, Kilcher, von Rütte, et al.",y:2023,v:"EACL 2024（未核验）",id:"2304.07327",c:"SFT与数据",g:"众包 161,443 消息/46 万评级对话树；人写改进回复≈弱 on-policy 示范。",r:"人类 SFT 示范 + RM 数据"},
+{t:"MetaMath",a:"Yu, Jiang, Shi, et al.",y:2023,v:"ICLR 2024（未核验）",id:"2309.12284",c:"SFT与数据",g:"问题侧扩增（重写/自验证/FOBAR）395K 数学 QA。",r:"off-policy 合成 SFT；问题多样性驱动"},
+{t:"OpenMathInstruct-1",a:"Toshniwal, Moshkov, Narenthiran, et al.",y:2024,v:"ACL 2024（未核验）",id:"2402.10176",c:"SFT与数据",g:"Mixtral+代码解释器合成 1.8M 题-解对。",r:"off-policy 合成 SFT"},
+{t:"OpenMathInstruct-2",a:"Toshniwal, Du, Moshkov, et al.",y:2024,v:"NAACL 2025（未核验）",id:"2410.01560",c:"SFT与数据",g:"14M 对；纯 SFT 超 Llama-3.1-8B-Instruct 15.9 点；四条消融（强教师&gt;弱学生/低质鲁棒/问题多样性关键）。",r:"SFT 规模上限与消融金标准（A 级）"},
+{t:"LIMO",a:"Ye, Huang, Cai, et al.",y:2025,v:"preprint",id:"2502.03387",c:"SFT与数据",g:"817 样本 SFT 激活推理（AIME24 63.3）。",r:"SFT 数据效率对照"},
+{t:"s1: Simple test-time scaling",a:"Muennighoff, Yang, Shi, et al.",y:2025,v:"preprint",id:"2501.19393",c:"SFT与数据",g:"1k 样本 + budget forcing 的测试时扩展。",r:"SFT 与 test-time compute 交界"},
+// ---------- B · RL基础与算法 ----------
+{t:"Deep RL from Human Preferences",a:"Christiano, Leike, Brown, et al.",y:2017,v:"NeurIPS 2017",id:"1706.03741",c:"RL基础与算法",g:"偏好比较学习奖励函数的奠基；『比较比打分可靠』。",r:"RM+RL 范式开创"},
+{t:"Fine-Tuning Language Models from Human Preferences",a:"Ziegler, Stiennon, Wu, et al.",y:2019,v:"preprint",id:"1909.08593",c:"RL基础与算法",g:"首次 LM RLHF（GPT-2）；RM 须在策略分布上校准；KL 锁定。",r:"RL→LM 的起点"},
+{t:"Learning to Summarize from Human Feedback",a:"Stiennon, Ouyang, Wu, et al.",y:2020,v:"NeurIPS 2020",id:"2009.01325",c:"RL基础与算法",g:"摘要 RLHF 人评超人工参考——RL 可超越最优示范。",r:"『可超教师』的 A 级证据"},
+{t:"Trust Region Policy Optimization",a:"Schulman, Levine, Abbeel, et al.",y:2015,v:"ICML 2015",id:"1502.05477",c:"RL基础与算法",g:"信任域策略优化理论起点。",r:"PPO 前身"},
+{t:"Proximal Policy Optimization Algorithms",a:"Schulman, Wolski, Dhariwal, et al.",y:2017,v:"preprint",id:"1707.06347",c:"RL基础与算法",g:"clipped surrogate objective；RLHF 默认优化器。",r:"RL 算法层基线"},
+{t:"GAE",a:"Schulman, Moritz, Levine, et al.",y:2015,v:"ICLR 2016",id:"1506.02438",c:"RL基础与算法",g:"优势估计的偏差-方差权衡（PPO critic 机制）。",r:"RL 算法组件"},
+{t:"DeepSeekMath (GRPO)",a:"Shao, Wang, Zhu, et al.",y:2024,v:"arXiv（ACL 2024 未核验）",id:"2402.03300",c:"RL基础与算法",g:"GRPO：去 critic、组内标准化优势、KL 入损失（β=0.04,G=64）；7B MATH 51.7%。",r:"RL 算法；R1/开源 RL 主流"},
+{t:"Back to Basics (RLOO)",a:"Ahmadian, Cremer, Gallé, et al.",y:2024,v:"COLM 2024（未核验）",id:"2402.14740",c:"RL基础与算法",g:"LOO 无偏基线去 critic；TL;DR 77.9 vs PPO 67.6；clip 触发率&lt;5%。",r:"无 critic 家族；『PPO 非正确工具』论"},
+{t:"ReMax",a:"Li, Xu, Zhang, et al.",y:2023,v:"ICML 2024",id:"2310.10505",c:"RL基础与算法",g:"贪心 rollout 基线+长度惩罚的免 critic REINFORCE。",r:"无 critic 家族"},
+{t:"Understanding R1-Zero-Like Training (Dr.GRPO)",a:"Liu, Chen, Li, et al.",y:2025,v:"preprint",id:"2503.20783",c:"RL基础与算法",g:"GRPO 长度/std 归一化偏差→错误输出被拉长；去偏 7B AIME 43.3。",r:"GRPO 修补线"},
+{t:"DAPO",a:"Yu, Zhang, Ru, et al.",y:2025,v:"preprint",id:"2503.14476",c:"RL基础与算法",g:"Clip-Higher/动态采样/token-loss/超长整形；去 KL+规则奖励；32B AIME 50（朴素 GRPO 30）。",r:"GRPO 工程化；开源 verl 配方"},
+{t:"GSPO",a:"Zheng, Zhou, Shao, et al.",y:2025,v:"preprint",id:"2507.18071",c:"RL基础与算法",g:"序列级似然比替代 token 级；稳 MoE RL；用于 Qwen3。",r:"RL 算法改进"},
+{t:"Defining and Characterizing Reward Hacking",a:"Skalse, Howe, Krasheninnikov, et al.",y:2022,v:"NeurIPS 2022（未核验）",id:"2209.13085",c:"RL基础与算法",g:"reward hacking 形式化：unhackability 条件一般不成立。",r:"RL 失败模式理论基础（A 级）"},
+{t:"Secrets of RLHF in LLMs Part I (PPO)",a:"Zheng, Dou, Gao, et al.",y:2023,v:"preprint",id:"2307.04964",c:"RL基础与算法",g:"pattern collapse 监控（PPL/长度/KL）；策略约束是稳定关键。",r:"RL 稳定性与 hacking 实证"},
+{t:"Secrets of RLHF Part II (Reward Modeling)",a:"Wang, Zheng, et al.",y:2024,v:"preprint",id:"2401.06080",c:"RL基础与算法",g:"偏好强度加权/错误标签过滤/对比学习 RM。",r:"RM 侧改进（勘误：非 2401.01312）"},
+{t:"The Entropy Mechanism of RL for Reasoning LMs",a:"Cui, Zhang, Chen, et al.",y:2025,v:"preprint",id:"2505.22617",c:"RL基础与算法",g:"R=−a·e^H+b 经验律；熵演化=概率-logit 协方差；Clip-Cov/KL-Cov。",r:"探索坍缩机制与解法"},
+// ---------- C · 过程奖励 ----------
+{t:"Training Verifiers to Solve Math Word Problems (GSM8K)",a:"Cobbe, Kosaraju, Bavarian, et al.",y:2021,v:"preprint",id:"2110.14168",c:"过程奖励",g:"GSM8K+ORM verifier 重排；结果奖励雏形。",r:"ORM/verifier 起点"},
+{t:"Process- and Outcome-based Feedback",a:"Uesato, Edwards, Nanda, et al.",y:2022,v:"preprint",id:"2211.14275",c:"过程奖励",g:"答案错误率两者接近，步骤错误率只有 PRM 能降（14.0→3.4）。",r:"ORM vs PRM 信息量差（A 级）"},
+{t:"Let's Verify Step by Step (PRM800K)",a:"Lightman, Kosaraju, Burda, et al.",y:2023,v:"ICLR 2024（未核验）",id:"2305.20050",c:"过程奖励",g:"~800K 步标签；best-of-1860 PRM 78.2 vs ORM 72.4；active learning 2.6×。",r:"过程监督规模化证据"},
+{t:"Math-Shepherd",a:"P. Wang, Li, Shao, et al.",y:2023,v:"ACL 2024 Findings（未核验）",id:"2312.08935",c:"过程奖励",g:"MC 续写自动步标签；PRM-PPO GSM8K 84.1 超 ORM-PPO 81.8；分布匹配&gt;标注来源。",r:"自动 PRM+过程 RL"},
+{t:"PRIME: Implicit Process Rewards",a:"Cui, Yuan, Wang, et al.",y:2025,v:"preprint",id:"2502.01456",c:"过程奖励",g:"outcome 标签在线更新隐式过程奖励；样本效率 2.5×；Eurus-2-7B AIME 26.7。",r:"隐式 PRM=对数概率比（与蒸馏相通）"},
+{t:"Free Process Rewards without Process Labels",a:"Yuan, Li, Chen, et al.",y:2024,v:"ICML 2025（未核验）",id:"2412.01981",c:"过程奖励",g:"任意 ORM 可零成本恢复 PRM（r^t=q^t−q^{t−1}）；&lt;1/38 数据胜 Math-Shepherd。",r:"隐式过程奖励理论（勘误：非 2502.19295）"},
+{t:"CodeRL",a:"Le, Wang, Gotmare, et al.",y:2022,v:"NeurIPS 2022（未核验）",id:"2207.01780",c:"过程奖励",g:"actor-critic+单元测试信号做代码生成 RL。",r:"代码域执行反馈 RL 早期代表"},
+// ---------- D · 系统报告 ----------
+{t:"DeepSeek-R1",a:"DeepSeek-AI (Guo, Yang, et al.)",y:2025,v:"Nature 645:633-638（DOI 未核验）",id:"2501.12948",c:"系统报告",g:"R1-Zero 纯 RL（规则奖励+GRPO，aha moment）；R1 四阶段；800k 蒸馏：32B 72.6 vs 直接 RL 47.0。",r:"RLVR 范式确立；蒸馏&gt;小模型直 RL（A 级）"},
+{t:"Tulu 3",a:"Lambert, Morrison, Pyatkin, et al.",y:2024,v:"ACL 2025（未核验）",id:"2411.15124",c:"系统报告",g:"命名并系统化 RLVR；SFT→DPO→RLVR 全开源配方；IFEval 72.8→82.4；PPO≈7-14× DPO 成本。",r:"开源配方基准"},
+{t:"Qwen3 Technical Report",a:"Yang, Li, Yang, et al.",y:2025,v:"preprint",id:"2505.09388",c:"系统报告",g:"四阶段后训练；小模型 strong-to-weak 两阶段蒸馏；Table 21：OPD 74.4@1,800 GPU 时 vs RL 67.6@17,920；RL 不升 pass@64、蒸馏升。",r:"RL vs OPD 最重要工业对照（A 级）"},
+{t:"Kimi k1.5",a:"Team Kimi (Sheng, et al.)",y:2025,v:"preprint",id:"2501.12599",c:"系统报告",g:"极简多模态 RL（无 MCTS/value/PRM）；long2short。",r:"与 R1 同期简化路线"},
+{t:"Kimi K2",a:"Team Kimi",y:2025,v:"preprint",id:"2507.20534",c:"系统报告",g:"1T MoE；MuonClip；joint agentic RL；SWE-Bench 65.8（非思考模式）。",r:"RL 向 Agent 域扩散"},
+{t:"The Llama 3 Herd of Models",a:"Grattafiori, Dubey, et al.",y:2024,v:"preprint",id:"2407.21783",c:"系统报告",g:"六轮 SFT+RS+DPO 迭代；弃 PPO（算力+IFEval）；DPO 工程（mask 格式 token+NLL 正则）；405B 数据级蒸馏、自蒸馏无效。",r:"工业偏好优化主导的证据（A 级）"},
+{t:"Llama 2",a:"Touvron, Martin, Stone, et al.",y:2023,v:"preprint",id:"2307.09288",c:"系统报告",g:"SFT+RFT（§4.3：K≈10-20 采样 RM 排序）+PPO 多阶段 RLHF。",r:"工业级 RFT 形态"},
+// ---------- E · 争议与实证 ----------
+{t:"Does RL Really Incentivize Reasoning Beyond the Base Model?",a:"Yue, Chen, Lu, et al.",y:2025,v:"NeurIPS 2025（未核验）",id:"2504.13837",c:"争议与实证",g:"pass@k 大 k 被 base 反超；RLVR=锐化；六算法相近；蒸馏可注入新模式。",r:"pass@k 之争正方"},
+{t:"ProRL",a:"Liu, Diao, Lu, et al.",y:2025,v:"preprint",id:"2505.24864",c:"争议与实证",g:"长时程 RL+KL 控制+参考重置可扩 pass@k 边界。",r:"pass@k 之争反方"},
+{t:"RL vs. Distillation: Understanding Accuracy and Capability",a:"Kim, Shrestha, Shrestha, et al.",y:2025,v:"preprint",id:"2505.14216",c:"争议与实证",g:"RLVR 提 pass@1；蒸馏仅注入新知识时提 pass@k。",r:"RL/蒸馏作用框架化"},
+{t:"RLVR Implicitly Incentivizes Correct Reasoning (CoT-Pass@K)",a:"Wen, Liu, Zheng, et al.",y:2025,v:"preprint",id:"2506.14245",c:"争议与实证",g:"按推理链正确性度量则 RLVR 扩展边界。",r:"度量定义分歧的证据"},
+{t:"Revisiting RL for LLM Reasoning Cross-Domain (Guru)",a:"Cheng, Hao, Liu, et al.",y:2025,v:"preprint",id:"2506.14965",c:"争议与实证",g:"92k 六域可验证语料：RL 提升 pass@k，欠预训练域有技能习得。",r:"pass@k 之争反方"},
+{t:"Spurious Rewards",a:"Shao, Li, Xin, et al.",y:2025,v:"NeurIPS 2025（未核验）",id:"2506.10947",c:"争议与实证",g:"随机奖励+21.4 vs 真奖励+29.1（Qwen2.5-Math-7B）；clip 偏置放大先验；Llama/OLMo2 常无效。",r:"RLVR 增益真实性警示（B 级）"},
+{t:"The Invisible Leash / Why RLVR May or May Not Escape Its Origin",a:"Wu, Xuan, et al.",y:2025,v:"preprint (v5 改题)",id:"2507.14843",c:"争议与实证",g:"support dynamics：可验证解收缩&gt;扩张；v5 措辞软化本身是争论演化证据。",r:"RL 可达集约束实证"},
+{t:"SFT Memorizes, RL Generalizes",a:"Chu, Zhai, Yang, et al.",y:2025,v:"ICML 2025（未核验）",id:"2501.17161",c:"争议与实证",g:"受控对照：SFT OOD 记忆化（−79.5%）、RL 泛化；无 SFT 时 RL 失败。",r:"SFT/RL 分工的直接实验"},
+{t:"MATH-Beyond",a:"Li, et al.",y:2025,v:"preprint",id:"2510.11653",c:"争议与实证",g:"构造 pass@1024 下 base 也不饱和的题集——常规题池饱和是争论根源之一。",r:"基准侧回应"},
+{t:"QuestA",a:"Wang, et al.",y:2025,v:"preprint",id:"2507.13266",c:"争议与实证",g:"部分解提示降难度：1.5B AIME24 +10.7，pass@1/k 同升。",r:"问题增强型扩边界"},
+{t:"Curriculum RL Can Incentivize Reasoning Beyond Base",a:"—",y:2026,v:"preprint",id:"2606.22317",c:"争议与实证",g:"pass@k 定位边界→教师注入→RL 巩固；pass@256 较 base +9.8。",r:"注入+RL 组合扩边界"},
+{t:"Pass@k Inversion 诊断 + PBA",a:"—",y:2026,v:"preprint",id:"2607.20543",c:"争议与实证",g:"大 k 反转定位到边界题（稀有正轨迹未被强化即消失）；PBA 修复。",r:"pass@k 现象的机制细化"},
+// ---------- F · 偏好优化 ----------
+{t:"Direct Preference Optimization",a:"Rafailov, Sharma, Mitchell, et al.",y:2023,v:"NeurIPS 2023",id:"2305.18290",c:"偏好优化",g:"KL-RL 目标闭式重参数化；隐式 RM 动态加权；免 RM/采样。",r:"与 RM+PPO 同目标（A 级）"},
+{t:"A General Theoretical Paradigm (IPO)",a:"Azar, Rowland, Piot, et al.",y:2023,v:"ICML 2024（未核验）",id:"2310.12036",c:"偏好优化",g:"ΨPO 范式；DPO 有限样本过拟合；IPO 回归式目标。",r:"偏好优化理论修正"},
+{t:"KTO",a:"Ethayarajh, Xu, Muennighoff, et al.",y:2024,v:"ICML 2024",id:"2402.01306",c:"偏好优化",g:"前景理论效用；二元好/坏标签；失衡数据稳。",r:"监督信号最小化变体"},
+{t:"ORPO",a:"Hong, Lee, Thorne",y:2024,v:"EMNLP 2024",id:"2403.07691",c:"偏好优化",g:"SFT+odds ratio 单阶段；无参考模型。",r:"对齐与 SFT 融合"},
+{t:"SimPO",a:"Meng, Xia, Chen",y:2024,v:"NeurIPS 2024",id:"2405.14734",c:"偏好优化",g:"长度归一化奖励+margin γ；Gemma-2-9B LC 72.4%。",r:"无参考模型；修长度偏置"},
+{t:"SLiC",a:"Zhao, Khalman, Joshi, et al.",y:2022,v:"ACL 2023 Findings（未核验）",id:"2210.00045",c:"偏好优化",g:"序列似然校准/hinge 排序损失（DPO 前身）。",r:"直接调似然路线开创（勘误：非 2205.13419）"},
+{t:"RRHF",a:"Yuan, Yuan, Tan, et al.",y:2023,v:"NeurIPS 2023",id:"2304.05302",c:"偏好优化",g:"长度归一化打分+listwise 排序+SFT；免 PPO。",r:"DPO 前身（勘误：非 2304.05102）"},
+{t:"Smaug (DPOP)",a:"Pal, Karkhanis, Dooley, et al.",y:2024,v:"preprint",id:"2402.13228",c:"偏好优化",g:"证明并修复 DPO 的 chosen 似然下降（+NLL 正则）。",r:"DPO 失败模式修复"},
+{t:"From r to Q*",a:"Rafailov, Hejna, Park, et al.",y:2024,v:"COLM 2024",id:"2404.12358",c:"偏好优化",g:"DPO 隐式学 token 级 Q*；统一 actor-critic 视角。",r:"DPO-RL 理论桥梁"},
+{t:"Iterative Preference Learning from Human Feedback",a:"Xiong, Dong, Ye, et al.",y:2023,v:"ICML 2024（未核验）",id:"2312.11456",c:"偏好优化",g:"reverse-KL bandit 的 offline/online 理论；离线缺探索。",r:"在线偏好学习理论基础"},
+{t:"Direct LM Alignment from Online AI Feedback (OAIF)",a:"Guo, Zhang, Liu, et al.",y:2024,v:"preprint",id:"2402.04792",c:"偏好优化",g:"每轮当前策略采样+LLM 判分；人评胜离线 DAP 与 RLHF。",r:"在线 vs 离线直接实证"},
+{t:"Preference Fine-Tuning Should Leverage Suboptimal On-Policy Data",a:"Tajwar, Singh, Sharma, et al.",y:2024,v:"ICML 2024",id:"2404.14367",c:"偏好优化",g:"on-policy 采样或负梯度（mode-seeking）系统优于离线 MLE。",r:"在线/离线统一分析"},
+{t:"SPPO",a:"Wu, Sun, Yuan, et al.",y:2024,v:"preprint",id:"2405.00675",c:"偏好优化",g:"纳什均衡自博弈；PairRM 0.4B 判分。",r:"自博弈偏好"},
+{t:"Self-Rewarding Language Models",a:"Yuan, Pang, Cho, et al.",y:2024,v:"ICML 2024",id:"2401.10020",c:"偏好优化",g:"LLM-as-Judge 自评偏好对+迭代 DPO；奖励能力共同进化。",r:"OPSD 的偏好信号近亲"},
+{t:"Zephyr",a:"Tunstall, Beeching, Lambert, et al.",y:2023,v:"preprint",id:"2310.16944",c:"偏好优化",g:"dSFT+UltraFeedback+单轮离线 dDPO（β=0.1）；MT-Bench 7.34。注意：非迭代 DPO。",r:"离线 AI 反馈路线标志"},
+{t:"RLAIF vs. RLHF",a:"Lee, Chikkerur, et al.",y:2023,v:"ICML 2024",id:"2309.00267",c:"偏好优化",g:"AI 反馈≈人类反馈（受控任务），成本大降。",r:"RLAIF 主证据（勘误：非 2309.00255）"},
+{t:"Constitutional AI",a:"Bai, Kadavath, Kundu, et al.",y:2022,v:"preprint",id:"2212.08073",c:"偏好优化",g:"原则驱动自我修订 SFT+RLAIF-PPO。",r:"AI 反馈先驱"},
+{t:"UltraFeedback",a:"Cui, Yuan, Ding, et al.",y:2023,v:"ICML 2024",id:"2310.01377",c:"偏好优化",g:"64k prompt×4 模型×GPT-4 打分；偏好对构造标准。",r:"DPO 家族标准燃料"},
+{t:"A Critical Evaluation of AI Feedback",a:"Sharma, Keh, Mitchell, et al.",y:2024,v:"preprint",id:"2402.12366",c:"偏好优化",g:"部分 RLAIF 增益=弱 SFT 教师假象；强教师 SFT 可超完整 RLAIF。",r:"AI 反馈可靠性警示"},
+// ---------- G · 蒸馏与OPD ----------
+{t:"Distilling the Knowledge in a Neural Network",a:"Hinton, Vinyals, Dean",y:2015,v:"NIPS 2014 DL Workshop",id:"1503.02531",c:"蒸馏与OPD",g:"软目标+温度；dark knowledge。",r:"KD 奠基"},
+{t:"Sequence-Level Knowledge Distillation",a:"Kim, Rush",y:2016,v:"EMNLP 2016",id:"1606.07947",c:"蒸馏与OPD",g:"教师序列作硬标签≡SFT on 教师输出。",r:"SFT≡SeqKD（A 级恒等）"},
+{t:"MiniLLM / On-Policy Distillation of LLMs (v6 更名)",a:"Gu, Dong, Wei, et al.",y:2023,v:"ICLR 2024",id:"2306.08543",c:"蒸馏与OPD",g:"序列反向 KL+策略梯度（教师-学生 log-ratio 作回报）；防高估教师低概率区。",r:"反向 KL on-policy 蒸馏起点"},
+{t:"GKD: On-Policy Distillation of Language Models",a:"Agarwal, Vieillard, Zhou, et al.",y:2023,v:"ICLR 2024",id:"2306.13649",c:"蒸馏与OPD",g:"三轴系统化（散度×数据来源 λ×优化）；广义 JSD 有界可监督梯度；2.1×/1.7×/1.9× 增益。",r:"OPD 术语与框架原始出处"},
+{t:"DistiLLM",a:"Ko, Kim, Chen, et al.",y:2024,v:"ICML 2024",id:"2402.03898",c:"蒸馏与OPD",g:"skew KL/RVKL+自适应回放；4.3× 加速（采样可占 ~80% 训练时长）。",r:"on-policy 开销优化（勘误：非 2401.05978）"},
+{t:"DistiLLM-2",a:"Ko, Chen, Kim, et al.",y:2025,v:"ICML 2025 Spotlight",id:"2503.07067",c:"蒸馏与OPD",g:"对比蒸馏：数据类型×损失配对；VLM 扩展。",r:"蒸馏损失再分化"},
+{t:"On-Policy Distillation（博客）",a:"Lu, Peng, Schulman (Thinking Machines)",y:2025,v:"博客 2025-10-27",id:"blog",c:"蒸馏与OPD",g:"per-token 反向 KL=密集奖励 RL（一行改动）；O(N) vs O(1) bits；150 步 60→70 AIME；9-100× 省算力。",r:"OPD 范式 2025 重定义（B 级）"},
+{t:"AlignDistil",a:"Zhang, et al.",y:2025,v:"ACL 2025 Main",id:"2503.02832",c:"蒸馏与OPD",g:"RLHF/DPO 等价的 token 级自适应蒸馏——对齐即蒸馏的对偶视角。",r:"偏好优化-蒸馏桥接"},
+{t:"VOLD: Reasoning Transfer via On-Policy Distillation",a:"Bousselham, Kuehne, Schmid",y:2025,v:"preprint",id:"2510.23497",c:"蒸馏与OPD",g:"GRPO+OPD 迁移推理到 VLM；无 SFT 冷启动时 OPD 信号失效。",r:"OPD 适用边界（师生差距）"},
+{t:"Black-Box On-Policy Distillation (GAD)",a:"Ye, Dong, Chi, et al.",y:2025,v:"preprint",id:"2511.10643",c:"蒸馏与OPD",g:"黑盒教师（GPT-5 级）：对抗判别器=与学生共同进化的 on-policy RM。",r:"无 logits 的 OPD"},
+{t:"Distillation Scaling Laws",a:"Busbridge, Shidani, Weers, et al. (Apple)",y:2025,v:"ICML 2025",id:"2502.08606",c:"蒸馏与OPD",g:"off-policy 蒸馏算力最优分配；教师不是越强越好；教师现成时蒸馏胜监督学习。",r:"蒸馏经济学（勘误：非 2501.16294）"},
+// ---------- H · OPSD ----------
+{t:"Self-Distilled Reasoner: On-Policy Self-Distillation for LLMs (OPSD)",a:"Zhao, Xie, Liu, et al.",y:2026,v:"ICML 2026（转引，arXiv 页未标）",id:"2601.18734",c:"OPSD",g:"OPSD 术语与方法原始论文：同权重双上下文（教师见参考解 y*）；学生轨迹逐 token 前向 KL+裁剪；1×1024 token vs GRPO 8×16k；~100 步达峰。",r:"OPSD 定义者；OPD 教师自身化"},
+{t:"Reinforcement Learning via Self-Distillation (SDPO)",a:"Hübotter, Lübeck, Behric, et al.",y:2026,v:"preprint",id:"2601.20802",c:"OPSD",g:"特权=环境文本反馈；教师 EMA/信赖域（无正则塌至 36.1%）；LCBv6 48.8 vs GRPO 41.2；等价于把标量 advantage 换成逐 token 密集 advantage。",r:"OPSD 双起点之二；RLVR 信号升维"},
+{t:"Skill-SD",a:"H. Wang, Wang, Xiao, et al.",y:2026,v:"preprint",id:"2604.10674",c:"OPSD",g:"轨迹提炼的自然语言技能作动态特权上下文；AppWorld/Sokoban 超 GRPO 14%/10.9%。",r:"特权=可复用技能"},
+{t:"LOPD: Latent On-Policy Self-Distillation",a:"Zhang, Lyu, Sun, et al.",y:2026,v:"preprint",id:"2608.13040",c:"OPSD",g:"可学习 latent 特权上下文；rollout 预算&lt;Skill-SD 30% 且更优。",r:"特权=learnable latent"},
+{t:"U-OPSD",a:"Li, Wang, Liang, et al.",y:2026,v:"preprint",id:"2608.06296",c:"OPSD",g:"自洽多数票构造伪参考解；零外部监督的 OPSD。",r:"特权=自构造（伪标签）"},
+{t:"Privileged Information Distillation (π-Distill)",a:"Penaloza, Vattikonda, Gontier, et al.",y:2026,v:"preprint",id:"2602.04942",c:"OPSD",g:"PI 条件教师+反向 KL+RL。",r:"OPSD 变体"},
+{t:"OP²SD: Dissecting On-Policy Self-Distillation",a:"Ichihara, Iwase, Quamar, et al.",y:2026,v:"preprint",id:"2608.09228",c:"OPSD",g:"特权解换成别题 worked example 效果不降——增益或来自上下文诱导的教师行为。",r:"OPSD 增益来源批判（A 级解剖）"},
+{t:"Hindsight Compacts but Does Not Repair",a:"Kim, Lee",y:2026,v:"preprint",id:"2605.06188",c:"OPSD",g:"OPSD 只压实可行轨迹、修不了失败轨迹。",r:"OPSD 机制边界"},
+{t:"Denser ≠ Better",a:"Wang, et al.",y:2026,v:"preprint",id:"2607.01763",c:"OPSD",g:"持续后训练中 SDPO 遗忘/塌缩，GRPO 更稳。",r:"OPSD 稳健性批判"},
+{t:"Does self-distillation improve reasoning?",a:"Adhinarta, et al.",y:2026,v:"preprint",id:"2610.18613",c:"OPSD",g:"SDPO/OPSD 增益大部分可解释为过拟合。",r:"OPSD 增益批判"},
+{t:"The Many Faces of On-Policy Distillation",a:"Zhu, et al.",y:2026,v:"preprint",id:"2605.11182",c:"OPSD",g:"特权编码共享规则有效、实例事实失效。",r:"特权信息可辨识性"},
+{t:"iCoder-27B",a:"Yang, Lyu, et al.",y:2026,v:"preprint",id:"2609.29626",c:"OPSD",g:"SFT+OPSD+RLVR 递归开发的 27B 工业编码模型。",r:"OPSD 工业落地"},
+{t:"A General Language Assistant as a Laboratory for Alignment",a:"Askell, Bai, Chen, et al.",y:2021,v:"preprint",id:"2112.00861",c:"OPSD",g:"context distillation 概念先驱：条件化人格分布向无条件策略 KL 内化。",r:"OPSD 概念血亲（风格特权）"},
+{t:"Learning by Distilling Context",a:"Snell, Klein, Zhong",y:2022,v:"ICLR 2023（未核验）",id:"2209.15189",c:"OPSD",g:"离线（教师生成、硬标签）上下文蒸馏；OPSD 原文引为最近先行工作。不存在 2025 年同名 OPSD 论文（三路查证）。",r:"OPSD 的 off-policy 前身；『LDC 2025』讹传的纠正锚点"},
+{t:"SDFT: Self-Distillation Bridges Distribution Gap",a:"Yang, Pang, Feng, et al.",y:2024,v:"ACL 2024",id:"2402.13669",c:"OPSD",g:"冻结 seed 模型自改写任务数据再 SFT（数据空间蒸馏）缓解遗忘。",r:"数据空间自蒸馏（勘误：非 2404.10631）"},
+{t:"CycleDistill",a:"Halder, Jayakumar, Dabre",y:2025,v:"preprint",id:"2506.19952",c:"OPSD",g:"零/少样本 MT 自生成平行语料+迭代 SFT（软 logits 仅微弱增益）。",r:"自训练近亲"},
+{t:"Born Again Networks",a:"Furlanello, Lipton, Tschannen, et al.",y:2018,v:"ICML 2018",id:"1805.04770",c:"OPSD",g:"同架构代际自蒸馏；学生反超教师。",r:"经典自蒸馏（代际间）"},
+{t:"Be Your Own Teacher (BYOT)",a:"Zhang, Song, Gao, et al.",y:2019,v:"ICCV 2019（未核验）",id:"1905.08094",c:"OPSD",g:"深层向浅层分支自蒸馏。",r:"经典自蒸馏（层级间；勘误：非 1805.08094）"},
+// ---------- I · 自训练与自博弈 ----------
+{t:"STaR",a:"Zelikman, Wu, Mu, et al.",y:2022,v:"NeurIPS 2022",id:"2203.14465",c:"自训练与自博弈",g:"rationale 自举；hint 模式（答案特权进上下文）=特权教师思想先声。",r:"自训练；OPSD 谱系节点"},
+{t:"Scaling Relationship on Learning Math (RFT)",a:"Yuan, Yuan, Li, et al.",y:2023,v:"ACL 2024（未核验）",id:"2308.01825",c:"自训练与自博弈",g:"K=100 拒绝采样+推理等价类去重；GSM8K 49.3%。",r:"RFT 标准形态"},
+{t:"ReST",a:"Gulcehre, Le Paine, et al.",y:2023,v:"preprint",id:"2308.08998",c:"自训练与自博弈",g:"Grow/FI 解耦的增长数据集自训练。",r:"自训练（勘误：非 2307.14551）"},
+{t:"Beyond Human Data (ReST-EM)",a:"Singh, Co-Reyes, Agarwal, et al.",y:2023,v:"ICLR 2024",id:"2312.06585",c:"自训练与自博弈",g:"EM 自训练超人类数据 SFT（MATH/代码）；多样性衰减→收益递减。",r:"自训练（勘误：非 2312.06562）"},
+{t:"V-STaR",a:"Hosseini, Yuan, Malik, et al.",y:2024,v:"COLM 2024",id:"2402.06457",c:"自训练与自博弈",g:"对错自生成解构造 DPO 对训练验证器；生成器-验证器互促。",r:"自训练+验证器学习（勘误：非 2410.06161）"},
+{t:"Self-Consistency",a:"X. Wang, Wei, Schuurmans, et al.",y:2022,v:"ICLR 2023",id:"2203.11171",c:"自训练与自博弈",g:"多 CoT 多数投票 GSM8K +17.9%；兼作伪标签机（U-OPSD 用）。",r:"推理时筛选/伪标签"},
+{t:"SPIN",a:"Chen, Deng, Yuan, et al.",y:2024,v:"ICML 2024",id:"2401.01335",c:"自训练与自博弈",g:"自博弈对比损失；不动点=自分布与人类分布重合（上限=人类数据）。",r:"自博弈"},
+{t:"Absolute Zero",a:"Zhao, et al.",y:2025,v:"preprint",id:"2505.03335",c:"自训练与自博弈",g:"出题-解题自博弈+代码执行器真值；零外部数据；附录报告过 hacking。",r:"自博弈（外部验证器）"},
+// ---------- J · 理论基础 ----------
+{t:"DAgger",a:"Ross, Gordon, Bagnell",y:2011,v:"AISTATS 2011",id:"1011.0686",c:"理论基础",g:"BC 复合误差 O(T²ε)；学习者状态上查询专家→O(Tε)。",r:"SFT 理论病灶；on-policy 修正的理论源头"},
+{t:"Scheduled Sampling",a:"Bengio, Vinyals, Jaitly, et al.",y:2015,v:"NeurIPS 2015",id:"1506.03099",c:"理论基础",g:"teacher forcing→自喂前缀课程；exposure bias 首个主流缓解。",r:"序列训练理论"},
+{t:"MIXER",a:"Ranzato, Chopra, Auli, et al.",y:2015,v:"ICLR 2016",id:"1511.06732",c:"理论基础",g:"exposure bias+损失/评价失配双诊断。",r:"序列级训练动机"},
+{t:"Snell et al. Scaling LLM Test-Time Compute",a:"Snell, Lee, Xu, et al.",y:2024,v:"ICLR 2025（未核验）",id:"2408.03314",c:"理论基础",g:"测试时算力最优分配。",r:"RL 与 test-time compute 同预算两端"},
+// ---------- K · 系统与工程 ----------
+{t:"HybridFlow (veRL)",a:"Sheng, Zhang, Ye, et al.",y:2024,v:"EuroSys 2025",id:"2409.19256",c:"系统与工程",g:"单/多控制器混合+3D-HybridEngine；生成占 RLHF 迭代 81.2%（NeMo 基线）；1.53-20.57× 吞吐；colocate 边界 16-64 GPU。",r:"RL 系统工程基准"},
+{t:"The N+ Implementation Details of RLHF PPO",a:"Huang, Liu, von Werra",y:2024,v:"preprint",id:"2403.17031",c:"系统与工程",g:"37+ 条 PPO 工程细节与复现差异（C 级工程参考）。",r:"RL 实现细节清单"},
+{t:"DeepScaleR-1.5B-Preview",a:"agentica-org",y:2025,v:"HF 模型卡/博客",id:"hf",c:"系统与工程",g:"1.5B+40k 题 GRPO 课程训练 AIME24 43.1%（8→32 A100）。",r:"RL 算力效率标志（无 arXiv 论文）"},
+{t:"Qwen3-4B-Thinking-2507",a:"Qwen Team",y:2025,v:"博客 2025-07-23",id:"blog",c:"系统与工程",g:"长 CoT off-policy 蒸馏困难→on-policy（正文未直接核验，C 级）；AIME25 81.3（HF 模型卡）。",r:"off→on-policy 转向的工业佐证"}
+];
+
+function arxivLink(id){
+  if(id==="blog") return "博客";
+  if(id==="hf") return "HF 卡";
+  return '<a href="https://arxiv.org/abs/'+id+'">'+id+'</a>';
+}
+var CATNAME = {"SFT与数据":"A","RL基础与算法":"B","过程奖励":"C","系统报告":"D","争议与实证":"E","偏好优化":"F","蒸馏与OPD":"G","OPSD":"H","自训练与自博弈":"I","理论基础":"J","系统与工程":"K"};
+function render(){
+  var q = document.getElementById('q').value.toLowerCase();
+  var c = document.getElementById('cat').value;
+  var rows = [];
+  for (var i=0;i<P.length;i++){
+    var p = P[i];
+    if (c && p.c!==c) continue;
+    var blob = (p.t+' '+p.a+' '+p.id+' '+p.g+' '+p.r+' '+p.v+' '+p.c).toLowerCase();
+    if (q && blob.indexOf(q)<0) continue;
+    rows.push('<tr><td><b>'+p.t+'</b></td><td>'+p.a+'</td><td>'+p.y+'</td><td>'+p.v+'</td><td>'+arxivLink(p.id)+'</td><td><span class="cat">'+CATNAME[p.c]+' · '+p.c+'</span></td><td>'+p.g+'</td><td>'+p.r+'</td></tr>');
+  }
+  document.getElementById('tb').innerHTML = rows.join('');
+  document.getElementById('count').textContent = '显示 '+rows.length+' / '+P.length+' 条';
+}
+document.getElementById('total').textContent = P.length;
+render();
+</script>
+
+<div class="pager">
+  <a href="comparison.html">← 交付物 B · 对照表</a>
+  <a href="gaps.html">交付物 F · 研究缺口 →</a>
+</div>
+
+<p class="footer-note">检索截止 2026-10-22 · arXiv 编号核验方法：export.arxiv.org API id_list 批量 + abs 页比对标题作者 · 勘误条目在贡献栏注明 · 逐篇完整维度分析存于本地调研工作区笔记（7 份，共约 2100 行），未随站点发布</p>
+
+</body>
+</html>
