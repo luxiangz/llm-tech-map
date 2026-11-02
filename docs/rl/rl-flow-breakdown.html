@@ -1,0 +1,504 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RL 完整流程拆解：从 One Rollout–Update Iteration 出发（PPO vs GRPO）</title>
+
+<!-- 霞鹜文楷：开源可商用的中文楷体风格字体；加载失败时自动回退到微软雅黑 -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/lxgw-wenkai-webfont@1.7.0/style.css">
+
+<script>
+window.MathJax = {
+  tex: {
+    inlineMath: [['$', '$'], ['\\(', '\\)']],
+    displayMath: [['$$', '$$'], ['\\[', '\\]']],
+    processEscapes: true
+  },
+  svg: { fontCache: 'global' }
+};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js" async></script>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+<script>mermaid.initialize({ startOnLoad: true, theme: "neutral", fontFamily: '"Microsoft YaHei", "PingFang SC", sans-serif' });</script>
+
+<style>
+  body {
+    font-family: "LXGW WenKai", "Microsoft YaHei", "PingFang SC", "Segoe UI", sans-serif;
+    font-size: 17.5px;
+    line-height: 1.85;
+    letter-spacing: 0.01em;
+    color: #26292e;
+    background: #fdfdfd;
+    max-width: 980px;
+    margin: 0 auto;
+    padding: 56px 28px 96px;
+  }
+  h1, h2, h3, h4, .kicker {
+    font-family: "Microsoft YaHei", "PingFang SC", sans-serif;
+    line-height: 1.4;
+  }
+  h1 { font-size: 30px; margin: 10px 0 6px; color: #1a1d21; }
+  h2 { font-size: 23px; margin-top: 2.4em; padding-bottom: 6px; border-bottom: 2px solid #e8eaee; color: #1f2733; }
+  h3 { font-size: 19px; margin-top: 1.8em; color: #2c3e50; }
+  h4 { font-size: 17.5px; margin-top: 1.4em; color: #3a4a5c; }
+  .kicker {
+    font-size: 13px; letter-spacing: 0.22em; text-transform: uppercase;
+    color: #7a8699; margin-bottom: 4px;
+  }
+  code, pre {
+    font-family: "Cascadia Code", Consolas, "Microsoft YaHei", monospace;
+  }
+  code { background: #f2f4f7; padding: 1px 6px; border-radius: 5px; font-size: 0.88em; color: #35414f; }
+  pre { background: #f7f8fa; border: 1px solid #e6e9ee; border-radius: 10px; padding: 14px 16px; overflow-x: auto; font-size: 14.5px; line-height: 1.6; }
+  pre.mermaid { background: #fbfcfd; text-align: center; }
+  .formula {
+    background: #f6f8fb;
+    border: 1px solid #e6ebf2;
+    border-radius: 10px;
+    padding: 14px 18px;
+    margin: 14px 0;
+    overflow-x: auto;
+    font-size: 1.02em;
+  }
+  table { border-collapse: collapse; width: 100%; margin: 16px 0; font-size: 15.5px; }
+  th, td { border: 1px solid #dfe3ea; padding: 8px 12px; text-align: left; vertical-align: top; }
+  th { background: #f0f3f7; font-family: "Microsoft YaHei", "PingFang SC", sans-serif; font-weight: 600; }
+  tr:nth-child(even) td { background: #fafbfd; }
+  blockquote {
+    margin: 16px 0; padding: 10px 18px; border-left: 4px solid #4a7dbd;
+    background: #f3f7fc; border-radius: 0 8px 8px 0; color: #33414f;
+  }
+  blockquote p { margin: 6px 0; }
+  a { color: #2c5fa8; text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  .summary-card {
+    background: #f3f8f4; border: 1px solid #d8e8dc; border-radius: 12px;
+    padding: 18px 24px; margin: 20px 0;
+  }
+  .step-card {
+    border: 1px solid #e4e8ee; border-left: 4px solid #4a7dbd; border-radius: 10px;
+    padding: 6px 20px 10px; margin: 18px 0; background: #fcfdfe;
+  }
+  .step-card h3 { margin-top: 0.9em; }
+  .badge {
+    display: inline-block; font-family: "Microsoft YaHei", sans-serif; font-size: 12.5px;
+    background: #2c5fa8; color: #fff; border-radius: 6px; padding: 1px 9px; margin-right: 8px;
+    vertical-align: 2px;
+  }
+  .badge.orange { background: #c96a1f; }
+  .badge.green { background: #3d7a4f; }
+  .refs li { margin-bottom: 6px; }
+  .note { font-size: 14.5px; color: #6b7482; }
+  figure { margin: 20px 0; }
+  figcaption { text-align: center; font-size: 14px; color: #7a8699; margin-top: 6px; }
+</style>
+</head>
+<body>
+
+<a href="https://luxiangz.github.io/llm-tech-map/" style="position:fixed;top:12px;right:14px;z-index:99;background:#f6f7f9;border:1px solid #e2e5ea;border-radius:999px;padding:4px 12px;font-size:14px;color:#2c5fa8;text-decoration:none;box-shadow:0 1px 4px rgba(0,0,0,.08)">← 技术地图首页</a>
+
+<p class="kicker">RLHF / RLVR · Training Pipeline</p>
+<h1>RL 完整流程拆解：从 "One Rollout–Update Iteration" 图出发</h1>
+<p>以 PPO 与 GRPO 两条管线的对比图为骨架，拆解大模型强化学习训练的完整流程——包括图<strong>没有画出来</strong>的前置阶段（SFT、Reward Model 训练）与外层循环。</p>
+
+<figure>
+  <img src="rl-rollout-update-iteration.png" alt="One Rollout–Update Iteration：PPO 与 GRPO 训练管线对比图" style="width:100%;border:1px solid #e2e5ea;border-radius:10px;background:#fff;padding:6px">
+  <figcaption>原图 · One Rollout–Update Iteration（PPO vs GRPO）——本文以此图为骨架，下文步骤编号 ①~⑧ 与图中箭头对应；已将图片副本存于本目录 <code>rl-rollout-update-iteration.png</code>，离线可用</figcaption>
+</figure>
+
+<!-- ============ 0. 一页总览 ============ -->
+<h2>0 · 一页总览（结论先行）</h2>
+
+<div class="summary-card">
+<p><strong>这张图在讲什么：</strong>它画的是大模型 RL 训练（RLHF / RLVR）中<strong>一次"采样—更新"迭代</strong>（one rollout–update iteration）的内部结构。左边的 <strong>SFT 模型</strong>是种子：冻结一份作为 <strong>Reference Model</strong>（用于算 KL 散度、防止策略跑偏），可训练的一份作为 <strong>Policy Model</strong>（被更新的对象）。策略对一批 prompt 做 <strong>Rollout 采样生成</strong>， Reward Model（或规则验证器）<strong>打分</strong>，随后 PPO 与 GRPO 在"<strong>如何估计优势（advantage）</strong>"这一点上分岔：PPO 额外训练一个 <strong>Value Model</strong> 逐 token 估计优势（GAE），GRPO 则<strong>不需要 Value Model</strong>——对同一 prompt 采样 $G$ 个回答，用<strong>组内相对排名</strong>当优势。最后两者都走 <strong>clip 型策略梯度 + KL 惩罚</strong>更新参数，同步回推理引擎，进入下一轮迭代。</p>
+<p><strong>一句话记住 PPO vs GRPO：</strong>PPO 用"一个learned的价值函数"当baseline，GRPO 用"同题其他样本的平均分"当baseline——后者把 Critic 从参数里挪到了数据里。</p>
+</div>
+
+<p><strong>完整流程的 8 步速览</strong>（对应图中的编号，细节见 §3）：</p>
+<table>
+<tr><th style="width:60px">步骤</th><th>做什么</th><th>PPO 路线</th><th>GRPO 路线</th></tr>
+<tr><td>①</td><td>冻结 SFT 模型副本 → Reference Model</td><td colspan="2" style="text-align:center">两者相同，KL 约束都依赖它</td></tr>
+<tr><td>②</td><td>SFT 模型初始化 Policy（可训练）</td><td>还需要 Value Model（Critic）</td><td>不需要任何额外模型</td></tr>
+<tr><td>③</td><td>Rollout：推理引擎批量生成回答</td><td>通常每 prompt 1 个回答</td><td>每 prompt 采样 $G$ 个回答</td></tr>
+<tr><td>④</td><td>打分</td><td colspan="2" style="text-align:center">Reward Model 打分，或 RLVR 规则验证（答案比对/格式检查/单测）</td></tr>
+<tr><td>⑤</td><td>估计优势 advantage</td><td>$V_\psi$ 回归 + GAE，逐 token</td><td>组内归一化 $(r_i-\mathrm{mean})/\mathrm{std}$，序列级广播</td></tr>
+<tr><td>⑥</td><td>计算损失</td><td>clip 策略损失 + value 损失 + 熵奖励；KL 进 reward</td><td>clip 策略损失；KL 作为损失项（k3 估计）</td></tr>
+<tr><td>⑦</td><td>Optimizer step 更新参数</td><td>更新 $\theta$ 和 $\psi$</td><td>只更新 $\theta$</td></tr>
+<tr><td>⑧</td><td>权重同步回 rollout 引擎 → 下一轮</td><td colspan="2" style="text-align:center">两者相同；外层循环直到奖励饱和 / 评测收敛</td></tr>
+</table>
+
+<!-- ============ 1. 图的定位与全景 ============ -->
+<h2>1 · 这张图的位置：它只是"内圈"</h2>
+
+<p>原图标题是 <em>"One Rollout–Update Iteration"</em>，即它画的是<strong>训练主循环里的一圈</strong>。完整的 RL 训练流程其实是三层嵌套：</p>
+
+<ol>
+<li><strong>前置阶段（图外）</strong>：预训练基座 → SFT 指令微调 → （可选）训练 Reward Model，或设计规则验证器（RLVR 路线）。</li>
+<li><strong>外层循环（图的一圈 = 一次 step）</strong>：采样 prompt → rollout → 打分 → 算优势 → 算损失 → 更新权重，重复成千上万次。</li>
+<li><strong>监控与产出（图外）</strong>：跟踪 reward 曲线、response length、KL、entropy、验证集 benchmark；按 checkpoint 存储与评估。</li>
+</ol>
+
+<p>把三层都画出来，全景如下（橙色子图对应原图的 PPO 区域；GRPO 是它的"去 Critic"变体）：</p>
+
+<pre class="mermaid">
+flowchart TD
+    subgraph PRE["阶段 0 · 训练前准备（图外）"]
+        M0["预训练基座 LLM"] --> M1["SFT 指令微调"]
+        M1 -->|"① 冻结一份"| REF["Reference Model π_ref<br/>只做前向，算 KL"]
+        M1 -->|"② 初始化，可训练"| POL["Policy Model π_θ<br/>训练主角"]
+        M1 --> RM["Reward Model r_φ<br/>RLVR 路线换成规则验证器"]
+        M1 --> VAL["Value Model V_ψ<br/>只有 PPO 需要"]
+    end
+
+    subgraph ITER["外层循环 · 一次 Rollout–Update 迭代（图主体）"]
+        PROMPT["取一批 prompt<br/>（数学题 / 指令 / 偏好数据）"]
+        ROLLOUT["③ Rollout 生成<br/>vLLM / SGLang 推理引擎<br/>连续采样 + KV cache"]
+        SCORE["④ 打分<br/>RM 前向 or 规则验证"]
+        LOSS["⑥ 计算损失<br/>clip 策略损失 + KL（± value 损失）"]
+        STEP["⑦ Optimizer Step<br/>PPO 更新 θ 和 ψ；GRPO 只更新 θ"]
+        SYNC["⑧ 权重同步回 rollout 引擎"]
+        PROMPT --> ROLLOUT --> SCORE --> LOSS --> STEP --> SYNC
+    end
+
+    subgraph FIVE["⑤ 优势估计 · PPO 与 GRPO 分岔"]
+        direction LR
+        ADVPPO["PPO：V_ψ 前向 + GAE<br/>逐 token 优势 Â_t"]
+        ADVGRPO["GRPO：同题 G 个回答<br/>组内归一化当优势"]
+    end
+
+    POL --> ROLLOUT
+    SCORE --> FIVE
+    FIVE --> LOSS
+    REF -.->|"KL 散度"| LOSS
+    RM --> SCORE
+    VAL --> ADVPPO
+    SYNC -->|"下一轮"| PROMPT
+    STEP --> CKPT["监控 & Checkpoint<br/>reward / length / KL / entropy / benchmark"]
+</pre>
+
+<blockquote>
+<p><strong>读图关键：</strong>图中所有"模型框"（Reference、Policy、Reward、Value）都是同一套 Transformer 骨架的不同副本，区别只在<strong>谁被冻结、谁被训练、谁参与前向</strong>。RL 训练系统的显存与调度复杂度，本质就是"同时伺候这 4 个模型 + 1 个推理引擎"的工程问题。</p>
+</blockquote>
+
+<!-- ============ 2. 阶段0：模型准备 ============ -->
+<h2>2 · 阶段 0：四个模型从哪来（图的左侧）</h2>
+
+<h3>2.1 种子：SFT 后的预训练模型</h3>
+<p>一切从 <strong>Pretrained Model after SFT</strong> 出发。SFT 用指令数据做监督微调，让模型"会对话、会跟随指令"——RL 是在它之上做<strong>对齐或能力强化</strong>，而不是从零教起。直接对裸预训练模型做 RL（如 R1-Zero 实验）也可以，但需要基座本身有足够的指令跟随潜力。</p>
+
+<h3>2.2 Reference Model：为什么要冻结一份"不学习的自己"</h3>
+<p>RL 只有一个（往往稀疏且易被钻空子的）奖励信号。如果放任策略任意漂移，它会迅速找到<strong>奖励黑客（reward hacking）</strong>的捷径——比如生成格式正确但内容胡说的高分回答。解决办法是加 KL 惩罚：</p>
+<div class="formula">\[
+\mathcal{L}_{\mathrm{KL}} = \beta \cdot D_{\mathrm{KL}}\!\left(\pi_\theta \,\|\, \pi_{\mathrm{ref}}\right)
+\]</div>
+<p>$\pi_{\mathrm{ref}}$ 就是刚做完 SFT 的模型<strong>原样冻结</strong>（图中箭头 ① "Freeze for KL calculation"）。它永远不更新参数，每个训练 step 只跑前向，为的是给当前策略一个"别离 SFT 分布太远"的软约束。$\beta$ 越大，策略越保守。</p>
+
+<h3>2.3 Policy Model：被训练的主角</h3>
+<p>图中箭头 ② 用 SFT 权重<strong>初始化</strong> Policy Model $\pi_\theta$——这是唯一（GRPO 路线）或两个之一（PPO 路线）参数会被优化器更新的模型。它同时扮演两个角色：训练时算 logprob 与梯度，推理时作为 rollout 引擎的生成模型。</p>
+
+<h3>2.4 Reward Model：打分从哪来</h3>
+<p>偏好对齐路线需要一个 RM：通常也用 SFT 模型初始化，把 LM head 换成标量 head，用人类偏好对 $(y^+ \succ y^-)$ 按 Bradley–Terry 目标训练：</p>
+<div class="formula">\[
+\mathcal{L}_{\mathrm{RM}} = -\,\mathbb{E}\left[\log \sigma\!\left(r_\varphi(x, y^+) - r_\varphi(x, y^-)\right)\right]
+\]</div>
+<p>现代推理模型训练（RLVR 路线）则经常<strong>跳过 RM</strong>：数学题答案可以直接比对、代码可以直接跑单测、格式可以用规则检查——奖励可验证、不可被黑，且零训练成本。</p>
+
+<h3>2.5 Value Model（Critic）：只有 PPO 需要</h3>
+<p>Value Model $V_\psi(s)$ 估计"从状态 $s$（即已生成前缀 $x, y_{&lt;t}$）出发，期望能拿多少奖励"。它通常从 Policy 或 RM 初始化，<strong>参数与 Policy 一起被训练</strong>。它的存在只为了一件事：给策略梯度当 baseline，把"绝对好不好"变成"比预期好不好"（即优势），从而大幅降低梯度方差。GRPO 的全部动机，就是<strong>把这一个模型从系统里删掉</strong>。</p>
+
+<table>
+<tr><th>模型</th><th>初始化自</th><th>参数是否更新</th><th>PPO</th><th>GRPO</th><th>作用</th></tr>
+<tr><td>Policy $\pi_\theta$</td><td>SFT 模型</td><td>✅ 更新</td><td>✅</td><td>✅</td><td>被优化的策略，负责生成</td></tr>
+<tr><td>Reference $\pi_{\mathrm{ref}}$</td><td>SFT 模型</td><td>❄️ 冻结</td><td>✅</td><td>✅</td><td>算 KL，防止漂移/奖励黑客</td></tr>
+<tr><td>Reward $r_\varphi$ / 规则器</td><td>SFT 模型 / 无</td><td>❄️ 冻结</td><td>✅（或 RLVR）</td><td>✅（或 RLVR）</td><td>给整条回答打分</td></tr>
+<tr><td>Value $V_\psi$</td><td>Policy / RM</td><td>✅ 更新</td><td>✅</td><td>❌ 不存在</td><td>逐 token baseline，算优势</td></tr>
+</table>
+
+<!-- ============ 3. 逐步拆解 ============ -->
+<h2>3 · 一次迭代的逐步拆解（核心）</h2>
+
+<!-- 步骤 3 -->
+<div class="step-card">
+<h3><span class="badge">③</span>Rollout：批量采样生成</h3>
+<p>从训练集取一批 prompt（如几百到几千道数学题），交给推理引擎（vLLM / SGLang）做<strong>连续采样生成</strong>：温度采样（典型 $T=1.0$，DAPO 场景常用较高温度保探索）、top-p 截断、最大长度截断（超长样本的处理见 §6 DAPO）。引擎内部靠 KV cache 与批调度把吞吐拉满——<strong>rollout 通常占整个 RL 训练时间的一半以上，是第一性能瓶颈</strong>（这正是 MTP / 投机解码被用来加速 rollout 的原因）。</p>
+<p>关键分歧：<strong>采样温度与 top-p 使每次生成带随机性</strong>；GRPO 显式利用这一点——同一 prompt 采 $G$ 个不同回答（典型 $G=8\sim16$）；PPO 经典配置每 prompt 采 1 个，随机性靠大批量 prompt 提供。</p>
+<p>生成结束后，这批数据的 $\log\pi_{\mathrm{old}}(y_t \mid \cdot)$ 被记录下来——它是后面重要性比值 $\rho_t$ 的分母。之后引擎挂起（sleep）或释放显存，把 GPU 让给训练阶段。</p>
+</div>
+
+<!-- 步骤 4 -->
+<div class="step-card">
+<h3><span class="badge">④</span>打分：Reward Model 或规则验证</h3>
+<p>对每条完整回答给一个（通常标量、通常稀疏的）奖励 $r_i = r(x, y_i)$：</p>
+<ul>
+<li><strong>RM 路线</strong>：reward model 对 $(x, y)$ 前向一次，读出标量分。优点是覆盖开放任务，缺点是可能被 hacking。</li>
+<li><strong>RLVR 路线</strong>：规则验证器比对最终答案（如 $\boxed{}$ 内的数值）、跑代码单测、检查格式。奖励常为 0/1 或简单加权（正确性 + 格式分）。</li>
+</ul>
+<p>注意这里的奖励是<strong>结果奖励（outcome reward）</strong>：只在整条回答结束时给出，不含过程信号。把分数摊到每个 token 上、告诉模型"哪一步立了功"，是下一步优势估计的任务。</p>
+</div>
+
+<!-- 步骤 5 -->
+<div class="step-card">
+<h3><span class="badge orange">⑤</span>优势估计：PPO 与 GRPO 在这里分岔</h3>
+
+<h4>PPO：Value Model + GAE，逐 token 的优势</h4>
+<p>先把稀疏的序列奖励改造成<strong>逐 token 奖励</strong>。InstructGPT 的做法是把 KL 惩罚按 token 注入 reward（KL 进 reward 的 shaping 方式）：</p>
+<div class="formula">\[
+r_t = -\beta\left[\log\pi_{\theta}(y_t \mid x, y_{&lt;t}) - \log\pi_{\mathrm{ref}}(y_t \mid x, y_{&lt;t})\right] \quad (t &lt; T),
+\qquad r_T \;\mathrel{+}=\; r_\varphi(x, y)
+\]</div>
+<p>然后 Value Model 前向给出每个前缀的价值 $V_\psi(s_t)$，按 <strong>GAE</strong>（广义优势估计）算逐 token 优势：</p>
+<div class="formula">\[
+\delta_t = r_t + \gamma V_\psi(s_{t+1}) - V_\psi(s_t),
+\qquad
+\hat{A}_t = \sum_{l \ge 0} (\gamma\lambda)^l \, \delta_{t+l}
+\]</div>
+<p>直觉：$\delta_t$ 是"实际拿到的比预期多的"，$\hat{A}_t$ 是它沿时间轴的指数加权平滑。$\lambda{=}1$ 退化为蒙特卡洛回报减 baseline，$\lambda{=}0$ 退化为纯 TD。价值函数本身的误差则由 value loss（见 ⑥）在每步同步纠正——<strong>Critic 是被训练出来的 baseline</strong>。</p>
+
+<h4>GRPO：组内相对排名当优势，Critic 从参数挪进数据</h4>
+<pre class="mermaid">
+flowchart LR
+    Q["同一个 prompt q"] --> O1["y_1 → r_1 = 1"]
+    Q --> O2["y_2 → r_2 = 0"]
+    Q --> O3["y_3 → r_3 = 1"]
+    Q --> O4["y_4 → r_4 = 0"]
+    O1 & O2 & O3 & O4 --> N["组内归一化<br/>Â = (r − mean) / std<br/>mean=0.5, std≈0.58"]
+    N --> B1["y_1, y_3：Â ≈ +0.87 → 抬高概率"]
+    N --> B2["y_2, y_4：Â ≈ −0.87 → 压低概率"]
+</pre>
+<div class="formula">\[
+\hat{A}_i = \frac{r_i - \operatorname{mean}\!\left(\{r_j\}_{j=1}^{G}\right)}{\operatorname{std}\!\left(\{r_j\}_{j=1}^{G}\right)}
+\]</div>
+<p>同一 prompt 的 $G$ 个回答互为 baseline：高于组均值的被强化、低于组均值的被抑制，序列级优势<strong>广播到该回答的每个 token</strong>。代价是每个 prompt 要生成 $G$ 倍 token；换来的是省掉一整个可训练模型及其优化器状态。</p>
+<blockquote><p>边界情形：若一组内 $G$ 个回答全对或全错（$r_j$ 全相等），$\hat{A}_i = 0$，这批样本不产生梯度——DAPO 的 dynamic sampling 正是对此的修补（§6）。</p></blockquote>
+</div>
+
+<!-- 步骤 6 -->
+<div class="step-card">
+<h3><span class="badge">⑥</span>计算损失：clip 型策略梯度是公共骨架</h3>
+<p>两条路线的起点都是策略梯度定理：</p>
+<div class="formula">\[
+\nabla_\theta J(\theta) = \mathbb{E}\!\left[\nabla_\theta \log \pi_\theta(y_t \mid x, y_{&lt;t}) \cdot \hat{A}_t\right],
+\qquad
+J(\theta) = \mathbb{E}_{x \sim \mathcal{D},\; y \sim \pi_\theta}\!\left[ r(x, y) \right]
+\]</div>
+<p>纯 on-policy 单步更新太浪费数据，实践中会把这批 rollout 切成 mini-batch 跑 1~4 个 epoch——此时策略已偏离采样分布，需要<strong>重要性采样比值</strong>修正，并加 clip 防止单步更新过猛：</p>
+<div class="formula">\[
+\rho_{t} = \frac{\pi_\theta(y_t \mid x, y_{&lt;t})}{\pi_{\mathrm{old}}(y_t \mid x, y_{&lt;t})},
+\qquad
+L^{\mathrm{clip}}(\theta) = \mathbb{E}_t\!\left[\min\!\left(\rho_{t} \hat{A}_t,\; \operatorname{clip}(\rho_{t},\, 1-\epsilon,\, 1+\epsilon)\, \hat{A}_t\right)\right]
+\]</div>
+
+<h4>PPO 总损失（四项）</h4>
+<div class="formula">\[
+L_{\mathrm{PPO}}
+= \underbrace{L^{\mathrm{clip}}}_{\text{策略损失}}
+\;-\; c_v \underbrace{\mathbb{E}_t\!\left[(V_\psi(s_t) - \hat{R}_t)^2\right]}_{\text{value 损失：校准 Critic}}
+\;+\; c_e \underbrace{\mathbb{E}_t\!\left[H\!\left(\pi_\theta(\cdot \mid s_t)\right)\right]}_{\text{熵奖励：防坍缩}}
+\]</div>
+<p>KL 约束按 §5 的方式藏在逐 token reward 里（reward shaping）；$c_v, c_e$ 是价值损失系数与熵系数，$\hat{R}_t$ 是 GAE 用的回报目标（$\hat{A}_t + V_\psi(s_t)$）。</p>
+
+<h4>GRPO 目标（DeepSeekMath 形式，KL 显式写在损失里）</h4>
+<div class="formula">\[
+J_{\mathrm{GRPO}}(\theta)
+= \mathbb{E}\!\left[
+\frac{1}{G}\sum_{i=1}^{G} \frac{1}{|o_i|}\sum_{t=1}^{|o_i|}
+\left\{
+\min\!\left[\rho_{i,t}\hat{A}_{i,t},\; \operatorname{clip}(\rho_{i,t}, 1-\epsilon, 1+\epsilon)\hat{A}_{i,t}\right]
+\;-\; \beta\, D_{\mathrm{KL}}\!\left[\pi_\theta \,\|\, \pi_{\mathrm{ref}}\right]
+\right\}
+\right]
+\]</div>
+<p>其中 KL 用 Schulman 的 k3 无偏估计（直接进损失，而非进 reward）：</p>
+<div class="formula">\[
+D_{\mathrm{KL}}\!\left[\pi_\theta \,\|\, \pi_{\mathrm{ref}}\right]
+\approx \mathbb{E}_{y_t \sim \pi_\theta}\!\left[
+\frac{\pi_{\mathrm{ref}}(y_t \mid \cdot)}{\pi_\theta(y_t \mid \cdot)}
+- \log\frac{\pi_{\mathrm{ref}}(y_t \mid \cdot)}{\pi_\theta(y_t \mid \cdot)}
+- 1
+\right] \;\ge 0
+\]</div>
+</div>
+
+<!-- 步骤 7 -->
+<div class="step-card">
+<h3><span class="badge">⑦</span>Optimizer Step：更新哪些参数</h3>
+<p>反向传播 + Adam(W) 走一步（或几步）：PPO 同时更新 $\theta$（policy）与 $\psi$（value）；GRPO 只更新 $\theta$。工程细节：</p>
+<ul>
+<li>训练态显存 ≈ 参数 + 梯度 + Adam 的一二阶矩（bf16 + fp32 master weight 下约每参数 16 字节量级），这就是 Value Model"贵"的根源——它带来的不只是参数本身，还有一整套优化器状态。</li>
+<li>clip 里的 $\epsilon$（典型 0.2）限制单次更新幅度；数据重复利用（mini-epoch）越多，$\rho_t$ 越偏离 1，clip 越频繁触发——数据效率与 on-policy 纯度的折中。</li>
+<li>Reference / Reward 只前向不算梯度，可用更省的精度与并行策略（如 offload、序列并行）。</li>
+</ul>
+</div>
+
+<!-- 步骤 8 -->
+<div class="step-card">
+<h3><span class="badge green">⑧</span>权重同步 + 外层循环</h3>
+<p>把更新后的 $\theta$（重分片、重加载）同步回 rollout 引擎，唤醒引擎（wake），取下一批 prompt——回到步骤 ③。这就是图名"one rollout–update iteration"的完整一圈。外层循环跑成百上千步，直到：奖励曲线饱和、验证 benchmark 不再涨、KL 超预算或 entropy 坍缩触发早停。期间持续存 checkpoint，用独立评测（不要用训练 reward）选最终模型。</p>
+</div>
+
+<!-- ============ 4. 对比 ============ -->
+<h2>4 · PPO vs GRPO：系统级对比</h2>
+
+<table>
+<tr><th style="width:130px">维度</th><th>PPO</th><th>GRPO</th></tr>
+<tr><td>baseline 来源</td><td>learned Value Model（额外训练一个 Critic）</td><td>同题 $G$ 个样本的组均值（数据即 baseline）</td></tr>
+<tr><td>优势粒度</td><td>逐 token（$\lambda$ 在偏差/方差间调节）</td><td>序列级，广播到所有 token</td></tr>
+<tr><td>模型数（训练态）</td><td>4 个：policy、reference、reward、value</td><td>3 个：policy、reference、reward（RLVR 可至 2 个）</td></tr>
+<tr><td>额外优化器状态</td><td>policy + value 两套</td><td>policy 一套</td></tr>
+<tr><td>KL 注入方式</td><td>常做 reward shaping（进逐 token reward）</td><td>损失项（k3 估计，样本级）</td></tr>
+<tr><td>采样成本</td><td>每 prompt 通常 1 条</td><td>每 prompt $G$ 条（生成量 ×G）</td></tr>
+<tr><td>信号密度</td><td>Critic 逐 token 打分，信号更细</td><td>组内对比，实现简单、信号稳健</td></tr>
+<tr><td>典型场景</td><td>偏好对齐（RM 打分、开放任务）</td><td>可验证任务：数学 / 代码（RLVR 主力）</td></tr>
+<tr><td>代表工作</td><td>PPO (2017)、InstructGPT (2022)</td><td>DeepSeekMath (2024)、DeepSeek-R1 (2025)</td></tr>
+</table>
+
+<blockquote><p><strong>一句话权衡：</strong>GRPO 用"$G$ 倍生成"换"省一整个可训练模型"。在奖励可验证、显存紧张、工程求简的推理训练场景，这笔账几乎总是划算的——这也是 2025 年后开源 RL 事实标准是 GRPO 系而非 PPO 的原因。</p></blockquote>
+
+<!-- ============ 5. KL 两种注入 ============ -->
+<h2>5 · 两个易混点：KL 的注入位置 & on-policy 的程度</h2>
+
+<h3>5.1 KL 进 reward 还是进 loss</h3>
+<table>
+<tr><th></th><th>reward shaping（InstructGPT/PPO 常用）</th><th>损失项（DeepSeekMath/GRPO）</th></tr>
+<tr><td>形式</td><td>$r_t$ 中每步减去 $\beta\,\log\frac{\pi_\theta}{\pi_{\mathrm{ref}}}$</td><td>目标函数直接减 $\beta D_{\mathrm{KL}}$（k3 估计）</td></tr>
+<tr><td>影响路径</td><td>改变优势 $\hat{A}$，间接约束策略</td><td>直接对 logprob 加惩罚梯度</td></tr>
+<tr><td>观感</td><td>KL 会体现在训练奖励里（训练 reward ≠ 任务奖励）</td><td>任务奖励干净，KL 单独成曲线</td></tr>
+</table>
+<p>两者都实现"软贴住 $\pi_{\mathrm{ref}}$"，差别在梯度路径与日志解读，强度都由 $\beta$ 控制。</p>
+
+<h3>5.2 $\rho_t$ 什么时候不等于 1</h3>
+<p>rollout 刚结束、第一份 mini-batch 上 $\pi_\theta = \pi_{\mathrm{old}}$，$\rho_t = 1$，clip 不起作用；从第二份 mini-batch / 第二个 epoch 起，$\theta$ 已被更新，$\rho_t \ne 1$，clip 开始保护。所以"PPO/GRPO 是 on-policy 算法 + 小幅重要性修正"更准确；若 rollout 与训练之间还有队列延迟（异步系统），$\rho_t$ 会系统性偏离 1，需要更保守的 $\epsilon$ 或 resample 修正。</p>
+
+<!-- ============ 6. 演进 ============ -->
+<h2>6 · 从这张图出发的演进线（2017 → 2026）</h2>
+
+<table>
+<tr><th style="width:150px">工作</th><th>对图中流程改了什么</th></tr>
+<tr><td>PPO（2017）</td><td>原始 RL 算法：clip + value + GAE，先于 LLM 时代。</td></tr>
+<tr><td>InstructGPT / RLHF（2022）</td><td>把 PPO 搬进 LLM：三阶段范式（SFT → RM → RL），KL 进 reward。</td></tr>
+<tr><td>DPO（2023）</td><td>整段删掉 ⑤⑥⑦⑧：把 RL 目标闭式解成 SFT 式的偏好损失，只要 policy + reference 两个模型、直接离线训练。</td></tr>
+<tr><td>DeepSeekMath / GRPO（2024）</td><td>删 Value Model，组内归一化当优势（本图右路）。</td></tr>
+<tr><td>DeepSeek-R1（2025）</td><td>RLVR 大规模验证：规则奖励 + GRPO 训出推理长链，纯 RL（R1-Zero）即可涌现反思与验证行为。</td></tr>
+<tr><td>Dr. GRPO（2025）</td><td>指出除以 std 引入长度相关偏差：去掉 $\operatorname{std}$ 与长度归一化项，改"固定常数"分母。</td></tr>
+<tr><td>DAPO（2025）</td><td>四件套改造 GRPO：<strong>clip-higher</strong>（低概率 token 用更宽的 $\epsilon_{\mathrm{high}}$，防熵过快坍缩）、<strong>dynamic sampling</strong>（过滤全对/全错的零优势组，补采新样本）、<strong>token-level loss</strong>（按 batch 总 token 数而非序列数归一，长回答不被降权）、<strong>overlong filtering</strong>（超长截断样本奖励置 mask，不惩罚"只是没写完"的样本）。</td></tr>
+<tr><td>GSPO（2025）</td><td>把重要性比值从 token 级换成序列级（对整条序列的 logprob 归一），训练更稳。</td></tr>
+<tr><td>MTP rollout（2025+）</td><td>不改算法，改 ③：rollout 阶段用 multi-token prediction 每步出多 token，加速生成瓶颈（正是 Qwen + DAPO + MTP 评测所针对的方向）。</td></tr>
+</table>
+<p class="note">注：2025 年及之后的 arXiv 编号（DAPO、Dr. GRPO、GSPO 等）均为预印本，虽已被社区广泛复用，关键结论仍建议以自行复现为准。</p>
+
+<!-- ============ 7. 工程 ============ -->
+<h2>7 · 工程视角：框架与显存布局</h2>
+
+<ul>
+<li><strong>主流框架</strong>：<a href="https://arxiv.org/abs/2409.19256">veRL（HybridFlow）</a>——单控制器编排 rollout 与训练两个阶段，是 DAPO 等工作的基座；<a href="https://github.com/OpenRLHF/OpenRLHF">OpenRLHF</a>——Ray 编排、易读易改；HF <a href="https://huggingface.co/docs/trl/index">TRL</a>——GRPOTrainer 门槛最低。veRL 的官方配方库生态见 §8。</li>
+<li><strong>显存布局</strong>：4 个模型 + 推理引擎塞进有限卡，两类做法——<strong>colocate（共置）</strong>：rollout 与训练同卡切换，引擎 sleep/wake（权重 offload 到 CPU）腾显存，通信少但峰值紧；<strong>disaggregate（分离）</strong>： rollout 集群与训练集群分开，权重跨机同步，吞吐高但带宽贵。</li>
+<li><strong>权重同步 ⑧ 的成本</strong>：训练框架（FSDP/Megatron 分片）与推理引擎（TP/PP 切分）的切分方式不同，同步要做 reshard——大模型上这步常需数秒到数十秒，是仅次于 rollout 的第二瓶颈。</li>
+<li><strong>监控四件套</strong>：训练 reward（注意 KL shaping 后它≠任务奖励）、response length（突然暴涨/暴跌常是坍缩前兆）、entropy（持续下降=探索死亡）、KL to reference（超预算即停）。</li>
+</ul>
+
+<!-- ============ 8. verl-recipe ============ -->
+<h2>8 · 配方库实操：verl-recipe 与 verl-ascend-recipe</h2>
+
+<p>§7 讲的是<strong>引擎</strong>；真正上手训练时，入口是 veRL 的两个官方配方库：<a href="https://github.com/verl-project/verl-recipe">verl-recipe</a>（GPU 主线，作为 git submodule 挂在 <code>verl/recipe</code>）与 <a href="https://github.com/verl-project/verl-ascend-recipe">verl-ascend-recipe</a>（华为昇腾 NPU 专用线，复制进 <code>verl/verl_ascend_recipe</code>）。每个配方（recipe）= <strong>算法 + 模型 + 数据 + 奖励函数 + 超参 + 启动脚本</strong>的完整打包，目标是照着 README 就能复现论文或跑起自己的任务。</p>
+
+<pre class="mermaid">
+flowchart LR
+    CORE["verl 主仓库<br/>RL 训练引擎<br/>FSDP / Megatron / vLLM / SGLang"]
+    CORE -->|"git submodule: verl/recipe"| GPU["verl-recipe<br/>GPU 主线配方库"]
+    CORE -->|"复制进 verl_ascend_recipe/"| NPU["verl-ascend-recipe<br/>昇腾 NPU 配方库"]
+    GPU --> R["每个配方目录：<br/>算法 + 数据 + 奖励函数 + 超参 + 启动脚本"]
+    NPU --> R
+    R --> PIN["REQUIRED_VERL.txt 钉死引擎版本<br/>install_verl.sh 一键安装对应 verl"]
+</pre>
+
+<h3>8.1 共同机制：REQUIRED_VERL.txt + install_verl.sh</h3>
+<p>两个仓库共用同一套<strong>版本钉死</strong>设计——这是 RL 复现性的关键，因为训练结果对引擎版本极端敏感（veRL、torch、vLLM 差一个小版本，reward 曲线就可能漂移）：</p>
+<ul>
+<li>每个配方目录带一个 <code>REQUIRED_VERL.txt</code>：声明该配方依赖的 verl 版本，支持固定 release（<code>verl==0.6.0</code>）、固定 commit，或 rolling 跟随 main 并同时记录三个精确 commit（<code>VERL_COMMIT</code>、<code>RECIPE_SUBMODULE_COMMIT</code>、<code>RECIPE_FOLDER_LAST_COMMIT</code>），任何漂移都可追溯。</li>
+<li>仓库根目录的 <code>install_verl.sh</code> 一键安装匹配版本：<code>--list</code> 列配方、<code>--show</code> 干跑、<code>--recipe NAME</code> 指定配方（可加 <code>--option VARIANT</code> 选变体）、<code>--method pip|git</code> 选安装方式。</li>
+<li>贡献规范同样围绕它：任何人更新配方都必须同步更新 <code>REQUIRED_VERL.txt</code>，配合 pre-commit + ruff 做风格检查。</li>
+</ul>
+<pre><code># GPU 主线：verl-recipe 作为 submodule 已经在 verl/recipe 下
+bash verl/recipe/install_verl.sh --list            # 列出全部配方
+bash verl/recipe/install_verl.sh --recipe dapo --option reproduction
+
+# 昇腾线：先复制进主仓库再装
+git clone https://github.com/verl-project/verl.git
+git clone https://github.com/verl-project/verl-ascend-recipe.git
+mkdir -p verl/verl_ascend_recipe &amp;&amp; cp -r verl-ascend-recipe/* verl/verl_ascend_recipe
+./install_verl.sh --recipe dapo --option reproduction</code></pre>
+
+<h3>8.2 verl-recipe（GPU 主线）：配方地图</h3>
+<p>按<strong>对本文 8 步流程改了哪里</strong>来分类（31 个配方，标注"推断"的仅从命名判断、未逐一核实）：</p>
+<table>
+<tr><th style="width:120px">类别</th><th>配方</th><th>改造点</th></tr>
+<tr><td>RLVR / 推理复现</td><td><code>r1</code>、<code>open_math_reasoning</code>、<code>dapo</code></td><td>§6 演进线的官方落地：r1 复现 R1-Zero 式 RLVR；dapo 的 <code>--option reproduction</code> 直接对齐论文实验</td></tr>
+<tr><td>算法变体（改 ⑤⑥）</td><td><code>gvpo</code>、<code>spin</code>、<code>spo</code>、<code>entropy</code>、<code>prime</code>，以及 <code>fapo</code>/<code>flowrl</code>/<code>rep_exp</code>/<code>sppo</code>/<code>speRL</code> 等（仅列名）</td><td>换优势估计或损失形式；<code>entropy</code> 专攻熵管理（对抗 §6 的 entropy 坍缩）；<code>prime</code> 用隐式过程奖励细化 ④→⑤ 的信号</td></tr>
+<tr><td>Agent / 多轮 / 工具（改 ③）</td><td><code>retool</code>、<code>langgraph_agent</code>、<code>swe_agent</code>、<code>infigui-g1</code>（推断）</td><td>rollout 从"一次生成"变成"多轮交互"：ReTool 在 rollout 里调代码解释器；langgraph_agent 用 LangGraph ReactAgent 做多轮 rollout；swe_agent 跑 SWE-bench 软件工程任务</td></tr>
+<tr><td>多模态</td><td><code>deepeyes</code>、<code>minicpmo</code></td><td>把 ③ 的生成与 ④ 的奖励扩展到图像输入</td></tr>
+<tr><td>工程与系统（改 ③⑦⑧）</td><td><code>partial_rollout</code>、<code>fault_recover</code>、<code>genrm_remote</code>、<code>dynamo</code>、<code>qat</code>、<code>gkd/megatron</code>、<code>nemo_gym</code>、<code>verl_tinker</code>、<code>char_count</code></td><td><code>partial_rollout</code> 跨 step 断点续采（APRIL 式），直接回收 ③ 的长尾 GPU 气泡；<code>genrm_remote</code> 把步骤 ④ 的 RM 变成远程生成式服务；<code>qat</code> 量化感知训练；<code>verl_tinker</code> 把 veRL actor 暴露成 Tinker 兼容 HTTP 服务；<code>char_count</code> 是入门玩具示例</td></tr>
+</table>
+
+<h3>8.3 verl-ascend-recipe（昇腾 NPU 线）</h3>
+<p>面向华为昇腾硬件（如 Ascend 950）与 MindSpeed 生态的配方集，机制与 GPU 线完全一致；部分配方跨库互现（<code>r1_ascend</code>、<code>flash_rl_ascend</code>、<code>retool</code>、<code>fault_recover</code> 两边都有）。它最有价值的部分是把 §7 的工程问题做成了现成配方：</p>
+<table>
+<tr><th style="width:150px">配方</th><th>作用</th><th>对应本文位置</th></tr>
+<tr><td><code>baseline</code> / <code>grpo</code> / <code>dapo</code> / <code>dppo</code> / <code>reinforce_plus_plus</code> / <code>opd</code></td><td>主流算法在昇腾上的基线实现</td><td>⑤⑥ 算法层</td></tr>
+<tr><td><code>true_on_policy</code></td><td>严格 on-policy 训练（每个 mini-batch 用最新权重重算）</td><td>§5.2 的 $\rho_t = 1$ 极端形态</td></tr>
+<tr><td><code>pd_disaggregation</code></td><td>Prefill/Decode 分离部署的官方配方</td><td>§7 disaggregate 布局的落地</td></tr>
+<tr><td><code>rollout_elastic</code> / <code>fault_recover</code></td><td>弹性 rollout 与容错恢复</td><td>③⑧ 的长稳训练保障</td></tr>
+<tr><td><code>drkernel</code> / <code>triton_kernel_generation/sft</code></td><td>内核优化与内核生成</td><td>引擎底层</td></tr>
+<tr><td><code>low_precision/Qwen3-30B-A3B</code></td><td>低精度训练配方</td><td>⑦ 的精度工程</td></tr>
+<tr><td><code>Ascend_950</code> / <code>DeepSeek-V4-Flash</code> / <code>GLM5</code></td><td>新硬件与新模型适配</td><td>阶段 0 的模型准备</td></tr>
+<tr><td><code>grpo_mindspeed_mm</code></td><td>MindSpeed 多模态 GRPO</td><td>③④ 扩展到多模态</td></tr>
+<tr><td><code>dapo_predictor</code></td><td>带预测器（predictor）的 DAPO——rollout 加速方向，与 §6 的 MTP rollout 同族思路（命名推断）</td><td>③ 的生成加速</td></tr>
+<tr><td><code>uniagent</code> / <code>small_for_large</code></td><td>Agent 场景 / 小模型带动大模型（命名推断，仅列名）</td><td>—</td></tr>
+</table>
+
+<h3>8.4 两个配方库的分工与联系</h3>
+<ul>
+<li><strong>分工</strong>：verl-recipe 跟 GPU 生态（vLLM/SGLang、FSDP/Megatron）与最新算法热点；verl-ascend-recipe 跟昇腾 + MindSpeed 栈，偏重生产化的系统配方（PD 分离、弹性、容错、低精度）。</li>
+<li><strong>联系</strong>：同一套 REQUIRED_VERL.txt 机制、同一套 install 脚本模式；跨库互现的配方（retool、r1、dapo）说明算法层可移植、系统层按硬件分叉——正好对应本文的分层：⑤⑥ 是算法（可跨硬件复用），③⑦⑧ 是系统（按硬件选配方）。</li>
+<li><strong>上手建议</strong>：先用 <code>install_verl.sh --list</code> 看全景；复现论文选对应配方 + <code>--option reproduction</code>；自研任务从 <code>baseline</code> / <code>grpo</code> / <code>char_count</code> 这类最小配方改起，只动奖励函数与数据，不动引擎。</li>
+</ul>
+
+<!-- ============ 9. 术语表 ============ -->
+<h2>9 · 术语速查</h2>
+
+<table>
+<tr><th style="width:170px">术语</th><th>含义</th></tr>
+<tr><td>Rollout</td><td>当前策略对一批 prompt 实际生成回答的过程（推理阶段）。</td></tr>
+<tr><td>Policy / Reference / Value / Reward</td><td>四个模型副本：被训练的 / 冻结算 KL 的 / 逐 token 估价值的（仅 PPO）/ 打分的。</td></tr>
+<tr><td>Advantage $\hat{A}$</td><td>"实际所得 − baseline"，策略梯度的核心量：正则抬高该 token 概率，负则压低。</td></tr>
+<tr><td>GAE</td><td>广义优势估计，逐 token 优势的偏差—方差折中（$\gamma,\lambda$）。</td></tr>
+<tr><td>on-policy / 重要性比值 $\rho_t$</td><td>数据是否由当前策略采得；mini-epoch 复用数据后靠 $\rho_t$ 修正，clip 限制修正幅度。</td></tr>
+<tr><td>RLVR</td><td>Reinforcement Learning with Verifiable Rewards：规则可验证奖励替代 RM。</td></tr>
+<tr><td>Reward hacking</td><td>策略钻奖励函数空子拿高分（胡说但格式满分），KL 与 RLVR 都是解法。</td></tr>
+<tr><td>Entropy 坍缩</td><td>探索性丧失、输出模式单一；DAPO clip-higher、熵奖励都是对抗手段。</td></tr>
+<tr><td>Hybrid engine</td><td>同一组权重在推理引擎与训练框架间切换并同步的机制（veRL sleep/wake）。</td></tr>
+<tr><td>MTP rollout</td><td>用 multi-token prediction 在 rollout 阶段一步生成多 token，加速生成。</td></tr>
+</table>
+
+<!-- ============ 参考文献 ============ -->
+<h2>参考文献</h2>
+<ol class="refs">
+<li>Schulman et al. <a href="https://arxiv.org/abs/1707.06347">Proximal Policy Optimization Algorithms</a> (PPO), 2017.</li>
+<li>Schulman et al. <a href="https://arxiv.org/abs/1506.02438">High-Dimensional Continuous Control Using GAE</a>, 2016.</li>
+<li>Ouyang et al. <a href="https://arxiv.org/abs/2203.02155">Training language models to follow instructions with human feedback</a> (InstructGPT), 2022.</li>
+<li>Rafailov et al. <a href="https://arxiv.org/abs/2305.18290">Direct Preference Optimization</a> (DPO), 2023.</li>
+<li>Shao et al. <a href="https://arxiv.org/abs/2402.03300">DeepSeekMath: Pushing the Limits of Mathematical Reasoning</a>（提出 GRPO）, 2024.</li>
+<li>DeepSeek. <a href="https://arxiv.org/abs/2501.12948">DeepSeek-R1: Incentivizing Reasoning Capability in LLMs via RL</a>, 2025.</li>
+<li>Liu et al. <a href="https://arxiv.org/abs/2503.14476">DAPO: An Open-Source LLM RL System at Scale</a>, 2025.</li>
+<li>Liu et al. <a href="https://arxiv.org/abs/2503.20783">Understanding R1-Zero-Like Training: A Critical Perspective</a> (Dr. GRPO), 2025.</li>
+<li>Qwen et al. <a href="https://arxiv.org/abs/2507.18071">Group Sequence Policy Optimization</a> (GSPO), 2025.</li>
+<li>Sheng et al. <a href="https://arxiv.org/abs/2409.19256">HybridFlow: A Flexible and Efficient RLHF Framework</a> (veRL), 2024.</li>
+<li><a href="https://github.com/verl-project/verl-recipe">verl-project/verl-recipe</a> — veRL 官方社区配方库（GPU 主线，git submodule 形式挂在 <code>verl/recipe</code>）。</li>
+<li><a href="https://github.com/verl-project/verl-ascend-recipe">verl-project/verl-ascend-recipe</a> — veRL 昇腾（Ascend NPU）配方库，复制进 <code>verl/verl_ascend_recipe</code> 使用。</li>
+<li>Schulman. <a href="http://joschu.net/blog/kl-approx.html">Approximating KL Divergence</a>（k3 估计器出处）, 2020.</li>
+</ol>
+
+<p class="note">本文档基于 "One Rollout–Update Iteration"（PPO vs GRPO）示意图拆解整理，2026-10-21。</p>
+
+</body>
+</html>
